@@ -6,6 +6,14 @@ dist/
 build/
 .vite/
 
+# TypeScript / test artifacts
+*.tsbuildinfo
+coverage/
+
+# Playwright MCP — screenshots and traces from agent visual checks
+.playwright-mcp/
+sgc-initial-render.png
+
 # Environment variables
 .env
 .env.local
