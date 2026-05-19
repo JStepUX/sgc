@@ -29,6 +29,17 @@ documented:
 
 ---
 
+## Web fonts must load via `<link>` in `index.html`, not `@import` in `index.css` (Sal re-skin, 2026-05-19)
+
+A web-font `@import url("https://fonts.googleapis.com/…")` placed in
+`src/client/index.css` after `@import "tailwindcss"` triggers a Lightning CSS
+warning — `"@import rules must precede all rules aside from @charset and @layer
+statements"` — and may be dropped from the output, silently breaking the font.
+Tailwind v4 inlines `@import "tailwindcss"` into many rules during processing,
+so any later `@import` lands mid-stylesheet. Load web fonts via
+`<link rel="stylesheet">` in `index.html` instead — see the Geist + Geist Mono
+links in `<head>`. New fonts go there too.
+
 ## The API key is server-only — never call api.anthropic.com from the client (package spinup, 2026-05-18)
 
 The browser never talks to `api.anthropic.com`. The React client builds the

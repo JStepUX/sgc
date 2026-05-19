@@ -50,10 +50,13 @@ developer first. The cosine grep is the thesis of Phase 1.5, not a placeholder.
 
 ```
 src/client/
-  main.tsx                    React entry point
+  main.tsx                    React entry point — imports index.css
+  index.css                   Tailwind v4 entry — design tokens (@theme), shadcn theme, aurora CSS
   SalienceGatedCognition.tsx  the UI — main app + MemoryPanel / TurnInspector / TokenChart
+  components/ui/               shadcn/ui primitives (button, card)
   lib/
     types.ts                  shared domain types (ChatEntry, Memory)
+    utils.ts                  cn() — Tailwind-aware class-name merge
     tfidf.ts                  the TF-IDF cosine engine ("Grepory") — pure, deterministic
     tfidf.test.ts             Vitest behavioral tests for the engine
     prompt.ts                 system-prompt builder + response parser
@@ -72,8 +75,11 @@ logic lives server-side.
 
 ### Tech / Shape
 
-- **Client:** React 19 + TypeScript, built with Vite 6. UI is hand-rolled
-  inline styles + CSS custom properties — no component library, no Tailwind.
+- **Client:** React 19 + TypeScript, built with Vite 6. UI is **Tailwind v4**
+  (the `@tailwindcss/vite` plugin; design tokens in an `@theme` block) +
+  **shadcn/ui** primitives. Tokens, the shadcn theme, and the aurora CSS all
+  live in `src/client/index.css`; `components.json` configures shadcn. The
+  visual language is the "Sal" design system — a warm near-black field.
 - **Server:** a thin Express proxy. `@anthropic-ai/sdk`, one route
   (`POST /api/turn`). Model defaults to `claude-opus-4-7`, overridable via the
   `ANTHROPIC_MODEL` env var.
