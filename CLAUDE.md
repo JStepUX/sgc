@@ -132,6 +132,13 @@ Shared utilities (project-root detection, colors, exclude patterns,
 
 ## Committing
 
+**Solo repo — commit on `main` directly.** The harness default is to branch
+when commits would land on a project's default branch; for SGC, override that
+and commit straight to `main`. There's no review workflow here that benefits
+from feature branches, and the publish/sync IDE workflow turns every stray
+branch into a "compare & pull request" banner on GitHub. Single linear
+history on `main` is the convention.
+
 `git commit` is gated. Run the `/pre-commit-qa` skill when work is ready; it
 walks a checklist and, only if every item passes, writes the marker that
 unlocks commits for the next 10 minutes. Use bare `git` commands (no `cd`
