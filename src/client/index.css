@@ -192,6 +192,20 @@
   border-radius: 6px;
 }
 
+/* Streaming cursor — sits inline at the end of the last block child of an
+   AssistantMessage while a stream is in flight. Pseudo-element rather than a
+   real node so the markdown tree stays clean. */
+.sal-streaming > *:last-child::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--color-ember);
+  animation: sal-blink 1s step-end infinite;
+}
+
 @keyframes sal-drift {
   0% {
     transform: translate(0, 0) scale(1) rotate(0deg);

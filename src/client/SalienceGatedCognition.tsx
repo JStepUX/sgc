@@ -1,11 +1,14 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { ArrowUp, Plus } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { Memory, ChatEntry } from './lib/types';
 import { cosineSearch } from './lib/tfidf';
 import { buildPrompt, parseTurnResponse, stripStreamingMeta } from './lib/prompt';
 import { runTurn } from './lib/api';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 
 // ============================================================
 // SALIENCE-GATED COGNITION — Phase 1.5
@@ -369,17 +372,90 @@ function TokenChart({ tokenHistory }: { tokenHistory: TokenHistoryEntry[] }) {
 // ============================================================
 
 function AssistantMessage({ text, streaming = false }: { text: string; streaming?: boolean }) {
-  const paragraphs = text.split(/\n{2,}/);
   return (
-    <div className="flex flex-col gap-3.5">
-      {paragraphs.map((p, i) => (
-        <p key={i} className="m-0 text-pretty whitespace-pre-wrap text-[15px] leading-[1.7] text-fg-1">
-          {p}
-          {streaming && i === paragraphs.length - 1 && (
-            <span className="ml-0.5 inline-block h-[1.05em] w-0.5 align-text-bottom bg-ember animate-blink" />
-          )}
-        </p>
-      ))}
+    <div
+      className={cn(
+        'flex flex-col gap-3.5 text-pretty text-[15px] font-light leading-[1.7] text-fg-1',
+        streaming && 'sal-streaming',
+      )}
+    >
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          p: ({ node: _node, ...props }) => (
+            <p {...props} className="m-0 whitespace-pre-wrap" />
+          ),
+          a: ({ node: _node, ...props }) => (
+            <a
+              {...props}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-ember-soft underline decoration-ember/40 underline-offset-2 hover:decoration-ember"
+            />
+          ),
+          ul: ({ node: _node, ...props }) => (
+            <ul {...props} className="m-0 ml-5 list-disc space-y-1" />
+          ),
+          ol: ({ node: _node, ...props }) => (
+            <ol {...props} className="m-0 ml-5 list-decimal space-y-1" />
+          ),
+          li: ({ node: _node, ...props }) => (
+            <li {...props} className="leading-[1.55]" />
+          ),
+          strong: ({ node: _node, ...props }) => (
+            <strong {...props} className="font-medium text-fg-1" />
+          ),
+          em: ({ node: _node, ...props }) => <em {...props} className="italic" />,
+          code: ({ node: _node, className: cls, children, ...props }) => {
+            const isBlock =
+              /language-/.test(cls || '') || String(children).includes('\n');
+            if (isBlock) {
+              return (
+                <code
+                  {...props}
+                  className={cn(cls, 'block font-mono text-[12.5px] leading-relaxed')}
+                >
+                  {children}
+                </code>
+              );
+            }
+            return (
+              <code
+                {...props}
+                className="rounded bg-surface-strong px-1 py-0.5 font-mono text-[0.88em]"
+              >
+                {children}
+              </code>
+            );
+          },
+          pre: ({ node: _node, ...props }) => (
+            <pre
+              {...props}
+              className="m-0 overflow-x-auto rounded-md border border-hairline-strong bg-surface-strong p-3"
+            />
+          ),
+          blockquote: ({ node: _node, ...props }) => (
+            <blockquote
+              {...props}
+              className="m-0 border-l-2 border-hairline-strong pl-3 italic text-fg-2"
+            />
+          ),
+          h1: ({ node: _node, ...props }) => (
+            <h1 {...props} className="m-0 text-[17px] font-medium tracking-[-0.005em] text-fg-1" />
+          ),
+          h2: ({ node: _node, ...props }) => (
+            <h2 {...props} className="m-0 text-base font-medium tracking-[-0.005em] text-fg-1" />
+          ),
+          h3: ({ node: _node, ...props }) => (
+            <h3 {...props} className="m-0 text-[15px] font-medium text-fg-1" />
+          ),
+          hr: ({ node: _node, ...props }) => (
+            <hr {...props} className="m-0 border-hairline-strong" />
+          ),
+        }}
+      >
+        {text}
+      </ReactMarkdown>
     </div>
   );
 }
@@ -387,7 +463,7 @@ function AssistantMessage({ text, streaming = false }: { text: string; streaming
 function UserPill({ text }: { text: string }) {
   return (
     <div className="my-1.5 flex justify-center">
-      <div className="w-fit max-w-[90%] whitespace-pre-wrap break-words rounded-[22px] border border-hairline-strong bg-surface-thin px-5 py-2.5 text-[14.5px] leading-[1.5] text-fg-1 backdrop-blur-[6px]">
+      <div className="w-fit max-w-[90%] whitespace-pre-wrap break-words rounded-[22px] border border-hairline-strong bg-surface-thin px-5 py-2.5 text-[14.5px] font-light leading-[1.5] text-fg-1 backdrop-blur-[6px]">
         {text}
       </div>
     </div>
