@@ -4,7 +4,7 @@ A research prototype for a conversational memory architecture. SGC explores
 *how a reasoning agent should remember*: not one big context window, but tiered,
 salience-gated memory feeding a single ephemeral reasoning call.
 
-> **Phase 1.5** — Ephemeral Synth + TF-IDF Cosine Grep + 2-turn local buffer.
+> **Phase 1.5** — Ephemeral Sal + TF-IDF Cosine Grep + 2-turn local buffer.
 > No model-based retrieval. One reasoning component. One API call per turn.
 
 ## The idea
@@ -18,27 +18,41 @@ reasoning instance:
 | **Local Buffer** | The last 2 turns, verbatim | in-prompt |
 | **Cosine Grep ("Grepory")** | TF-IDF + cosine similarity over older history — pure math, no model | 0 ms, 0 tokens |
 
-These feed **Sal**, a "Synth" that exists for exactly one turn and is then
-retired. Sal replies in natural language and emits updated confidence scores.
-One API call per turn, total.
+These feed **Sal**, an ephemeral reasoning instance that exists for exactly one
+turn and is then retired. Sal replies in natural language and emits updated
+confidence scores. One API call per turn, total.
+
+## Running it
+
+```bash
+npm install
+cp .env.example .env          # then add your ANTHROPIC_API_KEY
+npm run dev
+```
+
+`npm run dev` starts the Vite client (`:5173`) and the Express proxy (`:3000`)
+together. Open `http://localhost:5173`. The API key lives only on the server —
+the browser never touches `api.anthropic.com`.
+
+| Command | Does |
+|---------|------|
+| `npm run dev` | Client + server, hot-reloading |
+| `npm test` | Vitest — covers the TF-IDF engine |
+| `npm run typecheck` | `tsc` on client and server |
+| `npm run lint` | ESLint |
+| `npm run build` | Production build into `dist/` |
 
 ## Repository layout
 
 ```
-sgc-phase-1-5.jsx     The Phase 1.5 implementation (and de facto spec)
-CLAUDE.md             Architecture + conventions for AI agents
-AGENTS.md             Confusion pointers — gotchas worth knowing
-scripts/agent/        Bash utilities for codebase recon and checks
-.claude/              Agents, skills, and the pre-commit QA gate
-docs/changelogs/      Month-by-month change log
+src/client/    React + TypeScript UI; lib/ holds the memory-architecture logic
+src/server/    Express proxy — holds ANTHROPIC_API_KEY, one route
+docs/          phase-1-5-reference.jsx (frozen original artifact) + changelogs
+scripts/agent/ Bash utilities for codebase recon and checks
+.claude/       Agents, skills, and the pre-commit QA gate
+CLAUDE.md      Architecture + conventions for AI agents
+AGENTS.md      Confusion pointers — gotchas worth knowing
 ```
-
-## Status
-
-Early prototype. There is **no build tooling yet** — `sgc-phase-1-5.jsx` is a
-standalone React artifact. Running it requires a host (Vite/CRA) or the Claude
-artifact runtime. See `CLAUDE.md` for details and `AGENTS.md` for known sharp
-edges.
 
 ## Working in this repo
 

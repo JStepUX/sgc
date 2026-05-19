@@ -29,22 +29,48 @@ documented:
 
 ---
 
-## `callClaude` sends no auth or version headers (project bootstrap, 2026-05-18)
+## The API key is server-only — never call api.anthropic.com from the client (package spinup, 2026-05-18)
 
-`callClaude` in `sgc-phase-1-5.jsx` (~line 197) POSTs to
-`https://api.anthropic.com/v1/messages` with only a `Content-Type` header — no
-`x-api-key`, no `anthropic-version`, no `anthropic-dangerous-direct-browser-access`.
-As written, that request only works behind something that injects auth (a proxy,
-or the Claude artifact runtime). A plain Vite/CRA build will get a 401 / CORS
-failure. This is expected for a Phase 1.5 prototype — but if you stand up real
-build tooling, routing the call through a keyed backend proxy is a prerequisite,
-not an afterthought. **Never hardcode an `sk-ant-...` key into the component**
-to "make it work" — `scripts/agent/health-check.sh` scans for exactly that.
+The browser never talks to `api.anthropic.com`. The React client builds the
+system prompt and POSTs it to `/api/turn` via `src/client/lib/api.ts`; the
+Express server (`src/server/index.ts`) holds `ANTHROPIC_API_KEY` and makes the
+real call. The Phase 1.5 artifact (`docs/phase-1-5-reference.jsx`) *did* fetch
+`api.anthropic.com` directly with no auth header — that only worked inside the
+Claude Artifact runtime, which injected credentials. If you add a client feature
+that needs the model, route it through the proxy. **Never hardcode an
+`sk-ant-...` key into client code** — `scripts/agent/health-check.sh` scans
+source for exactly that.
 
-## No build tooling — `npm`/`vite`/`vitest` are not wired (project bootstrap, 2026-05-18)
+## `npm run dev` is two processes, and the turn route needs a `.env` (package spinup, 2026-05-18)
 
-SGC has no `package.json`, bundler, or test harness yet. `sgc-phase-1-5.jsx` is a
-standalone reference artifact. Don't assume `npm test` or `npm run dev` exist;
-`scripts/agent/health-check.sh` is written to degrade gracefully and report this
-rather than fail. If a task needs a harness, flag it — standing one up is a
-deliberate future-phase decision, not a silent prerequisite.
+`npm run dev` uses `concurrently` to run the Vite client (`:5173`) and the
+Express proxy (`:3000`) together — Vite proxies `/api` to the server. If you
+only see the UI but every turn fails, the server process probably isn't up, or
+`.env` is missing. Copy `.env.example` to `.env` and set `ANTHROPIC_API_KEY`.
+Without it the server still starts (and prints a warning on boot), but it never
+constructs the Anthropic client, and `/api/turn` returns a 500 with a clear
+"ANTHROPIC_API_KEY is not set" message. `.env` is gitignored — never committed.
+
+## "Sal" is the identity; "turn" is the mechanism (naming pass, 2026-05-18)
+
+The model has one name — **Sal** — used wherever a user sees it (the persona
+prompt in `lib/prompt.ts`, the chat label). The codebase's neutral word for the
+mechanism is **turn**: `runTurn`, `/api/turn`, `TurnData`, `TurnMetadata`,
+`turnCount`. "Synth" was an early working title and has been retired — if you
+see it anywhere outside the frozen `docs/phase-1-5-reference.jsx`, that's a
+leftover worth fixing. Don't reintroduce it, and don't spread "Sal" onto
+plumbing (routes, interfaces) — keep the name reserved for the identity.
+
+## Agent bash scripts run under git-bash; `node_modules` is platform-specific (review, 2026-05-18)
+
+`scripts/agent/*.sh` are bash scripts. The project's standard environment is
+Windows, where they run under **git-bash** (which uses the Windows Node build) —
+that is what they are written and tested against. `node_modules` contains
+platform-native binaries (Rollup, esbuild); a tree installed by Windows `npm`
+will NOT load under WSL/Linux Node, and vice versa — `npm test` / `vitest` then
+fails with `Cannot find module @rollup/rollup-<platform>`. That is an
+environment mismatch, not a real test failure. If you work in WSL, run your own
+`npm install` there; never share one `node_modules` across shells of different
+OS. `scripts/agent/health-check.sh` detects this signature and reports it as an
+environment mismatch rather than a failure — but `npm test` run directly will
+still fail, so reinstall in the shell you intend to use.

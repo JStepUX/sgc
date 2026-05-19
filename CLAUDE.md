@@ -6,14 +6,14 @@ If you ever encounter something in the project that surprises you, please alert 
 memory architecture. It is not a product; it is an experiment about *how a
 reasoning agent should remember*.
 
-The current artifact is **Phase 1.5**, a single React component in
-`sgc-phase-1-5.jsx` (default export `SalienceGatedCognition`). One file, one
-reasoning component, one API call per turn.
+The current iteration is **Phase 1.5**. `docs/phase-1-5-reference.jsx` is the
+frozen original single-file artifact; the live implementation is the TypeScript
+React app under `src/`.
 
 ### The Architecture
 
-Every turn, three memory tiers are assembled into a single prompt and handed to
-one ephemeral reasoning instance:
+Every turn, three memory tiers are assembled (client-side) into a single prompt
+and handed to one ephemeral reasoning instance:
 
 1. **Constitutional Memories** — a small, curated set of durable facts about the
    user. Each carries a 0–100 confidence score. The user edits them in the UI;
@@ -25,29 +25,65 @@ one ephemeral reasoning instance:
    API call. No drift surface.** This is the deliberate design choice of Phase
    1.5: retrieval must not be a reasoning component.
 
-These feed **Sal**, an ephemeral "Synth" that exists for exactly one turn, then
-is retired — it has no memory of prior turns. Sal responds in natural language,
-then emits a fenced JSON block with updated confidence scores. **One API call
-per turn**, total. The TF-IDF retrieval costs 0 ms and 0 tokens.
+These feed **Sal**, an ephemeral reasoning instance that exists for exactly one
+turn, then is retired — it has no memory of prior turns. Sal responds in natural
+language, then emits a fenced JSON block with updated confidence scores. **One
+API call per turn**, total. The TF-IDF retrieval costs 0 ms and 0 tokens.
 
-### Mission Brief
+> **Naming:** the model's identity is **Sal** — used everywhere a user sees it
+> (the persona prompt, the chat label). "Turn" is the codebase's neutral word
+> for the mechanism — one user input → one model call → one response. ("Synth"
+> was an early working title; it has been retired except inside the frozen
+> `docs/phase-1-5-reference.jsx`.)
 
-`sgc-phase-1-5.jsx` is both the implementation *and* the spec — its banner
-comments state the Phase 1.5 contract ("No model-based retrieval. One reasoning
-component. One API call."). Preserve those invariants. A change that adds a
-second API call, or makes retrieval model-based, is a phase change, not a fix —
-raise it with the developer first.
+### Mission Brief — preserve the invariants
+
+`docs/phase-1-5-reference.jsx` is both the original implementation *and* the
+spec — its banner comments state the Phase 1.5 contract ("No model-based
+retrieval. One reasoning component. One API call."). Preserve those invariants.
+A change that adds a second API call, or makes retrieval model-based (embeddings,
+a semantic-search model), is a **phase change, not a fix** — raise it with the
+developer first. The cosine grep is the thesis of Phase 1.5, not a placeholder.
+
+### Project Structure
+
+```
+src/client/
+  main.tsx                    React entry point
+  SalienceGatedCognition.tsx  the UI — main app + MemoryPanel / TurnInspector / TokenChart
+  lib/
+    types.ts                  shared domain types (ChatEntry, Memory)
+    tfidf.ts                  the TF-IDF cosine engine ("Grepory") — pure, deterministic
+    tfidf.test.ts             Vitest behavioral tests for the engine
+    prompt.ts                 system-prompt builder + response parser
+    api.ts                    runTurn() — POSTs to /api/turn
+src/server/
+  index.ts                    Express proxy — holds ANTHROPIC_API_KEY, one route
+docs/
+  phase-1-5-reference.jsx     frozen original single-file artifact
+  changelogs/                 month-by-month change log
+```
+
+The reasoning split: **all three memory tiers are assembled in the browser**
+(`SalienceGatedCognition.tsx` + `lib/`). The server (`src/server/index.ts`) is
+deliberately dumb — it attaches the API key and forwards the request. No memory
+logic lives server-side.
 
 ### Tech / Shape
 
-- React (function component + hooks: `useState`, `useRef`, `useEffect`,
-  `useCallback`).
-- Browser `fetch` to `https://api.anthropic.com/v1/messages`; model id
-  `claude-sonnet-4-20250514` is hardcoded in `callClaude` (~line 204).
-- **No build tooling yet.** There is no `package.json`, bundler, or test
-  harness. `sgc-phase-1-5.jsx` is a standalone reference artifact; running it
-  requires a host (Vite/CRA) or the Claude artifact runtime. Standing up that
-  tooling is a future-phase task — do not assume `npm`/`vite`/`vitest` work.
+- **Client:** React 19 + TypeScript, built with Vite 6. UI is hand-rolled
+  inline styles + CSS custom properties — no component library, no Tailwind.
+- **Server:** a thin Express proxy. `@anthropic-ai/sdk`, one route
+  (`POST /api/turn`). Model defaults to `claude-opus-4-7`, overridable via the
+  `ANTHROPIC_MODEL` env var.
+- **Tests:** Vitest. The TF-IDF engine (`lib/tfidf.ts`) is pure logic and the
+  prime test target — see `lib/tfidf.test.ts`.
+- **Run it:** `npm install`, then `cp .env.example .env` and add an
+  `ANTHROPIC_API_KEY`, then `npm run dev`. That runs the Vite client (`:5173`)
+  and the Express proxy (`:3000`) together via `concurrently`; Vite proxies
+  `/api` to the server. Open `http://localhost:5173`.
+- **Key handling:** the API key lives *only* on the server. The browser calls
+  `/api/turn` and never touches `api.anthropic.com`. See `AGENTS.md`.
 
 ## Core Values
 
@@ -71,11 +107,11 @@ git/health checks, see if one of these already does it.** Run via
 | `codebase-snapshot.sh` | Project tree, git log, file counts, Claude surface | `codebase-snapshot.sh` |
 | `git-context.sh` | Status, diffs, branch info for commits/PRs | `git-context.sh [base-branch]` |
 | `related-files.sh` | Grep for a term + match context, grouped by file | `related-files.sh <term> [dir]` |
-| `health-check.sh` | Build tooling, tests, git state, code/secret markers | `health-check.sh` |
+| `health-check.sh` | Build tooling, lint, tests, git state, code/secret markers | `health-check.sh` |
 
 Shared utilities (project-root detection, colors, exclude patterns,
-`SOURCE_GLOBS`) live in `_common.sh`. The script set is intentionally small —
-SGC is a single-file project; it will grow as the project does.
+`SOURCE_GLOBS`) live in `_common.sh`. `health-check.sh` runs `npm run lint` and
+`npm test` when those scripts exist — which they now do.
 
 ## Claude Code Surface (`.claude/`)
 
