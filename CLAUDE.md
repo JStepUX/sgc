@@ -27,8 +27,9 @@ and handed to one ephemeral reasoning instance:
 
 These feed **Sal**, an ephemeral reasoning instance that exists for exactly one
 turn, then is retired — it has no memory of prior turns. Sal responds in natural
-language, then emits a fenced JSON block with updated confidence scores. **One
-API call per turn**, total. The TF-IDF retrieval costs 0 ms and 0 tokens.
+language, then emits a `<turn-meta>` block with updated confidence scores. **One
+API call per turn**, total — streamed to the browser as Server-Sent Events. The
+TF-IDF retrieval costs 0 ms and 0 tokens.
 
 > **Naming:** the model's identity is **Sal** — used everywhere a user sees it
 > (the persona prompt, the chat label). "Turn" is the codebase's neutral word
