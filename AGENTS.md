@@ -43,7 +43,7 @@ source for exactly that.
 
 ## `npm run dev` is two processes, and the turn route needs a `.env` (package spinup, 2026-05-18)
 
-`npm run dev` uses `concurrently` to run the Vite client (`:5173`) and the
+`npm run dev` uses `concurrently` to run the Vite client (`:5555`) and the
 Express proxy (`:3000`) together — Vite proxies `/api` to the server. If you
 only see the UI but every turn fails, the server process probably isn't up, or
 `.env` is missing. Copy `.env.example` to `.env` and set `ANTHROPIC_API_KEY`.

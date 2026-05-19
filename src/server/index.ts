@@ -16,9 +16,9 @@ import cors from 'cors';
 import Anthropic from '@anthropic-ai/sdk';
 
 const PORT = Number(process.env.PORT) || 3000;
-const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173';
+const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5555';
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-7';
-const MAX_TOKENS = Number(process.env.ANTHROPIC_MAX_TOKENS) || 4096;
+const MAX_TOKENS = Number(process.env.ANTHROPIC_MAX_TOKENS) || 16384;
 const API_KEY = process.env.ANTHROPIC_API_KEY;
 
 // Construct the client only when a key is present. With no key the server
@@ -98,7 +98,7 @@ app.post('/api/turn', async (req, res) => {
 // presence-based, not NODE_ENV-based: `npm start` then works without anyone
 // having to set NODE_ENV. In dev it stays inert — the server runs from
 // src/server/, so clientDir resolves to src/client/, which has no index.html
-// (index.html lives at the repo root and Vite serves the client on :5173).
+// (index.html lives at the repo root and Vite serves the client on :5555).
 const clientDir = resolve(dirname(fileURLToPath(import.meta.url)), '../client');
 if (existsSync(resolve(clientDir, 'index.html'))) {
   app.use(express.static(clientDir));

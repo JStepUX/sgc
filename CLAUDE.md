@@ -79,9 +79,9 @@ logic lives server-side.
 - **Tests:** Vitest. The TF-IDF engine (`lib/tfidf.ts`) is pure logic and the
   prime test target — see `lib/tfidf.test.ts`.
 - **Run it:** `npm install`, then `cp .env.example .env` and add an
-  `ANTHROPIC_API_KEY`, then `npm run dev`. That runs the Vite client (`:5173`)
+  `ANTHROPIC_API_KEY`, then `npm run dev`. That runs the Vite client (`:5555`)
   and the Express proxy (`:3000`) together via `concurrently`; Vite proxies
-  `/api` to the server. Open `http://localhost:5173`.
+  `/api` to the server. Open `http://localhost:5555`.
 - **Key handling:** the API key lives *only* on the server. The browser calls
   `/api/turn` and never touches `api.anthropic.com`. See `AGENTS.md`.
 

@@ -30,8 +30,8 @@ cp .env.example .env          # then add your ANTHROPIC_API_KEY
 npm run dev
 ```
 
-`npm run dev` starts the Vite client (`:5173`) and the Express proxy (`:3000`)
-together. Open `http://localhost:5173`. The API key lives only on the server —
+`npm run dev` starts the Vite client (`:5555`) and the Express proxy (`:3000`)
+together. Open `http://localhost:5555`. The API key lives only on the server —
 the browser never touches `api.anthropic.com`.
 
 | Command | Does |

@@ -11,7 +11,10 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: 5555,
+    // Fail loudly if 5555 is taken rather than silently drifting to the next
+    // free port — a drifted port breaks the server's CORS_ORIGIN match.
+    strictPort: true,
     // The browser never talks to api.anthropic.com directly. /api is proxied
     // to the Express server, which holds ANTHROPIC_API_KEY.
     proxy: {
