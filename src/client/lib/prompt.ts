@@ -4,16 +4,26 @@
 // buildPrompt assembles the three memory tiers (constitutional memories,
 // local buffer, cosine-grep results) into the single system prompt handed to
 // Sal. parseTurnResponse splits Sal's reply into display text + the trailing
-// JSON metadata block.
+// metadata block.
+//
+// Sal's confidence-score metadata is delimited by an explicit <turn-meta>…
+// </turn-meta> tag pair rather than a ```json fence. The tags are unambiguous:
+// the streaming UI can hide the block the instant the opening tag appears
+// (see stripStreamingMeta), and the parser never has to guess which fenced
+// block is metadata versus an example block inside Sal's prose.
 // ============================================================
 
 import type { Memory, ChatEntry } from './types';
 import type { GrepResult } from './tfidf';
 
-/** The JSON metadata block Sal appends to every response. */
+/** The metadata block Sal appends to every response. */
 export interface TurnMetadata {
   confidence_scores: Record<string, number>;
 }
+
+/** Delimiters wrapping Sal's trailing metadata block. */
+export const META_OPEN = '<turn-meta>';
+export const META_CLOSE = '</turn-meta>';
 
 /** Result of splitting a raw turn response into prose + metadata. */
 export interface ParsedTurn {
@@ -71,9 +81,9 @@ CONFIDENCE SCORING:
 - If contradicted, nudge downward (max -5 per turn).
 - Scores clamp between 0 and 100. Be conservative. Most turns leave most scores unchanged.
 
-OUTPUT FORMAT — you MUST end your response with a fenced JSON block:
+OUTPUT FORMAT — you MUST end your response with a <turn-meta> block:
 
-\`\`\`json
+<turn-meta>
 {
   "confidence_scores": {
     "M1": 50,
@@ -81,47 +91,91 @@ OUTPUT FORMAT — you MUST end your response with a fenced JSON block:
     "M3": 48
   }
 }
-\`\`\`
+</turn-meta>
 
-IMPORTANT: The JSON block must be the very last thing in your response. Natural language first, then the JSON block.`;
+IMPORTANT: The <turn-meta> block must be the very last thing in your response. Natural language first, then the block. Write the raw JSON directly between the tags — do NOT wrap it in code fences. The tags let the UI hide the metadata while your reply streams in.`;
 }
 
 /**
- * Split a raw turn response into display text and the trailing JSON metadata
+ * Split a completed turn response into display text and the trailing metadata
  * block.
  *
- * Sal is instructed to end every response with the metadata block, so this
- * anchors on the *last* fenced ```json block — not the first. (Sal's
- * natural-language answer may itself contain an earlier JSON example; matching
- * the first block would mis-parse that example as metadata and truncate the
- * visible answer at it.) The trailing block is only treated as metadata if it
- * sits at the very end of the response AND carries a `confidence_scores`
- * object; anything else is left intact as display text.
+ * Sal is instructed to end every response with a <turn-meta> block, so this
+ * anchors on the *last* opening tag — not the first. (Sal's natural-language
+ * answer may itself mention the tag; matching the first occurrence could
+ * mis-parse that mention as metadata and truncate the visible answer at it.)
+ * The block is only treated as metadata if it sits at the very end of the
+ * response AND carries a `confidence_scores` object; anything else is left
+ * intact as display text.
  */
 export function parseTurnResponse(raw: string): ParsedTurn {
-  const blocks = [...raw.matchAll(/```json\s*([\s\S]*?)\s*```/g)];
-  const last = blocks.at(-1);
+  const open = raw.lastIndexOf(META_OPEN);
+  if (open === -1) return { displayText: raw, metadata: null };
 
-  if (last) {
-    const start = last.index ?? 0;
-    const trailing = raw.slice(start + last[0].length).trim();
-    // Require the block to be the last thing in the response.
-    if (trailing === '') {
-      try {
-        const parsed: unknown = JSON.parse(last[1]);
-        if (parsed !== null && typeof parsed === 'object' && 'confidence_scores' in parsed) {
-          const scores = (parsed as Record<string, unknown>).confidence_scores;
-          if (scores !== null && typeof scores === 'object') {
-            return { displayText: raw.slice(0, start).trim(), metadata: parsed as TurnMetadata };
-          }
-        }
-      } catch (e) {
-        console.warn('Failed to parse turn metadata:', e);
+  const close = raw.indexOf(META_CLOSE, open + META_OPEN.length);
+  if (close === -1) return { displayText: raw, metadata: null };
+
+  // Require the block to be the last thing in the response — text after the
+  // closing tag means this isn't a clean trailing metadata block.
+  if (raw.slice(close + META_CLOSE.length).trim() !== '') {
+    return { displayText: raw, metadata: null };
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(raw.slice(open + META_OPEN.length, close));
+    if (parsed !== null && typeof parsed === 'object' && 'confidence_scores' in parsed) {
+      const scores = (parsed as Record<string, unknown>).confidence_scores;
+      if (scores !== null && typeof scores === 'object') {
+        return { displayText: raw.slice(0, open).trim(), metadata: parsed as TurnMetadata };
       }
     }
+  } catch (e) {
+    console.warn('Failed to parse turn metadata:', e);
   }
 
   // No valid trailing metadata — treat the whole response as display text
-  // rather than risk truncating it at an in-answer code block.
+  // rather than risk truncating it at a stray tag mention.
   return { displayText: raw, metadata: null };
+}
+
+/**
+ * Trim a partial, mid-stream turn response down to just the prose safe to show.
+ *
+ * While Sal's reply streams in token by token, the trailing <turn-meta> block
+ * would otherwise flicker into the chat bubble before the turn completes. This
+ * drops everything from that block's opening tag onward — and also holds back a
+ * trailing *partial* of the tag, since `<turn-meta>` can arrive split across
+ * SSE chunks (`<turn-` in one chunk, `meta>` in the next).
+ *
+ * Crucially, only a *JSON-bearing* <turn-meta> is the metadata block: Sal may
+ * legitimately mention the tag in prose ("I emit a <turn-meta> block"), and
+ * that mention must stay visible — which keeps this consistent with
+ * parseTurnResponse, which likewise only treats a JSON block as metadata. A
+ * mention is followed by words; the real block is followed by `{`. Once the
+ * turn finishes, call parseTurnResponse on the full raw text for the
+ * authoritative split.
+ */
+export function stripStreamingMeta(partial: string): string {
+  for (let from = 0; ; ) {
+    const open = partial.indexOf(META_OPEN, from);
+    if (open === -1) break;
+    const after = partial.slice(open + META_OPEN.length);
+    // `{` → the JSON block has started. All-whitespace (including empty) → the
+    // block almost certainly just opened and its `{` is still streaming in.
+    // Either way, hide from here. Anything else is a prose mention of the tag —
+    // skip it and keep looking for the real block.
+    if (/^\s*\{/.test(after) || /^\s*$/.test(after)) {
+      return partial.slice(0, open).replace(/\s+$/, '');
+    }
+    from = open + META_OPEN.length;
+  }
+
+  // No opening tag yet — hold back any trailing suffix that could be the start
+  // of one, so a tag split across SSE chunks never half-leaks into the bubble.
+  for (let n = META_OPEN.length - 1; n > 0; n--) {
+    if (partial.endsWith(META_OPEN.slice(0, n))) {
+      return partial.slice(0, partial.length - n);
+    }
+  }
+  return partial;
 }
