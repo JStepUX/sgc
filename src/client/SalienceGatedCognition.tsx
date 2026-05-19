@@ -1,8 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { ArrowUp, Plus } from 'lucide-react';
 import type { Memory, ChatEntry } from './lib/types';
 import { cosineSearch } from './lib/tfidf';
 import { buildPrompt, parseTurnResponse, stripStreamingMeta } from './lib/prompt';
 import { runTurn } from './lib/api';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 
 // ============================================================
 // SALIENCE-GATED COGNITION — Phase 1.5
@@ -10,7 +13,9 @@ import { runTurn } from './lib/api';
 // No model-based retrieval. One reasoning component. One API call.
 //
 // The pure logic (TF-IDF engine, prompt builder, transport) lives in ./lib.
-// This file is the React surface only.
+// This file is the React surface only. Styling is Tailwind v4 utilities +
+// shadcn/ui primitives; the design tokens and aurora CSS live in index.css.
+// The architecture and the Phase 1.5 invariants above are untouched.
 // ============================================================
 
 const DEFAULT_MEMORIES: Memory[] = [
@@ -51,8 +56,92 @@ interface TokenHistoryEntry {
   inputTokens: number;
 }
 
+// Confidence drives a warm-shifted border/text colour: sage when trusted,
+// brick when doubted, a quiet neutral in between.
+function confidenceTone(c: number): string {
+  if (c > 70) return 'var(--color-success)';
+  if (c < 30) return 'var(--color-danger)';
+  return 'var(--color-fg-1)';
+}
+
+// Shared label style for the context rail's section headers.
+const RAIL_LABEL = 'font-mono text-[11px] tracking-[0.18em] uppercase text-fg-3 mb-1';
+const RAIL_SUB = 'font-mono text-[10.5px] tracking-[0.16em] uppercase text-fg-3 mt-1.5';
+
 // ============================================================
-// COMPONENTS
+// AURORA — the warm field behind the glass. Drifts only while the
+// user is active; each keystroke sends a synth-style pulse up from
+// the bottom. The aurora is the thinking made visible. (See index.css.)
+// ============================================================
+
+function AuroraBackground({ gate, active, pulseKey }: { gate: number; active: boolean; pulseKey: number }) {
+  const sat = 80 + gate * 30;
+  const bright = 0.92 + gate * 0.08;
+  return (
+    <div
+      className="sal-aurora"
+      data-active={active}
+      style={{ filter: `saturate(8%) brightness(0.34) saturate(${sat}%) brightness(${bright})` }}
+      aria-hidden="true"
+    >
+      <div className="sal-aurora-base" />
+      <div className="sal-aurora-grain" />
+      {/* Re-keyed per keystroke so React remounts it and the animation restarts. */}
+      <div className="sal-aurora-pulse" key={pulseKey} />
+    </div>
+  );
+}
+
+// ============================================================
+// PHASE BAR — title, phase badge, run-mode metadata, begin-again.
+// ============================================================
+
+function PhaseBar({ processing, onReset }: { processing: boolean; onReset: () => void }) {
+  const meta = ['1 API call/turn', 'TF-IDF Grep', '2-turn buffer'];
+  return (
+    <header className="sal-topbar relative z-30 flex shrink-0 flex-wrap items-center justify-between gap-y-2 border-b border-hairline px-7 pt-[18px] pb-4 backdrop-blur-[8px]">
+      <div className="flex items-center gap-[14px]">
+        <span
+          className="size-2 shrink-0 rounded-full bg-ember shadow-[0_0_10px_var(--color-ember)] animate-pulse-dot"
+          aria-hidden="true"
+        />
+        <span className="text-base font-semibold tracking-[-0.005em] text-fg-1">
+          Salience-Gated Cognition
+        </span>
+        <span className="rounded-full border border-ember/35 bg-ember/[0.08] px-2.5 py-1 font-mono text-[11px] font-medium tracking-[0.08em] text-ember">
+          PHASE 1.5
+        </span>
+      </div>
+      <div className="flex items-center gap-[14px]">
+        {processing && (
+          <span className="font-mono text-[11px] tracking-[0.04em] text-ember animate-considering">
+            considering
+          </span>
+        )}
+        <span className="hidden items-center gap-2 font-mono text-[11px] tracking-[0.04em] text-fg-3 md:flex">
+          {meta.map((m, i) => (
+            <span key={i} className="flex items-center gap-2">
+              {i > 0 && <span className="text-fg-4">·</span>}
+              <span>{m}</span>
+            </span>
+          ))}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onReset}
+          disabled={processing}
+          className="font-mono text-[11px] text-fg-3"
+        >
+          Begin again
+        </Button>
+      </div>
+    </header>
+  );
+}
+
+// ============================================================
+// MEMORY PANEL — Constitutional Memories.
 // ============================================================
 
 interface MemoryPanelProps {
@@ -65,273 +154,242 @@ interface MemoryPanelProps {
 function MemoryPanel({ memories, onUpdate, onAdd, onRemove }: MemoryPanelProps) {
   const [newMemText, setNewMemText] = useState('');
 
+  const submitNew = () => {
+    if (newMemText.trim()) {
+      onAdd(newMemText.trim());
+      setNewMemText('');
+    }
+  };
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-      <div style={{
-        fontFamily: "'JetBrains Mono', 'SF Mono', 'Fira Code', monospace",
-        fontSize: '10px',
-        textTransform: 'uppercase',
-        letterSpacing: '2px',
-        color: 'var(--text-dim)',
-        marginBottom: '2px',
-      }}>Constitutional Memories</div>
+    <section className="flex flex-col gap-2.5">
+      <div className={RAIL_LABEL}>Constitutional Memories</div>
 
-      {memories.map((mem, i) => (
-        <div key={mem.id} style={{
-          background: 'var(--surface-raised)',
-          borderRadius: '6px',
-          padding: '10px 12px',
-          border: `1px solid ${mem.confidence > 70 ? 'var(--accent-green)' : mem.confidence < 30 ? 'var(--accent-red)' : 'var(--border)'}`,
-          transition: 'border-color 0.3s ease',
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '10px', color: 'var(--text-dim)' }}>M{i + 1}</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{ width: '60px', height: '4px', background: 'var(--surface-deep)', borderRadius: '2px', overflow: 'hidden' }}>
-                <div style={{
-                  width: `${mem.confidence}%`,
-                  height: '100%',
-                  background: mem.confidence > 70 ? 'var(--accent-green)' : mem.confidence < 30 ? 'var(--accent-red)' : 'var(--accent-amber)',
-                  transition: 'width 0.5s ease, background 0.5s ease',
-                  borderRadius: '2px',
-                }} />
+      <div className="flex flex-col gap-2.5">
+        {memories.map((mem, i) => {
+          const tone = confidenceTone(mem.confidence);
+          const toned = mem.confidence > 70 || mem.confidence < 30;
+          return (
+            <Card
+              key={mem.id}
+              className="gap-0 rounded-[14px] border px-[14px] pt-[14px] pb-3 shadow-none transition-colors"
+              style={{ borderColor: toned ? `color-mix(in srgb, ${tone} 45%, transparent)` : undefined }}
+            >
+              <div className="mb-2 flex items-baseline justify-between font-mono text-[10.5px] tracking-[0.08em] text-fg-3">
+                <span className="text-fg-2">M{i + 1}</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium" style={{ color: tone }}>{mem.confidence}%</span>
+                  <button
+                    className="cursor-pointer px-0.5 text-sm leading-none text-fg-4 transition-colors hover:text-danger"
+                    onClick={() => onRemove(mem.id)}
+                    aria-label="Remove memory"
+                  >×</button>
+                </div>
               </div>
-              <span style={{
-                fontFamily: "'JetBrains Mono', monospace",
-                fontSize: '11px',
-                color: mem.confidence > 70 ? 'var(--accent-green)' : mem.confidence < 30 ? 'var(--accent-red)' : 'var(--accent-amber)',
-                minWidth: '32px',
-                textAlign: 'right',
-              }}>{mem.confidence}%</span>
-              <button
-                onClick={() => onRemove(mem.id)}
-                style={{
-                  background: 'none', border: 'none', color: 'var(--text-dim)',
-                  cursor: 'pointer', fontSize: '14px', padding: '0 2px', lineHeight: 1, opacity: 0.5,
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = 'var(--accent-red)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.5'; e.currentTarget.style.color = 'var(--text-dim)'; }}
-              >×</button>
-            </div>
-          </div>
-          <div
-            contentEditable
-            suppressContentEditableWarning
-            onBlur={(e) => onUpdate(mem.id, e.currentTarget.textContent ?? '')}
-            style={{
-              fontSize: '12.5px', lineHeight: '1.5', color: 'var(--text-primary)',
-              outline: 'none', cursor: 'text', minHeight: '18px',
-            }}
-          >{mem.text}</div>
-          {mem.history.length > 0 && (
-            <div style={{ marginTop: '6px', display: 'flex', gap: '2px', alignItems: 'center' }}>
-              {mem.history.slice(-20).map((h, j) => (
-                <div key={j} style={{
-                  width: '3px', height: '12px', borderRadius: '1px',
-                  background: h.delta > 0 ? 'var(--accent-green)' : h.delta < 0 ? 'var(--accent-red)' : 'var(--border)',
-                  opacity: h.delta === 0 ? 0.3 : 0.7,
-                }} />
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
+              <div
+                className="mb-3 min-h-[18px] cursor-text rounded-[3px] text-[13px] leading-[1.5] text-fg-1 outline-none focus:ring-2 focus:ring-ember/40"
+                contentEditable
+                suppressContentEditableWarning
+                onBlur={(e) => onUpdate(mem.id, e.currentTarget.textContent ?? '')}
+              >{mem.text}</div>
+              <div className="relative h-[3px] overflow-hidden rounded-sm bg-hairline-strong">
+                <span
+                  className="absolute left-0 top-0 h-full rounded-sm bg-linear-to-r from-ember-soft to-ember transition-[width] duration-500"
+                  style={{ width: `${mem.confidence}%` }}
+                />
+              </div>
+              {mem.history.length > 0 && (
+                <div className="mt-2 flex items-center gap-0.5">
+                  {mem.history.slice(-20).map((h, j) => (
+                    <span
+                      key={j}
+                      className="h-3 w-[3px] rounded-[1px]"
+                      style={{
+                        background: h.delta > 0 ? 'var(--color-success)' : h.delta < 0 ? 'var(--color-danger)' : 'var(--color-hairline-strong)',
+                        opacity: h.delta === 0 ? 0.35 : 0.75,
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </Card>
+          );
+        })}
+      </div>
 
-      <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+      <div className="mt-1 flex gap-1.5">
         <input
           value={newMemText}
           onChange={(e) => setNewMemText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && newMemText.trim()) {
-              onAdd(newMemText.trim());
-              setNewMemText('');
-            }
-          }}
+          onKeyDown={(e) => { if (e.key === 'Enter') submitNew(); }}
           placeholder="Add memory..."
-          style={{
-            flex: 1, background: 'var(--surface-deep)', border: '1px solid var(--border)',
-            borderRadius: '4px', padding: '6px 10px', color: 'var(--text-primary)',
-            fontSize: '12px', fontFamily: 'inherit', outline: 'none',
-          }}
+          className="flex-1 rounded-[10px] border bg-surface px-3 py-2 text-[12.5px] text-fg-1 outline-none placeholder:text-fg-4 focus:border-ember/45"
         />
-        <button
-          onClick={() => { if (newMemText.trim()) { onAdd(newMemText.trim()); setNewMemText(''); } }}
-          style={{
-            background: 'var(--accent-blue)', color: '#fff', border: 'none',
-            borderRadius: '4px', padding: '6px 12px', fontSize: '11px',
-            cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace",
-          }}
-        >+</button>
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={submitNew}
+          aria-label="Add memory"
+          className="size-8 rounded-[10px] text-ember"
+        ><Plus className="size-3.5" /></Button>
       </div>
-    </div>
+    </section>
   );
 }
 
+// ============================================================
+// TURN INSPECTOR — Architecture Trace, status, citations, deltas.
+// ============================================================
+
 function TurnInspector({ turnData }: { turnData: TurnData | null }) {
-  if (!turnData) return (
-    <div style={{ color: 'var(--text-dim)', fontSize: '12px', fontStyle: 'italic', padding: '12px 0' }}>
-      Send a message to see turn diagnostics.
-    </div>
-  );
+  if (!turnData) {
+    return <div className="py-2 text-[12.5px] italic text-fg-3">Nothing yet. Say something.</div>;
+  }
+
+  const metrics = [
+    { value: turnData.inputTokens.toLocaleString(), label: 'Input tk' },
+    { value: turnData.outputTokens.toLocaleString(), label: 'Output tk' },
+    { value: `${(turnData.totalLatency / 1000).toFixed(1)}s`, label: 'Latency' },
+  ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-      <div style={{
-        fontFamily: "'JetBrains Mono', monospace", fontSize: '10px',
-        textTransform: 'uppercase', letterSpacing: '2px', color: 'var(--text-dim)',
-      }}>Turn {turnData.turnNumber} Diagnostics</div>
+    <section className="flex flex-col gap-2.5">
+      <div className={RAIL_LABEL}>Turn {turnData.turnNumber} Diagnostics</div>
 
-      {/* Payload stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
-        {[
-          { label: 'Input Tk', value: turnData.inputTokens, color: 'var(--accent-blue)' },
-          { label: 'Output Tk', value: turnData.outputTokens, color: 'var(--accent-green)' },
-          { label: 'Latency', value: `${(turnData.totalLatency / 1000).toFixed(1)}s`, color: 'var(--accent-amber)' },
-        ].map((stat) => (
-          <div key={stat.label} style={{
-            background: 'var(--surface-raised)', borderRadius: '4px', padding: '8px', textAlign: 'center',
-          }}>
-            <div style={{
-              fontFamily: "'JetBrains Mono', monospace", fontSize: '16px',
-              color: stat.color, fontWeight: 600,
-            }}>{stat.value}</div>
-            <div style={{
-              fontSize: '9px', textTransform: 'uppercase', letterSpacing: '1px',
-              color: 'var(--text-dim)', marginTop: '2px',
-            }}>{stat.label}</div>
-          </div>
+      <div className={RAIL_SUB}>Architecture Trace</div>
+      <div className="grid grid-cols-3 gap-2">
+        {metrics.map((m) => (
+          <Card key={m.label} className="gap-0 rounded-xl border px-2 py-3 text-center shadow-none">
+            <div className="font-mono text-lg font-medium tracking-[-0.01em] text-ember">{m.value}</div>
+            <div className="mt-1 font-mono text-[9.5px] uppercase tracking-[0.16em] text-fg-3">{m.label}</div>
+          </Card>
         ))}
       </div>
 
-      {/* Architecture trace */}
-      <div style={{
-        background: 'var(--surface-raised)', borderRadius: '4px', padding: '8px 10px',
-      }}>
-        <div style={{
-          fontFamily: "'JetBrains Mono', monospace", fontSize: '10px',
-          textTransform: 'uppercase', letterSpacing: '1.5px', color: 'var(--text-dim)', marginBottom: '6px',
-        }}>Architecture Trace</div>
+      <ul className="mt-2 mb-1 flex list-none flex-col gap-1.5 p-0">
+        <li className="flex items-center gap-2 font-mono text-[11px] tracking-[0.02em] text-fg-2">
+          <span className="size-[5px] shrink-0 rounded-full bg-ember" />
+          Local buffer: {turnData.localBufferSize > 0 ? `${turnData.localBufferSize} msgs` : 'empty (turn 1)'}
+        </li>
+        <li className="flex items-center gap-2 font-mono text-[11px] tracking-[0.02em] text-fg-2">
+          <span className="size-[5px] shrink-0 rounded-full bg-ember" />
+          Cosine Grep: {turnData.grepFired
+            ? `${turnData.grepMatches} match${turnData.grepMatches !== 1 ? 'es' : ''}`
+            : 'no matches above threshold'}
+        </li>
+      </ul>
 
-        {/* Local buffer */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-          <div style={{
-            width: '6px', height: '6px', borderRadius: '50%',
-            background: turnData.localBufferSize > 0 ? 'var(--accent-green)' : 'var(--border)',
-          }} />
-          <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-            Local buffer: {turnData.localBufferSize > 0 ? `${turnData.localBufferSize} msgs` : 'empty (turn 1)'}
-          </span>
-        </div>
-
-        {/* Cosine search */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: turnData.grepFired ? '6px' : 0 }}>
-          <div style={{
-            width: '6px', height: '6px', borderRadius: '50%',
-            background: turnData.grepFired ? 'var(--accent-amber)' : 'var(--border)',
-          }} />
-          <span style={{ fontSize: '11px', color: turnData.grepFired ? 'var(--accent-amber)' : 'var(--text-secondary)' }}>
-            Cosine Grep: {turnData.grepFired ? `${turnData.grepMatches} match${turnData.grepMatches !== 1 ? 'es' : ''}` : 'no matches above threshold'}
-          </span>
-        </div>
-
-        {turnData.grepFired && turnData.grepDetails && (
-          <div style={{
-            marginLeft: '12px', borderLeft: '2px solid var(--accent-amber)', paddingLeft: '8px',
-          }}>
-            {turnData.grepDetails.map((g, i) => (
-              <div key={i} style={{
-                fontSize: '10px', fontFamily: "'JetBrains Mono', monospace",
-                color: 'var(--text-dim)', lineHeight: 1.5, marginBottom: '4px',
-              }}>
-                <span style={{ color: 'var(--accent-amber)' }}>Turn {g.turnIndex}</span>
-                <span style={{ color: 'var(--text-dim)' }}> — score: {g.score.toFixed(3)}</span>
-                <div style={{
-                  color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap', maxWidth: '240px', marginTop: '1px',
-                }}>{g.preview}</div>
+      {turnData.grepFired && turnData.grepDetails && (
+        <div className="mt-1 flex flex-col gap-2">
+          {turnData.grepDetails.map((g, i) => (
+            <Card
+              key={i}
+              className="gap-0 rounded-[4px_10px_10px_4px] border border-l-2 border-l-ember px-3 py-2.5 shadow-none"
+            >
+              <div className="mb-1 flex items-baseline gap-3 font-mono text-[10.5px] text-fg-3">
+                <span className="font-medium text-fg-1">Turn {g.turnIndex}</span>
+                <span>score: {g.score.toFixed(3)}</span>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* API calls this turn */}
-      <div style={{
-        background: 'var(--surface-raised)', borderRadius: '4px', padding: '8px 10px',
-        border: '1px solid var(--border)',
-      }}>
-        <div style={{
-          fontFamily: "'JetBrains Mono', monospace", fontSize: '10px',
-          textTransform: 'uppercase', letterSpacing: '1.5px', color: 'var(--text-dim)', marginBottom: '4px',
-        }}>API Calls This Turn</div>
-        <div style={{
-          fontFamily: "'JetBrains Mono', monospace", fontSize: '22px',
-          color: 'var(--accent-blue)', fontWeight: 700,
-        }}>1</div>
-        <div style={{ fontSize: '10px', color: 'var(--text-dim)' }}>
-          Sal only. Grep is TF-IDF (0ms).
-        </div>
-      </div>
-
-      {/* Confidence deltas */}
-      {turnData.confidenceDeltas && (
-        <div style={{ background: 'var(--surface-raised)', borderRadius: '4px', padding: '8px 10px' }}>
-          <div style={{
-            fontFamily: "'JetBrains Mono', monospace", fontSize: '10px',
-            textTransform: 'uppercase', letterSpacing: '1.5px', color: 'var(--text-dim)', marginBottom: '6px',
-          }}>Confidence Deltas</div>
-          {turnData.confidenceDeltas.map((d, i) => (
-            <div key={i} style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              padding: '2px 0', fontSize: '11px',
-            }}>
-              <span style={{ color: 'var(--text-secondary)' }}>M{i + 1}</span>
-              <span style={{
-                fontFamily: "'JetBrains Mono', monospace",
-                color: d.delta > 0 ? 'var(--accent-green)' : d.delta < 0 ? 'var(--accent-red)' : 'var(--text-dim)',
-                fontWeight: d.delta !== 0 ? 600 : 400,
-              }}>
-                {d.delta > 0 ? '+' : ''}{d.delta} → {d.newScore}%
-              </span>
-            </div>
+              <div className="overflow-hidden text-ellipsis whitespace-nowrap text-xs leading-[1.5] text-fg-2">
+                {g.preview}
+              </div>
+            </Card>
           ))}
         </div>
       )}
-    </div>
+
+      <Card className="gap-0 rounded-xl border px-[14px] py-3 shadow-none">
+        <div className={RAIL_SUB}>API Calls This Turn</div>
+        <div className="mt-1.5 font-mono text-[22px] font-semibold text-ember">1</div>
+        <div className="mt-0.5 text-[10.5px] text-fg-3">Sal only. Grep is TF-IDF (0 ms).</div>
+      </Card>
+
+      {turnData.confidenceDeltas && (
+        <Card className="gap-0 rounded-xl border px-[14px] py-3 shadow-none">
+          <div className={RAIL_SUB}>Confidence Deltas</div>
+          {turnData.confidenceDeltas.map((d, i) => (
+            <div key={i} className="mt-1 flex items-center justify-between text-[11px]">
+              <span className="font-mono text-fg-2">M{i + 1}</span>
+              <span
+                className="font-mono"
+                style={{
+                  color: d.delta > 0 ? 'var(--color-success)' : d.delta < 0 ? 'var(--color-danger)' : 'var(--color-fg-3)',
+                  fontWeight: d.delta !== 0 ? 600 : 400,
+                }}
+              >{d.delta > 0 ? '+' : ''}{d.delta} → {d.newScore}%</span>
+            </div>
+          ))}
+        </Card>
+      )}
+    </section>
   );
 }
+
+// ============================================================
+// TOKEN CHART — payload size per turn.
+// ============================================================
 
 function TokenChart({ tokenHistory }: { tokenHistory: TokenHistoryEntry[] }) {
   if (tokenHistory.length < 2) return null;
 
   const maxTokens = Math.max(...tokenHistory.map((t) => t.inputTokens), 1);
-  const chartWidth = 240;
+  const chartWidth = 280;
   const chartHeight = 60;
   const barWidth = Math.min(16, (chartWidth - tokenHistory.length * 2) / tokenHistory.length);
+  const avg = tokenHistory.reduce((s, t) => s + t.inputTokens, 0) / tokenHistory.length;
 
   return (
-    <div style={{ marginTop: '6px' }}>
-      <div style={{
-        fontFamily: "'JetBrains Mono', monospace", fontSize: '10px',
-        textTransform: 'uppercase', letterSpacing: '2px', color: 'var(--text-dim)', marginBottom: '8px',
-      }}>Payload Size per Turn</div>
-      <svg width={chartWidth} height={chartHeight + 16} style={{ display: 'block' }}>
+    <section className="flex flex-col gap-2.5">
+      <div className={RAIL_LABEL}>Payload Size per Turn</div>
+      <svg width={chartWidth} height={chartHeight + 16} className="block">
         {tokenHistory.map((t, i) => {
           const h = (t.inputTokens / maxTokens) * chartHeight;
           const x = i * (barWidth + 2);
           return (
             <g key={i}>
-              <rect x={x} y={chartHeight - h} width={barWidth} height={h} rx={1} fill="var(--accent-blue)" opacity={0.7} />
-              <text x={x + barWidth / 2} y={chartHeight + 12} textAnchor="middle" fontSize="8" fill="var(--text-dim)" fontFamily="'JetBrains Mono', monospace">{i + 1}</text>
+              <rect x={x} y={chartHeight - h} width={barWidth} height={h} rx={2} fill="var(--color-ember-soft)" opacity={0.7} />
+              <text x={x + barWidth / 2} y={chartHeight + 12} textAnchor="middle" fontSize="9" fill="var(--color-fg-3)" fontFamily="var(--font-mono)">{i + 1}</text>
             </g>
           );
         })}
-        {tokenHistory.length > 2 && (() => {
-          const avg = tokenHistory.reduce((s, t) => s + t.inputTokens, 0) / tokenHistory.length;
-          const y = chartHeight - (avg / maxTokens) * chartHeight;
-          return <line x1={0} y1={y} x2={chartWidth} y2={y} stroke="var(--accent-amber)" strokeDasharray="3,3" opacity={0.4} />;
-        })()}
+        {tokenHistory.length > 2 && (
+          <line
+            x1={0} y1={chartHeight - (avg / maxTokens) * chartHeight}
+            x2={chartWidth} y2={chartHeight - (avg / maxTokens) * chartHeight}
+            stroke="var(--color-ember)" strokeDasharray="3,3" opacity={0.45}
+          />
+        )}
       </svg>
+    </section>
+  );
+}
+
+// ============================================================
+// MESSAGE BLOCKS — Sal's reply, the user's centred pills.
+// ============================================================
+
+function AssistantMessage({ text, streaming = false }: { text: string; streaming?: boolean }) {
+  const paragraphs = text.split(/\n{2,}/);
+  return (
+    <div className="flex flex-col gap-3.5">
+      {paragraphs.map((p, i) => (
+        <p key={i} className="m-0 text-pretty whitespace-pre-wrap text-[15px] leading-[1.7] text-fg-1">
+          {p}
+          {streaming && i === paragraphs.length - 1 && (
+            <span className="ml-0.5 inline-block h-[1.05em] w-0.5 align-text-bottom bg-ember animate-blink" />
+          )}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function UserPill({ text }: { text: string }) {
+  return (
+    <div className="my-1.5 flex justify-center">
+      <div className="w-fit max-w-[90%] whitespace-pre-wrap break-words rounded-[22px] border border-hairline-strong bg-surface-thin px-5 py-2.5 text-[14.5px] leading-[1.5] text-fg-1 backdrop-blur-[6px]">
+        {text}
+      </div>
     </div>
   );
 }
@@ -354,6 +412,33 @@ export default function SalienceGatedCognition() {
   const [turnCount, setTurnCount] = useState(0);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // --- Aurora gating: drift while active, pulse on each keystroke ---
+  const [typing, setTyping] = useState(false);
+  const [pulseKey, setPulseKey] = useState(0);
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Salience rises with how much the user has drafted. The aurora element
+  // carries a 600ms CSS transition on `filter` (see index.css), so each
+  // input change just sets a new target and the browser eases to it. No
+  // per-frame RAF, no 60fps re-render of the app tree.
+  const wordCount = input.split(/\s+/).filter(Boolean).length;
+  const gate = Math.min(0.9, 0.25 + wordCount * 0.06);
+
+  const handleKeystroke = useCallback(() => {
+    setPulseKey((k) => k + 1);
+    setTyping(true);
+    if (typingTimer.current) clearTimeout(typingTimer.current);
+    typingTimer.current = setTimeout(() => setTyping(false), 1600);
+  }, []);
+
+  // Auto-grow the composer to fit its content.
+  useEffect(() => {
+    const t = inputRef.current;
+    if (!t) return;
+    t.style.height = 'auto';
+    t.style.height = `${Math.min(t.scrollHeight, 220)}px`;
+  }, [input]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -413,7 +498,7 @@ export default function SalienceGatedCognition() {
       // ---- SINGLE MODEL CALL (streamed) ----
       const systemPrompt = buildPrompt(memories, localBuffer, grepResults.length > 0 ? grepResults : null);
       const turnResult = await runTurn(systemPrompt, userInput, (rawSoFar) => {
-        // Render Sal's prose as it arrives; hide the trailing <turn-meta> block.
+        // Render Sal's reply as it arrives; hide the trailing <turn-meta> block.
         setStreamingText(stripStreamingMeta(rawSoFar));
       });
       const { displayText, metadata } = parseTurnResponse(turnResult.text);
@@ -475,7 +560,7 @@ export default function SalienceGatedCognition() {
     } catch (err) {
       console.error('SGC Error:', err);
       const detail = err instanceof Error ? err.message : String(err);
-      setMessages((prev) => [...prev, { role: 'assistant' as const, content: `[System error: ${detail}]` }]);
+      setMessages((prev) => [...prev, { role: 'assistant' as const, content: `I lost my place. Try again? (${detail})` }]);
     } finally {
       setStreamingText(null);
       setIsProcessing(false);
@@ -483,258 +568,109 @@ export default function SalienceGatedCognition() {
     }
   };
 
-  return (
-    <div style={{
-      '--bg-deep': '#0d1117',
-      '--bg-surface': '#161b22',
-      '--surface-raised': '#1c2129',
-      '--surface-deep': '#0a0e13',
-      '--border': '#2a3140',
-      '--text-primary': '#e2e8f0',
-      '--text-secondary': '#94a3b8',
-      '--text-dim': '#4a5568',
-      '--accent-blue': '#3b82f6',
-      '--accent-green': '#22c55e',
-      '--accent-red': '#ef4444',
-      '--accent-amber': '#f59e0b',
-      fontFamily: "'IBM Plex Sans', 'SF Pro Text', -apple-system, sans-serif",
-      background: 'var(--bg-deep)',
-      color: 'var(--text-primary)',
-      height: '100vh',
-      display: 'flex',
-      flexDirection: 'column',
-      overflow: 'hidden',
-    } as React.CSSProperties}>
-      {/* Header */}
-      <div style={{
-        padding: '12px 20px',
-        borderBottom: '1px solid var(--border)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexShrink: 0,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{
-            width: '8px', height: '8px', borderRadius: '50%',
-            background: isProcessing ? 'var(--accent-amber)' : 'var(--accent-green)',
-            boxShadow: isProcessing ? '0 0 8px var(--accent-amber)' : '0 0 8px var(--accent-green)',
-            transition: 'all 0.3s ease',
-          }} />
-          <span style={{
-            fontFamily: "'JetBrains Mono', 'SF Mono', monospace",
-            fontSize: '13px', fontWeight: 600, letterSpacing: '0.5px',
-          }}>Salience-Gated Cognition</span>
-          <span style={{
-            fontFamily: "'JetBrains Mono', monospace", fontSize: '10px',
-            color: 'var(--accent-green)', background: 'var(--surface-raised)',
-            padding: '2px 8px', borderRadius: '3px',
-          }}>Phase 1.5</span>
-          <span style={{
-            fontFamily: "'JetBrains Mono', monospace", fontSize: '9px',
-            color: 'var(--text-dim)',
-          }}>1 API call/turn · TF-IDF Grep · 2-turn buffer</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {isProcessing && (
-            <div style={{
-              fontFamily: "'JetBrains Mono', monospace", fontSize: '11px',
-              color: 'var(--accent-amber)', animation: 'pulse 1.5s ease-in-out infinite',
-            }}>Sal reasoning...</div>
-          )}
-          <button
-            onClick={() => {
-              setChatLog([]);
-              setMessages([]);
-              setLatestTurn(null);
-              setTokenHistory([]);
-              setTurnCount(0);
-              setInput('');
-            }}
-            disabled={isProcessing}
-            style={{
-              background: 'none', border: '1px solid var(--border)', borderRadius: '4px',
-              padding: '4px 10px', color: 'var(--text-secondary)', fontSize: '11px',
-              fontFamily: "'JetBrains Mono', monospace", cursor: isProcessing ? 'not-allowed' : 'pointer',
-              opacity: isProcessing ? 0.3 : 0.7, transition: 'all 0.2s ease',
-            }}
-            onMouseEnter={(e) => { if (!isProcessing) { e.currentTarget.style.opacity = '1'; e.currentTarget.style.borderColor = 'var(--text-secondary)'; } }}
-            onMouseLeave={(e) => { e.currentTarget.style.opacity = isProcessing ? '0.3' : '0.7'; e.currentTarget.style.borderColor = 'var(--border)'; }}
-          >New Chat</button>
-        </div>
-      </div>
+  const handleReset = () => {
+    setChatLog([]);
+    setMessages([]);
+    setLatestTurn(null);
+    setTokenHistory([]);
+    setTurnCount(0);
+    setInput('');
+  };
 
-      {/* Main layout */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {/* Chat panel */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--border)' }}>
-          <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px' }}>
-            {messages.length === 0 && (
-              <div style={{
-                display: 'flex', flexDirection: 'column', alignItems: 'center',
-                justifyContent: 'center', height: '100%', gap: '12px', opacity: 0.5,
-              }}>
-                <div style={{
-                  fontFamily: "'JetBrains Mono', monospace", fontSize: '11px',
-                  color: 'var(--text-dim)', textAlign: 'center', lineHeight: 1.6, maxWidth: '360px',
-                }}>
-                  Phase 1.5 — One API call per turn. Local buffer for immediate context.
-                  TF-IDF cosine similarity for everything else. No model-based retrieval.
-                  The only reasoning component is Sal, and Sal dies every turn.
-                </div>
-              </div>
-            )}
-            {messages.map((msg, i) => (
-              <div key={i} style={{
-                marginBottom: '14px', display: 'flex', flexDirection: 'column',
-                alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start',
-              }}>
-                <div style={{
-                  fontFamily: "'JetBrains Mono', monospace", fontSize: '9px',
-                  textTransform: 'uppercase', letterSpacing: '1.5px',
-                  color: 'var(--text-dim)', marginBottom: '4px',
-                }}>{msg.role === 'user' ? 'You' : 'Sal'}</div>
-                <div style={{
-                  maxWidth: '80%', padding: '10px 14px',
-                  borderRadius: msg.role === 'user' ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
-                  background: msg.role === 'user' ? 'var(--accent-blue)' : 'var(--surface-raised)',
-                  color: msg.role === 'user' ? '#fff' : 'var(--text-primary)',
-                  fontSize: '13.5px', lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                }}>{msg.content}</div>
-              </div>
-            ))}
-            {streamingText !== null && (
-              <div style={{ marginBottom: '14px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-                <div style={{
-                  fontFamily: "'JetBrains Mono', monospace", fontSize: '9px',
-                  textTransform: 'uppercase', letterSpacing: '1.5px',
-                  color: 'var(--text-dim)', marginBottom: '4px',
-                }}>Sal</div>
-                <div style={{
-                  maxWidth: '80%', padding: '10px 14px',
-                  borderRadius: '12px 12px 12px 2px',
-                  background: 'var(--surface-raised)', color: 'var(--text-primary)',
-                  fontSize: '13.5px', lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                }}>
-                  {streamingText}
-                  <span style={{
-                    display: 'inline-block', width: '7px', height: '14px',
-                    marginLeft: '1px', verticalAlign: 'text-bottom',
-                    background: 'var(--accent-green)',
-                    animation: 'blink 1s step-end infinite',
-                  }} />
-                </div>
-              </div>
-            )}
-            {/* Dot-pulse loader: shown only before the first streamed token —
-                once text is streaming the live bubble above replaces it. */}
-            {isProcessing && streamingText === null && (
-              <div style={{ marginBottom: '14px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-                <div style={{
-                  fontFamily: "'JetBrains Mono', monospace", fontSize: '9px',
-                  textTransform: 'uppercase', letterSpacing: '1.5px',
-                  color: 'var(--text-dim)', marginBottom: '4px',
-                }}>Sal</div>
-                <div style={{ padding: '10px 14px', borderRadius: '12px 12px 12px 2px', background: 'var(--surface-raised)' }}>
-                  <div style={{ display: 'flex', gap: '4px' }}>
+  return (
+    <div className="relative h-screen w-full overflow-hidden bg-ground font-sans text-fg-1">
+      <AuroraBackground gate={gate} active={typing || isProcessing} pulseKey={pulseKey} />
+
+      <div className="relative z-10 flex h-full w-full flex-col">
+        <PhaseBar processing={isProcessing} onReset={handleReset} />
+
+        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+          {/* Thread */}
+          <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col">
+            <div className="sal-scroll flex-1 overflow-x-hidden overflow-y-auto pt-[30px] pb-3">
+              <div className="mx-auto flex max-w-[680px] flex-col gap-[18px] px-8">
+                {messages.length === 0 && (
+                  <div className="mx-auto mt-[12vh] max-w-[440px] text-center text-pretty text-sm leading-[1.7] text-fg-3">
+                    One API call per turn. A local buffer holds what's near; cosine
+                    grep reaches for what's far. The only mind here is Sal — and Sal
+                    begins again every turn.
+                  </div>
+                )}
+
+                {messages.map((msg, i) =>
+                  msg.role === 'user'
+                    ? <UserPill key={i} text={msg.content} />
+                    : <AssistantMessage key={i} text={msg.content} />,
+                )}
+
+                {streamingText !== null && (
+                  <AssistantMessage text={streamingText || ' '} streaming />
+                )}
+
+                {/* Dot-pulse loader: shown only before the first streamed token. */}
+                {isProcessing && streamingText === null && (
+                  <div className="flex gap-[5px] py-1">
                     {[0, 1, 2].map((d) => (
-                      <div key={d} style={{
-                        width: '6px', height: '6px', borderRadius: '50%',
-                        background: 'var(--text-dim)',
-                        animation: `dotPulse 1.2s ease-in-out ${d * 0.2}s infinite`,
-                      }} />
+                      <span
+                        key={d}
+                        className="size-1.5 rounded-full bg-fg-3 animate-loader-dot"
+                        style={{ animationDelay: `${d * 0.2}s` }}
+                      />
                     ))}
                   </div>
-                </div>
-              </div>
-            )}
-            <div ref={chatEndRef} />
-          </div>
+                )}
 
-          {/* Input */}
-          <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    void processInput();
-                  }
-                }}
-                placeholder="Message..."
-                rows={1}
-                style={{
-                  flex: 1, background: 'var(--surface-raised)', border: '1px solid var(--border)',
-                  borderRadius: '8px', padding: '10px 14px', color: 'var(--text-primary)',
-                  fontSize: '13.5px', fontFamily: 'inherit', outline: 'none',
-                  resize: 'none', lineHeight: 1.5, maxHeight: '120px',
-                }}
-              />
-              <button
-                onClick={() => void processInput()}
-                disabled={isProcessing || !input.trim()}
-                style={{
-                  background: isProcessing ? 'var(--border)' : 'var(--accent-blue)',
-                  color: '#fff', border: 'none', borderRadius: '8px',
-                  padding: '10px 18px', fontSize: '13px', fontWeight: 600,
-                  cursor: isProcessing ? 'not-allowed' : 'pointer',
-                  opacity: isProcessing || !input.trim() ? 0.5 : 1,
-                  transition: 'all 0.2s ease', flexShrink: 0,
-                }}
-              >Send</button>
+                <div ref={chatEndRef} />
+              </div>
+            </div>
+
+            {/* Composer */}
+            <div className="mx-auto w-full max-w-[680px] px-8 pt-[14px] pb-[22px]">
+              <div className="flex items-end gap-2.5 rounded-[24px] border border-hairline-strong bg-surface-thin py-2 pr-2 pl-[18px] shadow-glass backdrop-blur-[10px]">
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      void processInput();
+                      return;
+                    }
+                    if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Enter') {
+                      handleKeystroke();
+                    }
+                  }}
+                  placeholder="Say something."
+                  rows={1}
+                  className="sal-scroll max-h-[220px] min-h-[22px] flex-1 resize-none border-0 bg-transparent py-1.5 text-[14.5px] leading-[1.55] text-fg-1 outline-none placeholder:text-fg-4"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => void processInput()}
+                  disabled={isProcessing || !input.trim()}
+                  aria-label="Say it"
+                  className="size-[30px] rounded-full text-fg-2 hover:border-ember hover:bg-ember hover:text-bone"
+                ><ArrowUp className="size-[15px]" /></Button>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Architecture panel */}
-        <div style={{
-          width: '320px', flexShrink: 0, overflow: 'auto', padding: '16px',
-          display: 'flex', flexDirection: 'column', gap: '20px', background: 'var(--bg-surface)',
-        }}>
-          <MemoryPanel
-            memories={memories}
-            onUpdate={handleMemoryUpdate}
-            onAdd={handleMemoryAdd}
-            onRemove={handleMemoryRemove}
-          />
-          <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
+          {/* Context rail */}
+          <aside className="sal-scroll relative z-20 flex max-h-[45vh] w-full flex-col gap-7 overflow-y-auto border-t border-hairline px-6 pt-[26px] pb-8 lg:h-full lg:max-h-none lg:w-[360px] lg:shrink-0 lg:border-t-0 lg:border-l">
+            <MemoryPanel
+              memories={memories}
+              onUpdate={handleMemoryUpdate}
+              onAdd={handleMemoryAdd}
+              onRemove={handleMemoryRemove}
+            />
             <TurnInspector turnData={latestTurn} />
-          </div>
-          <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
             <TokenChart tokenHistory={tokenHistory} />
-          </div>
+          </aside>
         </div>
       </div>
-
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
-        @keyframes dotPulse {
-          0%, 100% { opacity: 0.3; transform: scale(0.8); }
-          50% { opacity: 1; transform: scale(1); }
-        }
-        @keyframes pulse {
-          0%, 100% { opacity: 0.6; }
-          50% { opacity: 1; }
-        }
-        @keyframes blink {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0; }
-        }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
-        textarea::placeholder { color: var(--text-dim); }
-        input::placeholder { color: var(--text-dim); }
-        [contenteditable]:focus {
-          outline: 1px solid var(--accent-blue);
-          outline-offset: 2px;
-          border-radius: 2px;
-        }
-      `}</style>
     </div>
   );
 }
