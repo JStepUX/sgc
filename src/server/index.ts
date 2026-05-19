@@ -2,10 +2,10 @@
 //
 // It exists for exactly one reason: the browser must never hold the Anthropic
 // API key. The React client POSTs a fully-built system prompt + user message to
-// /api/turn; this server attaches the key, calls the model, and returns the
-// text + token usage. No memory architecture lives here — the tiers (memories,
-// local buffer, cosine grep) are assembled client-side. This is dumb plumbing
-// on purpose.
+// /api/turn; this server attaches the key, calls the model, and streams the
+// text back as Server-Sent Events plus a final token-usage frame. No memory
+// architecture lives here — the tiers (memories, local buffer, cosine grep) are
+// assembled client-side. This is dumb plumbing on purpose.
 
 import 'dotenv/config';
 import { existsSync } from 'node:fs';
@@ -59,38 +59,76 @@ app.post('/api/turn', async (req, res) => {
     return;
   }
 
+  // Open the SSE stream. The two guards above stay plain JSON-over-HTTP — they
+  // run BEFORE flushHeaders, so a bad request still gets a clean 400/500.
+  // Everything past this point is an event stream: failures become an `error`
+  // frame, because the HTTP status line is already on the wire.
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // disable proxy buffering if proxied
+  res.flushHeaders();
+
+  const send = (event: string, data: unknown): void => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  // One API call per turn — streamed. messages.stream() is still a single
+  // request to Anthropic; it just delivers the response incrementally. The
+  // Phase 1.5 "one API call per turn" invariant holds.
+  //
+  // No prompt caching: the system prompt is ~1-2k tokens (below Opus 4.7's
+  // 4096-token cache minimum) and is rebuilt every turn from the memory tiers —
+  // there is no stable prefix to cache. Adaptive thinking is left off (Opus 4.7
+  // default) to keep the turn fast and the latency readout in the UI honest.
+  const stream = anthropic.messages.stream({
+    model: MODEL,
+    max_tokens: MAX_TOKENS,
+    system,
+    messages: [{ role: 'user', content: message }],
+  });
+
+  // The error event is handled via the finalMessage() rejection below; this
+  // no-op listener just stops an emitted `error` from becoming an unhandled
+  // EventEmitter exception that would crash the process.
+  stream.on('error', () => {});
+  stream.on('text', (delta) => send('delta', { text: delta }));
+
+  let settled = false;
+  // If the browser hangs up mid-turn, abort the upstream call so we don't pay
+  // for a completion nobody will read. This MUST hang off the response, not
+  // the request: req's 'close' fires as soon as the (already fully-read) POST
+  // body stream is destroyed — within a few ms of the handler starting, long
+  // before the turn finishes streaming — so a req-close abort would kill every
+  // normal turn. res's 'close' fires only when the response itself ends:
+  // cleanly (writableEnded === true) or because the client disconnected first.
+  res.on('close', () => {
+    if (!settled && !res.writableEnded) stream.abort();
+  });
+
   try {
-    // No prompt caching: the system prompt is ~1-2k tokens (below Opus 4.7's
-    // 4096-token cache minimum) and is rebuilt every turn from the memory
-    // tiers — there is no stable prefix to cache. Adaptive thinking is left
-    // off (Opus 4.7 default) to keep the turn fast and the latency readout in
-    // the UI honest; enable it here if Sal's confidence scoring needs depth.
-    const response = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
-      system,
-      messages: [{ role: 'user', content: message }],
+    const final = await stream.finalMessage();
+    settled = true;
+    send('done', {
+      inputTokens: final.usage.input_tokens,
+      outputTokens: final.usage.output_tokens,
     });
-
-    const text = response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('');
-
-    res.json({
-      text,
-      inputTokens: response.usage.input_tokens,
-      outputTokens: response.usage.output_tokens,
-    });
+    res.end();
   } catch (err) {
-    if (err instanceof Anthropic.APIError) {
-      // Surface the upstream status so the client can distinguish a 401
-      // (bad key) from a 529 (overloaded) etc.
-      res.status(err.status ?? 502).json({ error: err.message });
-      return;
+    settled = true;
+    // The stream is already open, so the error rides it as an `error` frame
+    // rather than an HTTP status. Surface the upstream message for an
+    // Anthropic.APIError (so the client can tell a 401 from a 529); keep
+    // anything else generic.
+    const detail =
+      err instanceof Anthropic.APIError
+        ? err.message
+        : 'Internal error generating the turn response.';
+    if (!(err instanceof Anthropic.APIError)) console.error('turn error:', err);
+    if (!res.writableEnded) {
+      send('error', { error: detail });
+      res.end();
     }
-    console.error('turn error:', err);
-    res.status(500).json({ error: 'Internal error generating the turn response.' });
   }
 });
 

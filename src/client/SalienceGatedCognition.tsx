@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import type { Memory, ChatEntry } from './lib/types';
 import { cosineSearch } from './lib/tfidf';
-import { buildPrompt, parseTurnResponse } from './lib/prompt';
+import { buildPrompt, parseTurnResponse, stripStreamingMeta } from './lib/prompt';
 import { runTurn } from './lib/api';
 
 // ============================================================
@@ -346,6 +346,9 @@ export default function SalienceGatedCognition() {
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [input, setInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  // Sal's reply as it streams in, with the trailing <turn-meta> block stripped.
+  // null = no turn streaming (show the dot-pulse loader instead).
+  const [streamingText, setStreamingText] = useState<string | null>(null);
   const [latestTurn, setLatestTurn] = useState<TurnData | null>(null);
   const [tokenHistory, setTokenHistory] = useState<TokenHistoryEntry[]>([]);
   const [turnCount, setTurnCount] = useState(0);
@@ -354,7 +357,7 @@ export default function SalienceGatedCognition() {
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, streamingText]);
 
   const handleMemoryUpdate = useCallback((id: string, newText: string) => {
     setMemories((prev) => prev.map((m) => (m.id === id ? { ...m, text: newText } : m)));
@@ -407,15 +410,21 @@ export default function SalienceGatedCognition() {
         }));
       }
 
-      // ---- SINGLE MODEL CALL ----
+      // ---- SINGLE MODEL CALL (streamed) ----
       const systemPrompt = buildPrompt(memories, localBuffer, grepResults.length > 0 ? grepResults : null);
-      const turnResult = await runTurn(systemPrompt, userInput);
+      const turnResult = await runTurn(systemPrompt, userInput, (rawSoFar) => {
+        // Render Sal's prose as it arrives; hide the trailing <turn-meta> block.
+        setStreamingText(stripStreamingMeta(rawSoFar));
+      });
       const { displayText, metadata } = parseTurnResponse(turnResult.text);
 
       turnData.inputTokens = turnResult.inputTokens;
       turnData.outputTokens = turnResult.outputTokens;
       turnData.totalLatency = turnResult.elapsed;
 
+      // Promote the streamed reply to a finalized message. The transient
+      // streaming bubble is cleared in `finally`, batched into this same
+      // render — so the bubble swaps to a message with no flicker.
       setMessages((prev) => [...prev, { role: 'assistant' as const, content: displayText }]);
 
       // ---- CONFIDENCE SCORING ----
@@ -454,6 +463,7 @@ export default function SalienceGatedCognition() {
       const detail = err instanceof Error ? err.message : String(err);
       setMessages((prev) => [...prev, { role: 'assistant' as const, content: `[System error: ${detail}]` }]);
     } finally {
+      setStreamingText(null);
       setIsProcessing(false);
       inputRef.current?.focus();
     }
@@ -579,7 +589,32 @@ export default function SalienceGatedCognition() {
                 }}>{msg.content}</div>
               </div>
             ))}
-            {isProcessing && (
+            {streamingText !== null && (
+              <div style={{ marginBottom: '14px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                <div style={{
+                  fontFamily: "'JetBrains Mono', monospace", fontSize: '9px',
+                  textTransform: 'uppercase', letterSpacing: '1.5px',
+                  color: 'var(--text-dim)', marginBottom: '4px',
+                }}>Sal</div>
+                <div style={{
+                  maxWidth: '80%', padding: '10px 14px',
+                  borderRadius: '12px 12px 12px 2px',
+                  background: 'var(--surface-raised)', color: 'var(--text-primary)',
+                  fontSize: '13.5px', lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                }}>
+                  {streamingText}
+                  <span style={{
+                    display: 'inline-block', width: '7px', height: '14px',
+                    marginLeft: '1px', verticalAlign: 'text-bottom',
+                    background: 'var(--accent-green)',
+                    animation: 'blink 1s step-end infinite',
+                  }} />
+                </div>
+              </div>
+            )}
+            {/* Dot-pulse loader: shown only before the first streamed token —
+                once text is streaming the live bubble above replaces it. */}
+            {isProcessing && streamingText === null && (
               <div style={{ marginBottom: '14px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
                 <div style={{
                   fontFamily: "'JetBrains Mono', monospace", fontSize: '9px',
@@ -669,6 +704,10 @@ export default function SalienceGatedCognition() {
         @keyframes pulse {
           0%, 100% { opacity: 0.6; }
           50% { opacity: 1; }
+        }
+        @keyframes blink {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0; }
         }
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
