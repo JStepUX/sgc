@@ -430,23 +430,37 @@ export default function SalienceGatedCognition() {
       // ---- CONFIDENCE SCORING ----
       if (metadata?.confidence_scores) {
         const scores = metadata.confidence_scores;
-        const deltas: ConfidenceDelta[] = [];
-        setMemories((prev) =>
-          prev.map((mem, i) => {
-            const key = `M${i + 1}`;
-            const newScore = scores[key] != null
-              ? Math.max(0, Math.min(100, scores[key]))
-              : mem.confidence;
-            const delta = newScore - mem.confidence;
-            deltas.push({ delta, newScore });
-            return {
-              ...mem,
-              confidence: newScore,
-              history: [...mem.history, { delta, score: newScore, turn: newTurnNumber }],
-            };
-          }),
-        );
+
+        // Resolve each memory's new score up front, as a plain computation.
+        // This must NOT happen inside the setMemories updater: StrictMode
+        // double-invokes updaters in dev, so pushing deltas from within one
+        // produced twice the entries (the diagnostics panel showed M1..M6 for
+        // 3 memories). `memories` is a safe source here — confidence is only
+        // ever changed by this block, so the closure value cannot be stale.
+        const deltas: ConfidenceDelta[] = memories.map((mem, i) => {
+          const raw = scores[`M${i + 1}`];
+          const newScore = raw != null ? Math.max(0, Math.min(100, raw)) : mem.confidence;
+          return { delta: newScore - mem.confidence, newScore };
+        });
         turnData.confidenceDeltas = deltas;
+
+        // The state update stays a functional updater — so a memory edited
+        // mid-turn (present in `prev`) is preserved — but is now pure: it
+        // only maps `prev` and returns, with no external side effect.
+        setMemories((prev) =>
+          prev.map((mem, i) =>
+            deltas[i]
+              ? {
+                  ...mem,
+                  confidence: deltas[i].newScore,
+                  history: [
+                    ...mem.history,
+                    { delta: deltas[i].delta, score: deltas[i].newScore, turn: newTurnNumber },
+                  ],
+                }
+              : mem,
+          ),
+        );
       }
 
       // ---- APPEND TO PERSISTENT CHAT LOG ----
