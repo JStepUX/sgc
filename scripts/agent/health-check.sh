@@ -27,7 +27,19 @@ if [ -f "package.json" ]; then
   if has_script "test"; then
     set +e; test_out=$(npm test --silent 2>&1); test_exit=$?; set -e
     echo "$test_out" | tail -30
-    [ "$test_exit" = "0" ] && echo -e "  ${GREEN}+ tests passed${RESET}" || echo -e "  ${RED}x tests failed (exit $test_exit)${RESET}"
+    if [ "$test_exit" = "0" ]; then
+      echo -e "  ${GREEN}+ tests passed${RESET}"
+    elif echo "$test_out" | grep -qE '@rollup/rollup-|@esbuild/|Cannot find (native )?module'; then
+      # node_modules holds platform-native binaries (Rollup, esbuild). A tree
+      # installed by one OS/shell will not load under another — that is an
+      # environment mismatch, NOT a real test failure. Don't cry wolf.
+      warn "tests could not run: a platform-native module (Rollup/esbuild) failed to load."
+      warn "node_modules was installed for a different OS/shell than this one."
+      warn "Fix: run 'npm install' in THIS shell (project standard: git-bash on Windows),"
+      warn "or run tests from the shell where node_modules was installed. See AGENTS.md."
+    else
+      echo -e "  ${RED}x tests failed (exit $test_exit)${RESET}"
+    fi
   else
     dim "  (no 'test' script — no test harness wired yet)"
   fi
