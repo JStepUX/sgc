@@ -1,11 +1,22 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { ArrowUp, Plus } from 'lucide-react';
+import { ArrowUp, Clock, Plus } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Memory, ChatEntry } from './lib/types';
 import { cosineSearch } from './lib/tfidf';
 import { buildPrompt, parseTurnResponse, stripStreamingMeta } from './lib/prompt';
 import { runTurn } from './lib/api';
+import {
+  createChat as apiCreateChat,
+  deleteChat as apiDeleteChat,
+  getMemories as apiGetMemories,
+  listChats as apiListChats,
+  loadChat as apiLoadChat,
+  saveMemories as apiSaveMemories,
+  saveTurn as apiSaveTurn,
+  type ChatSummary,
+} from './lib/persistence';
+import { ChatHistoryModal } from './components/ChatHistoryModal';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -486,8 +497,22 @@ export default function SalienceGatedCognition() {
   const [latestTurn, setLatestTurn] = useState<TurnData | null>(null);
   const [tokenHistory, setTokenHistory] = useState<TokenHistoryEntry[]>([]);
   const [turnCount, setTurnCount] = useState(0);
+  // Persistence state. `chatId` is the active conversation (null until the
+  // mount-effect resolves it). `chats` is the summary list used by the modal.
+  const [chatId, setChatId] = useState<string | null>(null);
+  const [chats, setChats] = useState<ChatSummary[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  // Has the initial hydration completed? Guards the memory-save effect from
+  // firing on mount with the DEFAULT_MEMORIES placeholder before the server
+  // set has had a chance to load.
+  const [hydrated, setHydrated] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const historyButtonRef = useRef<HTMLButtonElement>(null);
+  // Flipped true when the user or the model actually mutates `memories`.
+  // Guards the memory-save effect so the post-hydration render — which sets
+  // memories from the server payload — doesn't round-trip a redundant save.
+  const memoriesDirtyRef = useRef(false);
 
   // --- Aurora gating: drift while active, pulse on each keystroke ---
   const [typing, setTyping] = useState(false);
@@ -520,21 +545,94 @@ export default function SalienceGatedCognition() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingText]);
 
+  // --- Hydration: load global memories + restore the most recent chat. ---
+  // Runs once on mount. The memory set is global across chats and overrides
+  // the in-memory DEFAULT_MEMORIES placeholder *only if* the server returns
+  // any rows — a fresh install (empty DB) keeps the defaults so the user has
+  // something to push on. After hydration completes we mark hydrated=true,
+  // unlocking the memory-save effect below.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [mem, list] = await Promise.all([apiGetMemories(), apiListChats()]);
+        if (cancelled) return;
+        if (mem.length > 0) setMemories(mem);
+        setChats(list);
+
+        let activeId: string;
+        if (list.length > 0) {
+          // Most-recently-updated chat. Replay its turns into the UI.
+          activeId = list[0].id;
+          const detail = await apiLoadChat(activeId);
+          if (cancelled) return;
+          const replay: ChatEntry[] = detail.turns.map((t) => ({
+            role: t.role,
+            content: t.content,
+          }));
+          setMessages(replay);
+          setChatLog(replay);
+          setTurnCount(Math.floor(replay.length / 2));
+          if (detail.latestInspector) {
+            setLatestTurn(detail.latestInspector as TurnData);
+          }
+        } else {
+          const created = await apiCreateChat();
+          if (cancelled) return;
+          activeId = created.id;
+          // Refresh the summary list so the modal sees the new (empty) chat.
+          const refreshed = await apiListChats();
+          if (cancelled) return;
+          setChats(refreshed);
+        }
+        setChatId(activeId);
+      } catch (err) {
+        console.warn('SGC persistence hydration failed:', err);
+      } finally {
+        if (!cancelled) setHydrated(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // --- Memory sync: persist the global set whenever it changes, debounced. ---
+  // Save is fire-and-forget; the UI is the source of truth in-session, the
+  // server is the durable mirror. Two gates: hydration must have completed
+  // (so we never overwrite real saved state with the mount-time placeholder),
+  // and a real edit must have happened (so the post-hydration render — which
+  // sets memories from the server payload — doesn't round-trip a no-op save).
+  useEffect(() => {
+    if (!hydrated || !memoriesDirtyRef.current) return;
+    const handle = setTimeout(() => {
+      apiSaveMemories(memories).catch((err) => console.warn('saveMemories failed:', err));
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [memories, hydrated]);
+
   const handleMemoryUpdate = useCallback((id: string, newText: string) => {
+    memoriesDirtyRef.current = true;
     setMemories((prev) => prev.map((m) => (m.id === id ? { ...m, text: newText } : m)));
   }, []);
 
   const handleMemoryAdd = useCallback((text: string) => {
+    memoriesDirtyRef.current = true;
     setMemories((prev) => [...prev, { id: crypto.randomUUID(), text, confidence: 50, history: [] }]);
   }, []);
 
   const handleMemoryRemove = useCallback((id: string) => {
+    memoriesDirtyRef.current = true;
     setMemories((prev) => prev.filter((m) => m.id !== id));
   }, []);
 
   const processInput = async () => {
     const userInput = input.trim();
-    if (!userInput || isProcessing) return;
+    // Don't accept input until hydration has resolved the active chatId.
+    // Submitting before then races the hydration effect: it would replay the
+    // loaded chat over the in-flight user message (setMessages clobber), and
+    // this closure would capture chatId === null so the turn would never
+    // persist. The submit button + Enter handler are also disabled below, so
+    // this branch is the belt to that suspenders.
+    if (!userInput || isProcessing || !hydrated || !chatId) return;
 
     const newTurnNumber = turnCount + 1;
     setTurnCount(newTurnNumber);
@@ -608,6 +706,7 @@ export default function SalienceGatedCognition() {
         // The state update stays a functional updater — so a memory edited
         // mid-turn (present in `prev`) is preserved — but is now pure: it
         // only maps `prev` and returns, with no external side effect.
+        memoriesDirtyRef.current = true;
         setMemories((prev) =>
           prev.map((mem, i) =>
             deltas[i]
@@ -633,6 +732,24 @@ export default function SalienceGatedCognition() {
 
       setTokenHistory((prev) => [...prev, { turn: newTurnNumber, inputTokens: turnData.inputTokens }]);
       setLatestTurn(turnData);
+
+      // ---- PERSIST THE TURN (non-blocking) ----
+      // Fired after the UI has rendered the new turn so the network round-trip
+      // never stalls a streaming response. Failures log but do not surface —
+      // the in-memory session continues; only durability is at risk.
+      if (chatId) {
+        const persistChatId = chatId;
+        apiSaveTurn(persistChatId, {
+          user: { content: userInput },
+          assistant: {
+            content: displayText,
+            inspectorJson: JSON.stringify(turnData),
+          },
+        })
+          .then(() => apiListChats())
+          .then(setChats)
+          .catch((err) => console.warn('saveTurn failed:', err));
+      }
     } catch (err) {
       console.error('SGC Error:', err);
       const detail = err instanceof Error ? err.message : String(err);
@@ -644,14 +761,69 @@ export default function SalienceGatedCognition() {
     }
   };
 
-  const handleReset = () => {
+  // "Begin again" creates a NEW chat and clears the visible session. Memories
+  // are global — they persist across chats and are intentionally NOT reset.
+  const handleReset = useCallback(async () => {
     setChatLog([]);
     setMessages([]);
     setLatestTurn(null);
     setTokenHistory([]);
     setTurnCount(0);
     setInput('');
-  };
+    try {
+      const created = await apiCreateChat();
+      setChatId(created.id);
+      const refreshed = await apiListChats();
+      setChats(refreshed);
+    } catch (err) {
+      console.warn('createChat failed:', err);
+    }
+  }, []);
+
+  // Load an existing chat from the history modal: fetch its turns, replay
+  // them into the in-memory log + visible messages, restore the right-rail
+  // inspector. Memories are global — they are NOT touched.
+  const handleLoadChat = useCallback(async (id: string) => {
+    if (id === chatId) {
+      setHistoryOpen(false);
+      return;
+    }
+    try {
+      const detail = await apiLoadChat(id);
+      const replay: ChatEntry[] = detail.turns.map((t) => ({
+        role: t.role,
+        content: t.content,
+      }));
+      setMessages(replay);
+      setChatLog(replay);
+      setTurnCount(Math.floor(replay.length / 2));
+      setLatestTurn((detail.latestInspector as TurnData | null) ?? null);
+      setTokenHistory([]);
+      setChatId(id);
+      setHistoryOpen(false);
+    } catch (err) {
+      console.warn('loadChat failed:', err);
+    }
+  }, [chatId]);
+
+  // Delete a chat. If it was the active one, swap to the next most-recent or
+  // start a fresh one.
+  const handleDeleteChat = useCallback(async (id: string) => {
+    try {
+      await apiDeleteChat(id);
+      const refreshed = await apiListChats();
+      setChats(refreshed);
+      if (id === chatId) {
+        if (refreshed.length > 0) {
+          await handleLoadChat(refreshed[0].id);
+        } else {
+          await handleReset();
+        }
+      }
+    } catch (err) {
+      console.warn('deleteChat failed:', err);
+    }
+  }, [chatId, handleLoadChat, handleReset]);
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-ground font-sans text-fg-1">
@@ -702,34 +874,57 @@ export default function SalienceGatedCognition() {
 
             {/* Composer */}
             <div className="mx-auto w-full max-w-[680px] px-8 pt-[14px] pb-[22px]">
-              <div className="flex items-end gap-2.5 rounded-[24px] border border-hairline-strong bg-surface-thin py-2 pr-2 pl-[18px] shadow-glass backdrop-blur-[10px]">
-                <textarea
-                  ref={inputRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      void processInput();
-                      return;
-                    }
-                    if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Enter') {
-                      handleKeystroke();
-                    }
-                  }}
-                  placeholder="Say something."
-                  rows={1}
-                  className="sal-scroll max-h-[220px] min-h-[22px] flex-1 resize-none border-0 bg-transparent py-1.5 text-[14.5px] leading-[1.55] text-fg-1 outline-none placeholder:text-fg-4"
-                />
-                <Button
+              <div className="flex items-end gap-2.5">
+                <button
+                  ref={historyButtonRef}
                   type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={() => void processInput()}
-                  disabled={isProcessing || !input.trim()}
-                  aria-label="Say it"
-                  className="size-[30px] rounded-full text-fg-2 hover:border-ember hover:bg-ember hover:text-bone"
-                ><ArrowUp className="size-[15px]" /></Button>
+                  onClick={() => setHistoryOpen((o) => !o)}
+                  aria-label="Chat history"
+                  aria-expanded={historyOpen}
+                  className={cn(
+                    'flex size-11 shrink-0 items-center justify-center rounded-full border bg-surface-thin shadow-glass backdrop-blur-[10px] transition-colors',
+                    historyOpen
+                      ? 'border-ember text-ember shadow-[0_0_18px_-4px_var(--color-ember)]'
+                      : 'border-hairline-strong text-fg-2 hover:border-ember hover:text-ember',
+                  )}
+                >
+                  <Clock className="size-[17px]" />
+                </button>
+                <div className="flex flex-1 items-end gap-2.5 rounded-[24px] border border-hairline-strong bg-surface-thin py-2 pr-2 pl-[18px] shadow-glass backdrop-blur-[10px]">
+                  <textarea
+                    ref={inputRef}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        // Submission is gated on hydration so the active
+                        // chatId is known before the turn fires. Without this
+                        // gate, an Enter pressed in the brief mount window
+                        // races the hydration replay and corrupts the visible
+                        // thread.
+                        if (!hydrated || !chatId) return;
+                        void processInput();
+                        return;
+                      }
+                      if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Enter') {
+                        handleKeystroke();
+                      }
+                    }}
+                    placeholder="Say something."
+                    rows={1}
+                    className="sal-scroll max-h-[220px] min-h-[22px] flex-1 resize-none border-0 bg-transparent py-1.5 text-[14.5px] leading-[1.55] text-fg-1 outline-none placeholder:text-fg-4"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => void processInput()}
+                    disabled={isProcessing || !input.trim() || !hydrated || !chatId}
+                    aria-label="Say it"
+                    className="size-[30px] rounded-full text-fg-2 hover:border-ember hover:bg-ember hover:text-bone"
+                  ><ArrowUp className="size-[15px]" /></Button>
+                </div>
               </div>
             </div>
           </div>
@@ -747,6 +942,17 @@ export default function SalienceGatedCognition() {
           </aside>
         </div>
       </div>
+
+      <ChatHistoryModal
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        chats={chats}
+        activeChatId={chatId}
+        onSelect={handleLoadChat}
+        onDelete={handleDeleteChat}
+        onBeginAgain={handleReset}
+        returnFocusRef={historyButtonRef}
+      />
     </div>
   );
 }

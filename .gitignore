@@ -6,6 +6,9 @@ dist/
 build/
 .vite/
 
+# SQLite persistence (chats, turns, memories)
+data/
+
 # TypeScript / test artifacts
 *.tsbuildinfo
 coverage/

@@ -72,6 +72,24 @@ see it anywhere outside the frozen `docs/phase-1-5-reference.jsx`, that's a
 leftover worth fixing. Don't reintroduce it, and don't spread "Sal" onto
 plumbing (routes, interfaces) — keep the name reserved for the identity.
 
+## Persistence is keyed by chat-id; memories are global by design (chat history, 2026-05-19)
+
+`src/server/db.ts` deliberately scopes turns to a `chat_id` but keeps `memories`
++ `memory_history` at the top level — there is no `chat_id` column on either.
+Memories are the user's constitutional state across the lifetime of the system;
+a chat doesn't own them. This is *enforced* by the route shapes:
+`PUT /api/memories` has no chat-id, and "Begin again" in
+`SalienceGatedCognition.tsx` creates a new chat but only clears the visible
+session, never the memory set. If a future agent adds per-chat memory scoping,
+it's a Phase change (the constitution would no longer be constitutional), not a
+fix — raise it first.
+
+The mount-time hydration in `SalienceGatedCognition.tsx` returns the in-memory
+`DEFAULT_MEMORIES` *only* when the server returns `[]` (i.e. fresh install). A
+real saved set always overrides the defaults. Don't be surprised if you see
+three seed memories on first run that vanish once the user edits — they're
+placeholders, not authoritative.
+
 ## Agent bash scripts run under git-bash; `node_modules` is platform-specific (review, 2026-05-18)
 
 `scripts/agent/*.sh` are bash scripts. The project's standard environment is

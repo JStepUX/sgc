@@ -11,9 +11,21 @@ import 'dotenv/config';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
 import Anthropic from '@anthropic-ai/sdk';
+import {
+  createChat as dbCreateChat,
+  deleteChat as dbDeleteChat,
+  getMemories as dbGetMemories,
+  listChats as dbListChats,
+  loadChat as dbLoadChat,
+  saveMemories as dbSaveMemories,
+  saveTurnPair as dbSaveTurnPair,
+  type SaveMemoryInput,
+  type SaveTurnInput,
+} from './db.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5555';
@@ -129,6 +141,165 @@ app.post('/api/turn', async (req, res) => {
       send('error', { error: detail });
       res.end();
     }
+  }
+});
+
+// ============================================================
+// PERSISTENCE ROUTES
+//
+// Plain JSON-over-HTTP (NOT SSE — SSE is /api/turn only). These routes hold
+// chats, turns, and the global memory set. They do not call the model and
+// must not — the Phase 1.5 contract is "one API call per turn" and that call
+// is /api/turn alone.
+// ============================================================
+
+app.get('/api/chats', (_req, res) => {
+  try {
+    res.json(dbListChats());
+  } catch (err) {
+    console.error('listChats failed:', err);
+    res.status(500).json({ error: 'Failed to list chats.' });
+  }
+});
+
+app.post('/api/chats', (_req, res) => {
+  try {
+    const id = randomUUID();
+    dbCreateChat(id);
+    res.json({ id });
+  } catch (err) {
+    console.error('createChat failed:', err);
+    res.status(500).json({ error: 'Failed to create chat.' });
+  }
+});
+
+app.get('/api/chats/:id', (req, res) => {
+  try {
+    const chat = dbLoadChat(req.params.id);
+    if (!chat) {
+      res.status(404).json({ error: 'Chat not found.' });
+      return;
+    }
+    res.json(chat);
+  } catch (err) {
+    console.error('loadChat failed:', err);
+    res.status(500).json({ error: 'Failed to load chat.' });
+  }
+});
+
+app.delete('/api/chats/:id', (req, res) => {
+  try {
+    const ok = dbDeleteChat(req.params.id);
+    if (!ok) {
+      res.status(404).json({ error: 'Chat not found.' });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('deleteChat failed:', err);
+    res.status(500).json({ error: 'Failed to delete chat.' });
+  }
+});
+
+interface SaveTurnBody {
+  user?: { content?: unknown };
+  assistant?: { content?: unknown; inspectorJson?: unknown };
+}
+
+app.post('/api/chats/:id/turns', (req, res) => {
+  const body = (req.body ?? {}) as SaveTurnBody;
+  const userContent = body.user?.content;
+  const assistantContent = body.assistant?.content;
+  const inspectorJson = body.assistant?.inspectorJson;
+
+  if (typeof userContent !== 'string' || typeof assistantContent !== 'string') {
+    res.status(400).json({ error: 'Body requires {user:{content}, assistant:{content,inspectorJson?}}.' });
+    return;
+  }
+  if (inspectorJson !== null && inspectorJson !== undefined && typeof inspectorJson !== 'string') {
+    res.status(400).json({ error: 'assistant.inspectorJson must be a string or null.' });
+    return;
+  }
+
+  const input: SaveTurnInput = {
+    user: { content: userContent },
+    assistant: {
+      content: assistantContent,
+      inspectorJson: typeof inspectorJson === 'string' ? inspectorJson : null,
+    },
+  };
+
+  try {
+    dbSaveTurnPair(req.params.id, input);
+    res.json({ ok: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'unknown';
+    if (msg.startsWith('chat not found')) {
+      res.status(404).json({ error: 'Chat not found.' });
+      return;
+    }
+    console.error('saveTurn failed:', err);
+    res.status(500).json({ error: 'Failed to save turn.' });
+  }
+});
+
+app.get('/api/memories', (_req, res) => {
+  try {
+    res.json(dbGetMemories());
+  } catch (err) {
+    console.error('getMemories failed:', err);
+    res.status(500).json({ error: 'Failed to load memories.' });
+  }
+});
+
+interface SaveMemoriesBody {
+  memories?: unknown;
+}
+
+function parseMemoryInput(x: unknown): SaveMemoryInput | null {
+  if (!x || typeof x !== 'object') return null;
+  const r = x as Record<string, unknown>;
+  if (typeof r.id !== 'string') return null;
+  if (typeof r.text !== 'string') return null;
+  if (typeof r.confidence !== 'number') return null;
+  if (!Array.isArray(r.history)) return null;
+  const history: SaveMemoryInput['history'] = [];
+  for (const h of r.history) {
+    if (!h || typeof h !== 'object') return null;
+    const hr = h as Record<string, unknown>;
+    if (
+      typeof hr.delta !== 'number'
+      || typeof hr.newScore !== 'number'
+      || typeof hr.turnGlobal !== 'number'
+    ) return null;
+    history.push({ delta: hr.delta, newScore: hr.newScore, turnGlobal: hr.turnGlobal });
+  }
+  return { id: r.id, text: r.text, confidence: r.confidence, history };
+}
+
+app.put('/api/memories', (req, res) => {
+  const body = (req.body ?? {}) as SaveMemoriesBody;
+  if (!Array.isArray(body.memories)) {
+    res.status(400).json({ error: 'memories must be an array.' });
+    return;
+  }
+  const parsed: SaveMemoryInput[] = [];
+  for (const raw of body.memories) {
+    const m = parseMemoryInput(raw);
+    if (!m) {
+      res.status(400).json({
+        error: 'each memory must be {id, text, confidence, history: [{delta, newScore, turnGlobal}]}.',
+      });
+      return;
+    }
+    parsed.push(m);
+  }
+  try {
+    dbSaveMemories({ memories: parsed });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('saveMemories failed:', err);
+    res.status(500).json({ error: 'Failed to save memories.' });
   }
 });
 
