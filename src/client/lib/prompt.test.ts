@@ -5,7 +5,12 @@
 // it must hide the metadata block (and partial opening tags split across SSE
 // chunks) so the block never flickers into the chat bubble.
 
-import { buildPrompt, parseTurnResponse, stripStreamingMeta } from './prompt';
+import {
+  buildPrompt,
+  estimateNaiveContextTokens,
+  parseTurnResponse,
+  stripStreamingMeta,
+} from './prompt';
 import type { Memory, ChatEntry } from './types';
 
 describe('parseTurnResponse', () => {
@@ -131,5 +136,46 @@ describe('buildPrompt', () => {
     const prompt = buildPrompt(memories, buffer, null);
     expect(prompt).toContain('RECENT CONTEXT');
     expect(prompt).toContain('user: hello there');
+  });
+});
+
+describe('estimateNaiveContextTokens', () => {
+  // The inspector's "context savings" tile relies on this baseline. It's an
+  // estimate, not a tokenizer — what matters is the shape: positive, grows
+  // with history, includes the user input, monotonic in chat-log size.
+  const memories: Memory[] = [
+    { id: 'a', text: 'User prefers direct communication.', confidence: 50, history: [] },
+  ];
+
+  it('returns a positive estimate even with empty history and empty input', () => {
+    // The persona prompt alone is non-trivial — the baseline should reflect it.
+    const tokens = estimateNaiveContextTokens(memories, [], '');
+    expect(tokens).toBeGreaterThan(0);
+  });
+
+  it('grows monotonically as chat history accumulates', () => {
+    const empty = estimateNaiveContextTokens(memories, [], 'hi');
+    const oneTurn: ChatEntry[] = [
+      { role: 'user', content: 'first user message' },
+      { role: 'assistant', content: 'first reply, somewhat longer to make the diff visible' },
+    ];
+    const small = estimateNaiveContextTokens(memories, oneTurn, 'hi');
+    const big = estimateNaiveContextTokens(
+      memories,
+      [...oneTurn, ...oneTurn, ...oneTurn, ...oneTurn],
+      'hi',
+    );
+    expect(small).toBeGreaterThan(empty);
+    expect(big).toBeGreaterThan(small);
+  });
+
+  it('reflects the current user input in the count', () => {
+    const short = estimateNaiveContextTokens(memories, [], 'hi');
+    const long = estimateNaiveContextTokens(
+      memories,
+      [],
+      'a much longer user message, intended to materially shift the estimate upward',
+    );
+    expect(long).toBeGreaterThan(short);
   });
 });

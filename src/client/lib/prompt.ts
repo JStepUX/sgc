@@ -15,6 +15,7 @@
 
 import type { Memory, ChatEntry } from './types';
 import type { GrepResult } from './tfidf';
+import { estimateTokens } from './tokens';
 
 /** The metadata block Sal appends to every response. */
 export interface TurnMetadata {
@@ -97,6 +98,33 @@ IMPORTANT: The <turn-meta> block must be the very last thing in your response. N
 }
 
 /**
+ * Estimate the token count of the *naive* counterfactual prompt: persona +
+ * memories + the FULL chat history + this turn's user input — i.e. what we
+ * would have sent if we weren't doing SGC's tiered curation.
+ *
+ * The actual SGC prompt only carries the last 2 turns (local buffer) plus
+ * any cosine-grep matches — typically a tiny fraction of `chatLog`. The
+ * difference between this number and `usage.input_tokens` is the savings the
+ * inspector tile surfaces.
+ *
+ * Implementation note: reuses `buildPrompt` with the entire chat log fed in
+ * as the "local buffer" position. The block ends up labelled "RECENT
+ * CONTEXT" in the rendered prompt — semantically loose, but for token
+ * counting the label is a fixed ~30 chars in the noise of a multi-thousand-
+ * char prompt. Reusing the real builder is worth the inaccuracy because it
+ * guarantees the persona/memory framing stays in sync if `buildPrompt`
+ * changes.
+ */
+export function estimateNaiveContextTokens(
+  memories: Memory[],
+  fullChatLog: ChatEntry[],
+  userInput: string,
+): number {
+  const naiveSystem = buildPrompt(memories, fullChatLog, null);
+  return estimateTokens(naiveSystem) + estimateTokens(userInput);
+}
+
+/**
  * Split a completed turn response into display text and the trailing metadata
  * block.
  *
@@ -156,7 +184,7 @@ export function parseTurnResponse(raw: string): ParsedTurn {
  * authoritative split.
  */
 export function stripStreamingMeta(partial: string): string {
-  for (let from = 0; ; ) {
+  for (let from = 0; ;) {
     const open = partial.indexOf(META_OPEN, from);
     if (open === -1) break;
     const after = partial.slice(open + META_OPEN.length);

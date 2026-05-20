@@ -4,7 +4,12 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Memory, ChatEntry } from './lib/types';
 import { cosineSearch } from './lib/tfidf';
-import { buildPrompt, parseTurnResponse, stripStreamingMeta } from './lib/prompt';
+import {
+  buildPrompt,
+  estimateNaiveContextTokens,
+  parseTurnResponse,
+  stripStreamingMeta,
+} from './lib/prompt';
 import { runTurn } from './lib/api';
 import {
   createChat as apiCreateChat,
@@ -63,6 +68,13 @@ interface TurnData {
   grepMatches: number;
   grepDetails: GrepDetail[] | null;
   confidenceDeltas: ConfidenceDelta[] | null;
+  /**
+   * Estimated tokens the naive "send everything every turn" baseline would
+   * have used (persona + memories + full chat history + user input). The
+   * delta vs `inputTokens` is the SGC savings. Optional because turns
+   * persisted before this field existed don't carry it.
+   */
+  naiveTokens?: number;
 }
 
 interface TokenHistoryEntry {
@@ -312,11 +324,71 @@ function TurnInspector({ turnData }: { turnData: TurnData | null }) {
         </div>
       )}
 
-      <Card className="gap-0 rounded-xl border px-[14px] py-3 shadow-none">
-        <div className={RAIL_SUB}>API Calls This Turn</div>
-        <div className="mt-1.5 font-mono text-[22px] font-semibold text-ember">1</div>
-        <div className="mt-0.5 text-[10.5px] text-fg-3">Sal only. Grep is TF-IDF (0 ms).</div>
-      </Card>
+      {(() => {
+        // Context-savings card — the thesis of Phase 1.5 made legible.
+        //
+        // Left: what we actually sent (real `usage.input_tokens` from the API).
+        // Right: what a naive "send the whole history every turn" pipeline
+        // would have sent (estimated client-side, see lib/tokens.ts). The
+        // ratio is the savings SGC's tiered curation buys.
+        //
+        // `naiveTokens` is optional — turns persisted before this field
+        // existed don't carry it. Fall back to a quieter, single-number
+        // variant in that case so old chat replays still render cleanly.
+        const sent = turnData.inputTokens;
+        const naive = turnData.naiveTokens ?? 0;
+        const hasNaive = naive > 0;
+        const savedPct = hasNaive && naive > sent
+          ? Math.round(((naive - sent) / naive) * 100)
+          : 0;
+        return (
+          <Card className="gap-0 rounded-xl border px-[14px] py-3 shadow-none">
+            <div className={RAIL_SUB}>Context Savings</div>
+            {hasNaive ? (
+              <>
+                <div className="mt-1.5 grid grid-cols-2 gap-2">
+                  <div>
+                    <div className="font-mono text-[18px] font-semibold leading-none text-ember">
+                      {sent.toLocaleString()}
+                    </div>
+                    <div className="mt-1 font-mono text-[9.5px] uppercase tracking-[0.16em] text-fg-3">
+                      Sent
+                    </div>
+                  </div>
+                  <div>
+                    <div className="font-mono text-[18px] font-medium leading-none text-fg-2">
+                      ~{naive.toLocaleString()}
+                    </div>
+                    <div className="mt-1 font-mono text-[9.5px] uppercase tracking-[0.16em] text-fg-3">
+                      Naive
+                    </div>
+                  </div>
+                </div>
+                {savedPct > 0 && (
+                  <div className="mt-2.5 flex items-baseline gap-2 border-t border-hairline pt-2">
+                    <span className="font-mono text-[15px] font-medium text-success">
+                      −{savedPct}%
+                    </span>
+                    <span className="text-[10.5px] text-fg-3">
+                      vs naive “send everything” baseline
+                    </span>
+                  </div>
+                )}
+                <div className="mt-1.5 text-[10.5px] leading-[1.4] text-fg-3">
+                  Naive is an estimate (~4 chars / token). 1 API call this turn — Sal only.
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="mt-1.5 font-mono text-[22px] font-semibold text-ember">1</div>
+                <div className="mt-0.5 text-[10.5px] text-fg-3">
+                  Sal only. Grep is TF-IDF (0 ms).
+                </div>
+              </>
+            )}
+          </Card>
+        );
+      })()}
 
       {turnData.confidenceDeltas && (
         <Card className="gap-0 rounded-xl border px-[14px] py-3 shadow-none">
@@ -650,6 +722,11 @@ export default function SalienceGatedCognition() {
       grepMatches: 0,
       grepDetails: null,
       confidenceDeltas: null,
+      // Counterfactual baseline: what the naive "send the whole history every
+      // turn" pipeline would have sent. Computed BEFORE the new pair is
+      // appended to chatLog, so `chatLog` here is everything prior to this
+      // turn — same baseline the local buffer and cosine grep see.
+      naiveTokens: estimateNaiveContextTokens(memories, chatLog, userInput),
     };
 
     try {
