@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { memo, useState, useRef, useEffect, useCallback } from 'react';
 import { ArrowUp, Clock, Plus } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -100,7 +100,18 @@ const RAIL_SUB = 'font-mono text-[10.5px] tracking-[0.16em] uppercase text-fg-3 
 // the bottom. The aurora is the thinking made visible. (See index.css.)
 // ============================================================
 
-function AuroraBackground({ gate, active, pulseKey }: { gate: number; active: boolean; pulseKey: number }) {
+// Memoized so cascading parent re-renders (from typing, scrolling, streaming
+// tokens arriving) don't reapply the filter chain or remount the pulse layer.
+// Only true changes to `gate`, `active`, or `pulseKey` should touch this tree.
+const AuroraBackground = memo(function AuroraBackground({
+  gate,
+  active,
+  pulseKey,
+}: {
+  gate: number;
+  active: boolean;
+  pulseKey: number;
+}) {
   const sat = 80 + gate * 30;
   const bright = 0.92 + gate * 0.08;
   return (
@@ -112,17 +123,19 @@ function AuroraBackground({ gate, active, pulseKey }: { gate: number; active: bo
     >
       <div className="sal-aurora-base" />
       <div className="sal-aurora-grain" />
-      {/* Re-keyed per keystroke so React remounts it and the animation restarts. */}
+      {/* Re-keyed when a pulse fires so React remounts it and the animation restarts.
+          Throttled upstream — see Composer — so we don't remount a 28px-blurred
+          layer on every keystroke. */}
       <div className="sal-aurora-pulse" key={pulseKey} />
     </div>
   );
-}
+});
 
 // ============================================================
 // PHASE BAR — title, phase badge, run-mode metadata, begin-again.
 // ============================================================
 
-function PhaseBar({ processing, onReset }: { processing: boolean; onReset: () => void }) {
+const PhaseBar = memo(function PhaseBar({ processing, onReset }: { processing: boolean; onReset: () => void }) {
   const meta = ['1 API call/turn', 'TF-IDF Grep', '2-turn buffer'];
   return (
     <header className="sal-topbar relative z-30 flex shrink-0 flex-wrap items-center justify-between gap-y-2 border-b border-hairline px-7 pt-[18px] pb-4 backdrop-blur-[8px]">
@@ -164,7 +177,7 @@ function PhaseBar({ processing, onReset }: { processing: boolean; onReset: () =>
       </div>
     </header>
   );
-}
+});
 
 // ============================================================
 // MEMORY PANEL — Constitutional Memories.
@@ -177,7 +190,7 @@ interface MemoryPanelProps {
   onRemove: (id: string) => void;
 }
 
-function MemoryPanel({ memories, onUpdate, onAdd, onRemove }: MemoryPanelProps) {
+const MemoryPanel = memo(function MemoryPanel({ memories, onUpdate, onAdd, onRemove }: MemoryPanelProps) {
   const [newMemText, setNewMemText] = useState('');
 
   const submitNew = () => {
@@ -261,13 +274,13 @@ function MemoryPanel({ memories, onUpdate, onAdd, onRemove }: MemoryPanelProps) 
       </div>
     </section>
   );
-}
+});
 
 // ============================================================
 // TURN INSPECTOR — Architecture Trace, status, citations, deltas.
 // ============================================================
 
-function TurnInspector({ turnData }: { turnData: TurnData | null }) {
+const TurnInspector = memo(function TurnInspector({ turnData }: { turnData: TurnData | null }) {
   if (!turnData) {
     return <div className="py-2 text-[12.5px] italic text-fg-3">Nothing yet. Say something.</div>;
   }
@@ -409,13 +422,13 @@ function TurnInspector({ turnData }: { turnData: TurnData | null }) {
       )}
     </section>
   );
-}
+});
 
 // ============================================================
 // TOKEN CHART — payload size per turn.
 // ============================================================
 
-function TokenChart({ tokenHistory }: { tokenHistory: TokenHistoryEntry[] }) {
+const TokenChart = memo(function TokenChart({ tokenHistory }: { tokenHistory: TokenHistoryEntry[] }) {
   if (tokenHistory.length < 2) return null;
 
   const maxTokens = Math.max(...tokenHistory.map((t) => t.inputTokens), 1);
@@ -448,13 +461,16 @@ function TokenChart({ tokenHistory }: { tokenHistory: TokenHistoryEntry[] }) {
       </svg>
     </section>
   );
-}
+});
 
 // ============================================================
 // MESSAGE BLOCKS — Sal's reply, the user's centred pills.
 // ============================================================
 
-function AssistantMessage({ text, streaming = false }: { text: string; streaming?: boolean }) {
+// Memoized so finalized messages don't re-run ReactMarkdown on every parent
+// re-render (typing, pulse-key bumps, streaming token arrival). Only the
+// in-flight streaming bubble re-renders as its `text` grows.
+const AssistantMessage = memo(function AssistantMessage({ text, streaming = false }: { text: string; streaming?: boolean }) {
   return (
     <div
       className={cn(
@@ -541,9 +557,9 @@ function AssistantMessage({ text, streaming = false }: { text: string; streaming
       </ReactMarkdown>
     </div>
   );
-}
+});
 
-function UserPill({ text }: { text: string }) {
+const UserPill = memo(function UserPill({ text }: { text: string }) {
   return (
     <div className="my-1.5 flex justify-center">
       <div className="w-fit max-w-[90%] whitespace-pre-wrap break-words rounded-[22px] border border-hairline-strong bg-surface-thin px-5 py-2.5 text-[14.5px] font-light leading-[1.5] text-fg-1 backdrop-blur-[6px]">
@@ -551,7 +567,139 @@ function UserPill({ text }: { text: string }) {
       </div>
     </div>
   );
+});
+
+// ============================================================
+// COMPOSER — owns the input state locally.
+//
+// Why this is its own component: the input value is the highest-frequency
+// state in the app — it changes on every keystroke. If it lived on the root,
+// every keystroke would re-render the entire SGC tree (memory panel, turn
+// inspector, token chart, every assistant message running ReactMarkdown).
+// Lifting it down here means typing only re-renders the composer itself; the
+// aurora drift/pulse is signalled to the root via throttled callbacks.
+//
+// The root drives `resetSignal` to clear + focus the textarea after a turn
+// submits or a new chat is created.
+// ============================================================
+
+interface ComposerProps {
+  // Called when the user hits Enter or clicks send. The root resolves the
+  // text into a turn; the composer doesn't care what happens next.
+  onSubmit: (text: string) => void;
+  // Called on each keystroke with the current "salience gate" (0..1). The
+  // root rate-limits aurora updates via this — see SalienceGatedCognition.
+  onKeystroke: (gate: number) => void;
+  // Toggles the submit button + Enter handler. The root knows when it's
+  // mid-turn or pre-hydration; the composer just reflects.
+  submitDisabled: boolean;
+  // Bumped by the root after a successful turn / chat reset, to clear and
+  // refocus the textarea. A monotonic counter is the dependency-array
+  // friendly shape — flipping it triggers the effect.
+  resetSignal: number;
+  // History-toggle button — kept here so the composer row stays atomic.
+  historyOpen: boolean;
+  onToggleHistory: () => void;
+  historyButtonRef: React.RefObject<HTMLButtonElement | null>;
 }
+
+const Composer = memo(function Composer({
+  onSubmit,
+  onKeystroke,
+  submitDisabled,
+  resetSignal,
+  historyOpen,
+  onToggleHistory,
+  historyButtonRef,
+}: ComposerProps) {
+  const [input, setInput] = useState('');
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-grow the composer to fit its content.
+  useEffect(() => {
+    const t = inputRef.current;
+    if (!t) return;
+    t.style.height = 'auto';
+    t.style.height = `${Math.min(t.scrollHeight, 220)}px`;
+  }, [input]);
+
+  // Root-driven clear + refocus. Skips the initial mount so the textarea
+  // doesn't steal focus on first paint.
+  const firstResetMount = useRef(true);
+  useEffect(() => {
+    if (firstResetMount.current) {
+      firstResetMount.current = false;
+      return;
+    }
+    setInput('');
+    inputRef.current?.focus();
+  }, [resetSignal]);
+
+  const submit = useCallback(() => {
+    const trimmed = input.trim();
+    if (!trimmed || submitDisabled) return;
+    onSubmit(trimmed);
+    // We intentionally don't clear here — root will bump `resetSignal` when
+    // it's ready, so the visible draft survives if the parent rejects (e.g.,
+    // pre-hydration). In practice the disabled-guard above blocks that path.
+  }, [input, submitDisabled, onSubmit]);
+
+  return (
+    <div className="mx-auto w-full max-w-[680px] px-8 pt-[14px] pb-[22px]">
+      <div className="flex items-end gap-2.5">
+        <button
+          ref={historyButtonRef}
+          type="button"
+          onClick={onToggleHistory}
+          aria-label="Chat history"
+          aria-expanded={historyOpen}
+          className={cn(
+            'flex size-11 shrink-0 items-center justify-center rounded-full border bg-surface-thin shadow-glass backdrop-blur-[10px] transition-colors',
+            historyOpen
+              ? 'border-ember text-ember shadow-[0_0_18px_-4px_var(--color-ember)]'
+              : 'border-hairline-strong text-fg-2 hover:border-ember hover:text-ember',
+          )}
+        >
+          <Clock className="size-[17px]" />
+        </button>
+        <div className="flex flex-1 items-end gap-2.5 rounded-[24px] border border-hairline-strong bg-surface-thin py-2 pr-2 pl-[18px] shadow-glass backdrop-blur-[10px]">
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={(e) => {
+              const next = e.target.value;
+              setInput(next);
+              // Quantize the gate to integer word-count steps so we only
+              // touch the aurora's filter when the count crosses a boundary,
+              // not on every keystroke. The 600ms CSS transition smooths it.
+              const wc = next.split(/\s+/).filter(Boolean).length;
+              const gate = Math.min(0.9, 0.25 + wc * 0.06);
+              onKeystroke(gate);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            placeholder="Say something."
+            rows={1}
+            className="sal-scroll max-h-[220px] min-h-[22px] flex-1 resize-none border-0 bg-transparent py-1.5 text-[14.5px] leading-[1.55] text-fg-1 outline-none placeholder:text-fg-4"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            onClick={submit}
+            disabled={submitDisabled || !input.trim()}
+            aria-label="Say it"
+            className="size-[30px] rounded-full text-fg-2 hover:border-ember hover:bg-ember hover:text-bone"
+          ><ArrowUp className="size-[15px]" /></Button>
+        </div>
+      </div>
+    </div>
+  );
+});
 
 // ============================================================
 // MAIN APP
@@ -561,7 +709,6 @@ export default function SalienceGatedCognition() {
   const [memories, setMemories] = useState<Memory[]>(DEFAULT_MEMORIES);
   const [chatLog, setChatLog] = useState<ChatEntry[]>([]);
   const [messages, setMessages] = useState<ChatEntry[]>([]);
-  const [input, setInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   // Sal's reply as it streams in, with the trailing <turn-meta> block stripped.
   // null = no turn streaming (show the dot-pulse loader instead).
@@ -579,39 +726,47 @@ export default function SalienceGatedCognition() {
   // set has had a chance to load.
   const [hydrated, setHydrated] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
   const historyButtonRef = useRef<HTMLButtonElement>(null);
   // Flipped true when the user or the model actually mutates `memories`.
   // Guards the memory-save effect so the post-hydration render — which sets
   // memories from the server payload — doesn't round-trip a redundant save.
   const memoriesDirtyRef = useRef(false);
 
-  // --- Aurora gating: drift while active, pulse on each keystroke ---
+  // --- Aurora gating: drift while active, pulse on keystrokes (throttled) ---
+  // The composer signals into these via `handleKeystroke`. Critically, the
+  // composer owns its own input state — so typing alone does NOT cause this
+  // root to re-render; only the throttled aurora updates below do. That keeps
+  // the heavy children (memory panel, turn inspector, message list with
+  // ReactMarkdown) off the per-keystroke render path.
+  const [gate, setGate] = useState(0.25);
   const [typing, setTyping] = useState(false);
   const [pulseKey, setPulseKey] = useState(0);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Wall-clock of the last pulse we emitted, so we can rate-limit. A 28px
+  // blur layer re-mounting on every keystroke is the most expensive single
+  // thing in the UI — capping it at ~6-8 Hz keeps the visual rhythm without
+  // thrashing the compositor.
+  const lastPulseAt = useRef(0);
 
-  // Salience rises with how much the user has drafted. The aurora element
-  // carries a 600ms CSS transition on `filter` (see index.css), so each
-  // input change just sets a new target and the browser eases to it. No
-  // per-frame RAF, no 60fps re-render of the app tree.
-  const wordCount = input.split(/\s+/).filter(Boolean).length;
-  const gate = Math.min(0.9, 0.25 + wordCount * 0.06);
+  // Composer reset signal: bumped after a successful submit (and after the
+  // root resets the chat) to clear + refocus the textarea inside Composer.
+  const [composerResetSignal, setComposerResetSignal] = useState(0);
 
-  const handleKeystroke = useCallback(() => {
-    setPulseKey((k) => k + 1);
+  // Stable handler passed to <Composer/>. Rate-limited so the aurora doesn't
+  // remount its blurred pulse layer at keypress rate. The 600ms CSS
+  // transition on `.sal-aurora`'s filter (see index.css) means dropping the
+  // intermediate gate values is invisible — only the latest one matters.
+  const handleKeystroke = useCallback((nextGate: number) => {
+    setGate((prev) => (prev !== nextGate ? nextGate : prev));
     setTyping(true);
     if (typingTimer.current) clearTimeout(typingTimer.current);
     typingTimer.current = setTimeout(() => setTyping(false), 1600);
+    const now = performance.now();
+    if (now - lastPulseAt.current >= 140) {
+      lastPulseAt.current = now;
+      setPulseKey((k) => k + 1);
+    }
   }, []);
-
-  // Auto-grow the composer to fit its content.
-  useEffect(() => {
-    const t = inputRef.current;
-    if (!t) return;
-    t.style.height = 'auto';
-    t.style.height = `${Math.min(t.scrollHeight, 220)}px`;
-  }, [input]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -696,19 +851,24 @@ export default function SalienceGatedCognition() {
     setMemories((prev) => prev.filter((m) => m.id !== id));
   }, []);
 
-  const processInput = async () => {
-    const userInput = input.trim();
+  // `text` is the trimmed draft the composer passed up. The composer also
+  // pre-checks `submitDisabled`, but we keep the guard here as a belt to
+  // those suspenders — this is the only path that mutates chat state.
+  const processInput = async (text: string) => {
+    const userInput = text.trim();
     // Don't accept input until hydration has resolved the active chatId.
     // Submitting before then races the hydration effect: it would replay the
     // loaded chat over the in-flight user message (setMessages clobber), and
     // this closure would capture chatId === null so the turn would never
-    // persist. The submit button + Enter handler are also disabled below, so
-    // this branch is the belt to that suspenders.
+    // persist.
     if (!userInput || isProcessing || !hydrated || !chatId) return;
 
     const newTurnNumber = turnCount + 1;
     setTurnCount(newTurnNumber);
-    setInput('');
+    // Tell <Composer/> to clear + refocus its textarea. The composer owns its
+    // own input state — typing never re-renders this root — so we can't just
+    // `setInput('')` here.
+    setComposerResetSignal((s) => s + 1);
     setIsProcessing(true);
     setMessages((prev) => [...prev, { role: 'user' as const, content: userInput }]);
 
@@ -834,7 +994,8 @@ export default function SalienceGatedCognition() {
     } finally {
       setStreamingText(null);
       setIsProcessing(false);
-      inputRef.current?.focus();
+      // The composer focuses itself on its `resetSignal` effect (bumped above
+      // when the turn started). No imperative focus call needed here.
     }
   };
 
@@ -846,7 +1007,8 @@ export default function SalienceGatedCognition() {
     setLatestTurn(null);
     setTokenHistory([]);
     setTurnCount(0);
-    setInput('');
+    // Clear + refocus the composer's textarea (it owns its own input state).
+    setComposerResetSignal((s) => s + 1);
     try {
       const created = await apiCreateChat();
       setChatId(created.id);
@@ -882,6 +1044,26 @@ export default function SalienceGatedCognition() {
       console.warn('loadChat failed:', err);
     }
   }, [chatId]);
+
+  // Stable wrapper around `processInput` so the memoized <Composer/> sees
+  // referential stability across the gate/typing/pulse re-renders triggered
+  // by keystrokes. `processInput` itself closes over a lot of state and
+  // would re-create every render; the ref lets us hand the composer a
+  // never-changing callback.
+  const processInputRef = useRef(processInput);
+  processInputRef.current = processInput;
+  const handleComposerSubmit = useCallback((text: string) => {
+    void processInputRef.current(text);
+  }, []);
+
+  // Same shape for the history toggle so the composer's history button doesn't
+  // get a new onClick on every parent render.
+  const handleToggleHistory = useCallback(() => {
+    setHistoryOpen((o) => !o);
+  }, []);
+  const handleCloseHistory = useCallback(() => {
+    setHistoryOpen(false);
+  }, []);
 
   // Delete a chat. If it was the active one, swap to the next most-recent or
   // start a fresh one.
@@ -949,61 +1131,15 @@ export default function SalienceGatedCognition() {
               </div>
             </div>
 
-            {/* Composer */}
-            <div className="mx-auto w-full max-w-[680px] px-8 pt-[14px] pb-[22px]">
-              <div className="flex items-end gap-2.5">
-                <button
-                  ref={historyButtonRef}
-                  type="button"
-                  onClick={() => setHistoryOpen((o) => !o)}
-                  aria-label="Chat history"
-                  aria-expanded={historyOpen}
-                  className={cn(
-                    'flex size-11 shrink-0 items-center justify-center rounded-full border bg-surface-thin shadow-glass backdrop-blur-[10px] transition-colors',
-                    historyOpen
-                      ? 'border-ember text-ember shadow-[0_0_18px_-4px_var(--color-ember)]'
-                      : 'border-hairline-strong text-fg-2 hover:border-ember hover:text-ember',
-                  )}
-                >
-                  <Clock className="size-[17px]" />
-                </button>
-                <div className="flex flex-1 items-end gap-2.5 rounded-[24px] border border-hairline-strong bg-surface-thin py-2 pr-2 pl-[18px] shadow-glass backdrop-blur-[10px]">
-                  <textarea
-                    ref={inputRef}
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        // Submission is gated on hydration so the active
-                        // chatId is known before the turn fires. Without this
-                        // gate, an Enter pressed in the brief mount window
-                        // races the hydration replay and corrupts the visible
-                        // thread.
-                        if (!hydrated || !chatId) return;
-                        void processInput();
-                        return;
-                      }
-                      if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Enter') {
-                        handleKeystroke();
-                      }
-                    }}
-                    placeholder="Say something."
-                    rows={1}
-                    className="sal-scroll max-h-[220px] min-h-[22px] flex-1 resize-none border-0 bg-transparent py-1.5 text-[14.5px] leading-[1.55] text-fg-1 outline-none placeholder:text-fg-4"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    onClick={() => void processInput()}
-                    disabled={isProcessing || !input.trim() || !hydrated || !chatId}
-                    aria-label="Say it"
-                    className="size-[30px] rounded-full text-fg-2 hover:border-ember hover:bg-ember hover:text-bone"
-                  ><ArrowUp className="size-[15px]" /></Button>
-                </div>
-              </div>
-            </div>
+            <Composer
+              onSubmit={handleComposerSubmit}
+              onKeystroke={handleKeystroke}
+              submitDisabled={isProcessing || !hydrated || !chatId}
+              resetSignal={composerResetSignal}
+              historyOpen={historyOpen}
+              onToggleHistory={handleToggleHistory}
+              historyButtonRef={historyButtonRef}
+            />
           </div>
 
           {/* Context rail */}
@@ -1022,7 +1158,7 @@ export default function SalienceGatedCognition() {
 
       <ChatHistoryModal
         open={historyOpen}
-        onClose={() => setHistoryOpen(false)}
+        onClose={handleCloseHistory}
         chats={chats}
         activeChatId={chatId}
         onSelect={handleLoadChat}
