@@ -10,6 +10,9 @@
 @theme {
   --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  /* Used for the dialogue voice — chat titles and the user's own turns in the
+     chat memory editor read as "said". Loaded via <link> in index.html. */
+  --font-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
 
   --color-ground: #0a0907;
   --color-surface: rgba(245, 235, 220, 0.035);

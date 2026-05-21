@@ -20,6 +20,7 @@ import {
   saveMemories as apiSaveMemories,
   saveTurn as apiSaveTurn,
   type ChatSummary,
+  type TurnActiveState,
 } from './lib/persistence';
 import { ChatHistoryModal } from './components/ChatHistoryModal';
 import { Button } from '@/components/ui/button';
@@ -796,6 +797,8 @@ export default function SalienceGatedCognition() {
           const replay: ChatEntry[] = detail.turns.map((t) => ({
             role: t.role,
             content: t.content,
+            id: t.id,
+            active: t.active,
           }));
           setMessages(replay);
           setChatLog(replay);
@@ -1053,6 +1056,8 @@ export default function SalienceGatedCognition() {
       const replay: ChatEntry[] = detail.turns.map((t) => ({
         role: t.role,
         content: t.content,
+        id: t.id,
+        active: t.active,
       }));
       setMessages(replay);
       setChatLog(replay);
@@ -1085,6 +1090,34 @@ export default function SalienceGatedCognition() {
   const handleCloseHistory = useCallback(() => {
     setHistoryOpen(false);
   }, []);
+
+  // The chat memory editor gated some turns. If they belong to the chat that's
+  // currently loaded in the thread, the in-memory log (which the next cosine
+  // grep reads via cosineSearch) must reflect the new gates. We re-pull the
+  // live chat rather than patch by id: in-session turns are appended to chatLog
+  // without a DB id, so an id-match would miss them. The content is unchanged,
+  // so the visible thread is unaffected — only chatLog's `active` flags + ids
+  // refresh. Other chats are persisted server-side and pick the gate up on
+  // their next load, so there's nothing to do for them.
+  const handleActiveTurnsChanged = useCallback(
+    async (editedChatId: string, _states: TurnActiveState[]) => {
+      if (editedChatId !== chatId) return;
+      try {
+        const detail = await apiLoadChat(editedChatId);
+        setChatLog(
+          detail.turns.map((t) => ({
+            role: t.role,
+            content: t.content,
+            id: t.id,
+            active: t.active,
+          })),
+        );
+      } catch (err) {
+        console.warn('active-chat grep resync failed:', err);
+      }
+    },
+    [chatId],
+  );
 
   // Delete a chat. If it was the active one, swap to the next most-recent or
   // start a fresh one.
@@ -1185,6 +1218,7 @@ export default function SalienceGatedCognition() {
         onSelect={handleLoadChat}
         onDelete={handleDeleteChat}
         onBeginAgain={handleReset}
+        onActiveTurnsChanged={handleActiveTurnsChanged}
         returnFocusRef={historyButtonRef}
       />
     </div>

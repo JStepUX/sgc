@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { Brain, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import type { ChatSummary } from '../lib/persistence';
+import type { ChatSummary, TurnActiveState } from '../lib/persistence';
+import { ChatMemoryEditor } from './ChatMemoryEditor';
 
 // ============================================================
 // CHAT HISTORY MODAL — frosted glass over the aurora field, grouped by
@@ -18,6 +19,12 @@ interface ChatHistoryModalProps {
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onBeginAgain: () => void;
+  /**
+   * Fired when the user gates turns in the chat memory editor. Forwarded to
+   * the parent so the live chat's in-memory log stays in sync (the next turn's
+   * cosine grep then honors the gate without a reload).
+   */
+  onActiveTurnsChanged: (chatId: string, states: TurnActiveState[]) => void;
   /** Focus is restored to this element when the modal closes. */
   returnFocusRef: React.RefObject<HTMLButtonElement | null>;
 }
@@ -77,17 +84,22 @@ export function ChatHistoryModal({
   onSelect,
   onDelete,
   onBeginAgain,
+  onActiveTurnsChanged,
   returnFocusRef,
 }: ChatHistoryModalProps) {
   const [query, setQuery] = useState('');
+  // Which chat's turns are being edited. null = the plain history list; set =
+  // editor mode (modal widens, the list collapses into a left rail).
+  const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  // Reset the search on each open + focus the search input. Avoids the
-  // surprise of returning to a stale query the next time the user opens it.
+  // Reset the search + leave editor mode on each open + focus the search input.
+  // Avoids returning to a stale query or a stale editor the next time it opens.
   useEffect(() => {
     if (open) {
       setQuery('');
+      setEditingChatId(null);
       const id = setTimeout(() => searchRef.current?.focus(), 30);
       return () => clearTimeout(id);
     }
@@ -99,7 +111,9 @@ export function ChatHistoryModal({
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        // Escape steps out of the editor first, then closes the modal.
+        if (editingChatId) setEditingChatId(null);
+        else onClose();
         return;
       }
       if (e.key === 'Tab' && dialogRef.current) {
@@ -121,7 +135,7 @@ export function ChatHistoryModal({
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [open, onClose]);
+  }, [open, onClose, editingChatId]);
 
   // Restore focus to the clock button when closing.
   useEffect(() => {
@@ -163,117 +177,184 @@ export function ChatHistoryModal({
 
   const sections: Bucket[] = ['today', 'yesterday', 'week', 'earlier'];
   const totalShown = filtered.length;
+  const editing = editingChatId !== null;
+  const editingTitle = editing
+    ? (chats.find((c) => c.id === editingChatId)?.title ?? 'Chat')
+    : '';
+
+  // The chat list, rendered either as the full centered list (list mode) or as
+  // a compact left rail (editor mode). `variant` swaps row density + behavior:
+  // a row click loads-and-closes in list mode, but only switches the edited
+  // chat in rail mode.
+  const renderChatList = (variant: 'list' | 'rail') => {
+    if (totalShown === 0) {
+      return (
+        <div className="px-4 py-12 text-center text-[13px] italic text-fg-3">
+          {chats.length === 0 ? 'Nothing here yet. Begin one.' : 'Nothing matches that.'}
+        </div>
+      );
+    }
+    return sections.map((bucket) => {
+      const rows = grouped[bucket];
+      if (rows.length === 0) return null;
+      return (
+        <section key={bucket} className="mb-3">
+          <div className={cn(SECTION_LABEL, 'px-4 pt-2 pb-1.5')}>{BUCKET_LABELS[bucket]}</div>
+          <ul className="flex flex-col">
+            {rows.map((c) =>
+              variant === 'rail' ? (
+                <li key={c.id}>
+                  <RailRow
+                    chat={c}
+                    active={c.id === activeChatId}
+                    editing={c.id === editingChatId}
+                    onClick={() => setEditingChatId(c.id)}
+                  />
+                </li>
+              ) : (
+                <li key={c.id}>
+                  <ChatRow
+                    chat={c}
+                    active={c.id === activeChatId}
+                    onSelect={() => onSelect(c.id)}
+                    onDelete={() => onDelete(c.id)}
+                    onEdit={() => setEditingChatId(c.id)}
+                  />
+                </li>
+              ),
+            )}
+          </ul>
+        </section>
+      );
+    });
+  };
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ground/70 backdrop-blur-md"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ground/70 p-4 backdrop-blur-md"
       onClick={onClose}
     >
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="chat-history-title"
-        className="relative flex max-h-[80vh] w-full max-w-[560px] flex-col overflow-hidden rounded-[22px] border border-hairline-strong bg-ground/85 shadow-glass backdrop-blur-[18px]"
+        // The labelledby target (the list-mode <h2>) isn't in the DOM in editor
+        // mode, so name the dialog directly there from the chat being edited.
+        aria-labelledby={editing ? undefined : 'chat-history-title'}
+        aria-label={editing ? `Editing memory: ${editingTitle}` : undefined}
+        className={cn(
+          'relative flex max-h-[86vh] w-full flex-col overflow-hidden rounded-[22px] border border-hairline-strong bg-ground/85 shadow-glass backdrop-blur-[18px] transition-[max-width] duration-300',
+          editing ? 'max-w-[1180px]' : 'max-w-[560px]',
+        )}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex items-start justify-between gap-4 border-b border-hairline px-7 pt-6 pb-5">
-          <div className="flex flex-col gap-1.5">
-            <span className={RAIL_LABEL}>Chat history</span>
-            <h2
-              id="chat-history-title"
-              className="font-serif text-[22px] italic leading-tight text-fg-1"
-              style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}
-            >
-              Where you've been
-            </h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close chat history"
-            className="flex size-[30px] shrink-0 items-center justify-center rounded-full border border-hairline-strong bg-surface-thin text-fg-2 transition-colors hover:border-ember hover:bg-ember hover:text-bone"
-          >
-            <X className="size-[15px]" />
-          </button>
-        </div>
+        {editing ? (
+          // ---- EDITOR MODE: compact rail + the turn-gating editor ----
+          <div className="flex min-h-0 flex-1">
+            {/* Rail is a convenience for switching the edited chat; on narrow
+                screens it would crush the editor, so hide it (Back returns to
+                the full list to switch chats). */}
+            <aside className="hidden w-[280px] shrink-0 flex-col border-r border-hairline md:flex">
+              <div className="border-b border-hairline px-5 pt-6 pb-4">
+                <span className={RAIL_LABEL}>History · rail</span>
+              </div>
+              <div className="px-4 pt-3 pb-2">
+                <div className="relative flex items-center">
+                  <input
+                    ref={searchRef}
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search conversations."
+                    className="w-full rounded-[12px] border border-hairline-strong bg-surface px-3 py-2 text-[12.5px] text-fg-1 outline-none placeholder:text-fg-4 focus:border-ember/55"
+                  />
+                </div>
+              </div>
+              <div className="sal-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-4">
+                {renderChatList('rail')}
+              </div>
+            </aside>
 
-        {/* Search */}
-        <div className="px-7 pt-4 pb-3">
-          <div className="relative flex items-center">
-            <input
-              ref={searchRef}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search what you've said."
-              className="w-full rounded-[14px] border border-hairline-strong bg-surface px-4 py-2.5 text-[13.5px] text-fg-1 outline-none placeholder:text-fg-4 focus:border-ember/55"
+            <ChatMemoryEditor
+              key={editingChatId}
+              chatId={editingChatId!}
+              title={editingTitle}
+              onBack={() => setEditingChatId(null)}
+              onActiveTurnsChanged={onActiveTurnsChanged}
             />
-            {query && (
+
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close chat history"
+              className="absolute right-5 top-5 z-10 flex size-[30px] shrink-0 items-center justify-center rounded-full border border-hairline-strong bg-surface-thin text-fg-2 transition-colors hover:border-ember hover:bg-ember hover:text-bone"
+            >
+              <X className="size-[15px]" />
+            </button>
+          </div>
+        ) : (
+          // ---- LIST MODE: the recency-grouped history ----
+          <>
+            <div className="flex items-start justify-between gap-4 border-b border-hairline px-7 pt-6 pb-5">
+              <div className="flex flex-col gap-1.5">
+                <span className={RAIL_LABEL}>Chat history</span>
+                <h2
+                  id="chat-history-title"
+                  className="font-serif text-[22px] italic leading-tight text-fg-1"
+                >
+                  Where you've been
+                </h2>
+              </div>
               <button
                 type="button"
-                onClick={() => setQuery('')}
-                aria-label="Clear search"
-                className="absolute right-2.5 flex size-6 items-center justify-center rounded-full text-fg-3 transition-colors hover:bg-surface-strong hover:text-fg-1"
+                onClick={onClose}
+                aria-label="Close chat history"
+                className="flex size-[30px] shrink-0 items-center justify-center rounded-full border border-hairline-strong bg-surface-thin text-fg-2 transition-colors hover:border-ember hover:bg-ember hover:text-bone"
               >
-                <X className="size-[13px]" />
+                <X className="size-[15px]" />
               </button>
-            )}
-          </div>
-        </div>
-
-        {/* Rows */}
-        <div className="sal-scroll min-h-[120px] flex-1 overflow-y-auto px-3 pb-4">
-          {totalShown === 0 ? (
-            <div className="px-4 py-12 text-center text-[13px] italic text-fg-3">
-              {chats.length === 0
-                ? 'Nothing here yet. Begin one.'
-                : 'Nothing matches that.'}
             </div>
-          ) : (
-            sections.map((bucket) => {
-              const rows = grouped[bucket];
-              if (rows.length === 0) return null;
-              return (
-                <section key={bucket} className="mb-3">
-                  <div className={cn(SECTION_LABEL, 'px-4 pt-2 pb-1.5')}>
-                    {BUCKET_LABELS[bucket]}
-                  </div>
-                  <ul className="flex flex-col">
-                    {rows.map((c) => {
-                      const active = c.id === activeChatId;
-                      return (
-                        <li key={c.id}>
-                          <ChatRow
-                            chat={c}
-                            active={active}
-                            onSelect={() => onSelect(c.id)}
-                            onDelete={() => onDelete(c.id)}
-                          />
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </section>
-              );
-            })
-          )}
-        </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between gap-4 border-t border-hairline px-7 py-4">
-          <span className="font-mono text-[11px] tracking-[0.04em] text-fg-3">
-            {chats.length} conversation{chats.length === 1 ? '' : 's'}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleBeginAgain}
-            className="font-mono text-[11px] text-fg-3"
-          >
-            Begin again
-          </Button>
-        </div>
+            <div className="px-7 pt-4 pb-3">
+              <div className="relative flex items-center">
+                <input
+                  ref={searchRef}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search what you've said."
+                  className="w-full rounded-[14px] border border-hairline-strong bg-surface px-4 py-2.5 text-[13.5px] text-fg-1 outline-none placeholder:text-fg-4 focus:border-ember/55"
+                />
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => setQuery('')}
+                    aria-label="Clear search"
+                    className="absolute right-2.5 flex size-6 items-center justify-center rounded-full text-fg-3 transition-colors hover:bg-surface-strong hover:text-fg-1"
+                  >
+                    <X className="size-[13px]" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="sal-scroll min-h-[120px] flex-1 overflow-y-auto px-3 pb-4">
+              {renderChatList('list')}
+            </div>
+
+            <div className="flex items-center justify-between gap-4 border-t border-hairline px-7 py-4">
+              <span className="font-mono text-[11px] tracking-[0.04em] text-fg-3">
+                {chats.length} conversation{chats.length === 1 ? '' : 's'}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleBeginAgain}
+                className="font-mono text-[11px] text-fg-3"
+              >
+                Begin again
+              </Button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -288,9 +369,11 @@ interface ChatRowProps {
   active: boolean;
   onSelect: () => void;
   onDelete: () => void;
+  /** Open this chat in the turn-gating editor (the hover brain icon). */
+  onEdit: () => void;
 }
 
-function ChatRow({ chat, active, onSelect, onDelete }: ChatRowProps) {
+function ChatRow({ chat, active, onSelect, onDelete, onEdit }: ChatRowProps) {
   const now = new Date();
   const stamp = formatTimestamp(chat.updatedAt, now);
   return (
@@ -341,17 +424,76 @@ function ChatRow({ chat, active, onSelect, onDelete }: ChatRowProps) {
           </div>
         )}
       </div>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete();
-        }}
-        aria-label={`Delete ${chat.title}`}
-        className="ml-1 flex size-6 shrink-0 items-center justify-center rounded-full text-fg-4 opacity-0 transition-opacity hover:text-danger group-hover:opacity-100 focus:opacity-100"
-      >
-        <X className="size-[13px]" />
-      </button>
+      {/* Hover actions — edit (turn gating) then delete. */}
+      <div className="flex shrink-0 items-center gap-0.5">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit();
+          }}
+          aria-label={`Edit memory for ${chat.title}`}
+          className="flex size-6 items-center justify-center rounded-full text-fg-4 opacity-0 transition-opacity hover:text-ember group-hover:opacity-100 focus:opacity-100"
+        >
+          <Brain className="size-[15px]" />
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          aria-label={`Delete ${chat.title}`}
+          className="flex size-6 items-center justify-center rounded-full text-fg-4 opacity-0 transition-opacity hover:text-danger group-hover:opacity-100 focus:opacity-100"
+        >
+          <X className="size-[13px]" />
+        </button>
+      </div>
     </div>
+  );
+}
+
+// ============================================================
+// RAIL ROW — the compact list row used while editing. Title only; clicking
+// switches which chat is being edited (it does not load it into the thread).
+// ============================================================
+
+interface RailRowProps {
+  chat: ChatSummary;
+  active: boolean;
+  editing: boolean;
+  onClick: () => void;
+}
+
+function RailRow({ chat, active, editing, onClick }: RailRowProps) {
+  const stamp = formatTimestamp(chat.updatedAt, new Date());
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex w-full items-center gap-2.5 rounded-[10px] border px-3 py-2 text-left transition-colors',
+        editing
+          ? 'border-ember/45 bg-ember/[0.08]'
+          : 'border-transparent hover:border-hairline hover:bg-surface',
+      )}
+    >
+      <span
+        className={cn(
+          'size-1.5 shrink-0 rounded-full',
+          active ? 'bg-ember shadow-[0_0_8px_var(--color-ember)]' : 'bg-transparent',
+        )}
+        aria-hidden="true"
+      />
+      <span
+        className={cn(
+          'min-w-0 flex-1 truncate text-[13px] leading-snug',
+          editing ? 'text-fg-1' : 'text-fg-1/85',
+        )}
+      >
+        {chat.title}
+      </span>
+      <span className="shrink-0 font-mono text-[10px] tracking-[0.04em] text-fg-4">{stamp}</span>
+    </button>
   );
 }
