@@ -5,7 +5,7 @@ A research prototype for a conversational memory architecture. SGC explores
 salience-gated memory feeding a single ephemeral reasoning call.
 
 > **Phase 1.5** — Ephemeral Sal + TF-IDF Cosine Grep + 2-turn local buffer.
-> No model-based retrieval. One reasoning component. One API call per turn.
+> No model-based *memory* retrieval. One reasoning component. One API call per turn.
 
 ## The idea
 
@@ -21,6 +21,15 @@ reasoning instance:
 These feed **Sal**, an ephemeral reasoning instance that exists for exactly one
 turn and is then retired. Sal replies in natural language and emits updated
 confidence scores. One API call per turn, total.
+
+Sal can also reach the live web when a turn needs it: **web search** for recent
+or external facts, and a deterministic, SSRF-guarded **URL pre-fetch** that
+extracts a linked page's text (Readability) before the call so it's read in one
+pass. This is web/*knowledge* retrieval — a separate axis from the memory tiers
+above, which stay model-free — and it keeps the one-call-per-turn shape (the
+search loop runs server-side inside that single call). The "one API call" count
+is a guardrail, not the thesis; the thesis is Sal's per-turn ephemerality and
+the curated-tier context. See `CLAUDE.md` → Mission Brief.
 
 ## Running it
 

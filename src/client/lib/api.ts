@@ -9,11 +9,75 @@
 // `error` frame reports a mid-stream failure. This is still ONE API call per
 // turn — the turn is just delivered incrementally instead of all at once.
 
+import type { FetchedDoc } from './types';
+
+/**
+ * Pull http(s) URLs out of a user message — deduped, in order, capped. Used to
+ * decide which links to pre-fetch before the turn. Trailing sentence punctuation
+ * is stripped so "see https://x.com/p." doesn't fetch a URL ending in a dot.
+ */
+export function extractUrls(text: string, max = 3): string[] {
+  // Allow parens in the path so Wikipedia-style links survive
+  // (.../Stack_(abstract_data_type)). Then trim trailing sentence punctuation,
+  // and strip a trailing ) or ] only when it's unbalanced — so a link wrapped in
+  // prose, "(see https://x.com/p)", loses its ) but a balanced pair is kept.
+  const re = /https?:\/\/[^\s<>]+/gi;
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const m of text.matchAll(re)) {
+    let url = m[0].replace(/[.,;:!?'"]+$/, '');
+    if (/[)\]]$/.test(url)) {
+      const close = url.slice(-1);
+      const open = close === ')' ? '(' : '[';
+      const opens = url.split(open).length - 1;
+      const closes = url.split(close).length - 1;
+      if (closes > opens) url = url.slice(0, -1);
+    }
+    if (url && !seen.has(url)) {
+      seen.add(url);
+      out.push(url);
+    }
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/**
+ * Pre-fetch + extract a single URL via the server (`POST /api/fetch-url`).
+ * Returns null on ANY failure (bad URL, timeout, no article content) — the turn
+ * then proceeds without the page, and Sal still has web_fetch as a fallback. The
+ * caller folds successful results into the prompt as ephemeral LINKED PAGE
+ * context. No model is involved here; this is deterministic retrieval.
+ */
+export async function fetchUrl(url: string): Promise<FetchedDoc | null> {
+  try {
+    const res = await fetch('/api/fetch-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as Partial<FetchedDoc>;
+    if (typeof data.url !== 'string' || typeof data.text !== 'string') return null;
+    return {
+      url: data.url,
+      title: typeof data.title === 'string' && data.title ? data.title : data.url,
+      text: data.text,
+      truncated: Boolean(data.truncated),
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** What a completed turn returns to the UI. */
 export interface TurnResult {
   text: string;
   inputTokens: number;
   outputTokens: number;
+  /** Server-side web tool requests Sal made this turn (0 when it didn't browse). */
+  webSearchRequests: number;
+  webFetchRequests: number;
   /** Round-trip latency in ms, measured client-side. */
   elapsed: number;
 }
@@ -59,6 +123,8 @@ export async function runTurn(
   let text = '';
   let inputTokens = 0;
   let outputTokens = 0;
+  let webSearchRequests = 0;
+  let webFetchRequests = 0;
 
   // SSE frames are `event: <name>\ndata: <json>\n\n`. A single frame can be
   // split across network chunks, so the accumulator state lives OUTSIDE the
@@ -94,9 +160,16 @@ export async function runTurn(
         onDelta?.(text);
       }
     } else if (name === 'done') {
-      const d = payload as { inputTokens?: number; outputTokens?: number };
+      const d = payload as {
+        inputTokens?: number;
+        outputTokens?: number;
+        webSearchRequests?: number;
+        webFetchRequests?: number;
+      };
       inputTokens = d.inputTokens ?? 0;
       outputTokens = d.outputTokens ?? 0;
+      webSearchRequests = d.webSearchRequests ?? 0;
+      webFetchRequests = d.webFetchRequests ?? 0;
     } else if (name === 'error') {
       const message = (payload as { error?: string }).error ?? 'stream error';
       throw new Error(`Turn request failed: ${message}`);
@@ -127,6 +200,8 @@ export async function runTurn(
     text,
     inputTokens,
     outputTokens,
+    webSearchRequests,
+    webFetchRequests,
     elapsed: Date.now() - startTime,
   };
 }

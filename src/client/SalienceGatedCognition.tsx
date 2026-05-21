@@ -2,7 +2,7 @@ import { memo, useState, useRef, useEffect, useCallback } from 'react';
 import { ArrowUp, Clock, Plus } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { Memory, ChatEntry } from './lib/types';
+import type { Memory, ChatEntry, FetchedDoc } from './lib/types';
 import { cosineSearch } from './lib/tfidf';
 import {
   buildPrompt,
@@ -10,7 +10,7 @@ import {
   parseTurnResponse,
   stripStreamingMeta,
 } from './lib/prompt';
-import { runTurn } from './lib/api';
+import { runTurn, extractUrls, fetchUrl } from './lib/api';
 import {
   createChat as apiCreateChat,
   deleteChat as apiDeleteChat,
@@ -872,6 +872,27 @@ export default function SalienceGatedCognition() {
     setIsProcessing(true);
     setMessages((prev) => [...prev, { role: 'user' as const, content: userInput }]);
 
+    // ---- URL PRE-FETCH (deterministic, no model) ----
+    // If the person pasted link(s), pull clean article text now — before the
+    // single model call — so Sal reads the page in-context and the tokens are
+    // counted once, instead of the server-side web_fetch tool dumping full page
+    // chrome into its loop and re-counting it across passes. Failures return
+    // null and are simply skipped (web_fetch stays as Sal's fallback). Folded
+    // into BOTH the real prompt and the naive baseline below, so a one-off fetch
+    // doesn't skew the Context Savings tile. URLs that fail to pre-load are
+    // passed through separately so Sal is told it may web_fetch them itself
+    // (otherwise the "already provided, don't re-fetch" guidance would suppress
+    // the fallback).
+    const urls = extractUrls(userInput);
+    const fetched = await Promise.all(urls.map(fetchUrl));
+    const fetchedDocs: FetchedDoc[] = [];
+    const failedUrls: string[] = [];
+    urls.forEach((u, i) => {
+      const doc = fetched[i];
+      if (doc) fetchedDocs.push(doc);
+      else failedUrls.push(u);
+    });
+
     const turnData: TurnData = {
       turnNumber: newTurnNumber,
       inputTokens: 0,
@@ -886,7 +907,7 @@ export default function SalienceGatedCognition() {
       // turn" pipeline would have sent. Computed BEFORE the new pair is
       // appended to chatLog, so `chatLog` here is everything prior to this
       // turn — same baseline the local buffer and cosine grep see.
-      naiveTokens: estimateNaiveContextTokens(memories, chatLog, userInput),
+      naiveTokens: estimateNaiveContextTokens(memories, chatLog, userInput, fetchedDocs, failedUrls),
     };
 
     try {
@@ -907,7 +928,7 @@ export default function SalienceGatedCognition() {
       }
 
       // ---- SINGLE MODEL CALL (streamed) ----
-      const systemPrompt = buildPrompt(memories, localBuffer, grepResults.length > 0 ? grepResults : null);
+      const systemPrompt = buildPrompt(memories, localBuffer, grepResults.length > 0 ? grepResults : null, fetchedDocs, failedUrls);
       const turnResult = await runTurn(systemPrompt, userInput, (rawSoFar) => {
         // Render Sal's reply as it arrives; hide the trailing <turn-meta> block.
         setStreamingText(stripStreamingMeta(rawSoFar));

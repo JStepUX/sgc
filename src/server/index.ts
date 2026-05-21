@@ -12,9 +12,13 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 import express from 'express';
 import cors from 'cors';
 import Anthropic from '@anthropic-ai/sdk';
+import { JSDOM } from 'jsdom';
+import { Readability } from '@mozilla/readability';
 import {
   createChat as dbCreateChat,
   deleteChat as dbDeleteChat,
@@ -89,6 +93,16 @@ app.post('/api/turn', async (req, res) => {
   // request to Anthropic; it just delivers the response incrementally. The
   // Phase 1.5 "one API call per turn" invariant holds.
   //
+  // web_search / web_fetch are Anthropic SERVER-SIDE tools: their search/fetch
+  // loop runs INSIDE this one request, so the single-call invariant survives.
+  // This is web/knowledge retrieval — a different axis from the cosine-grep
+  // MEMORY retrieval, which stays pure math with no model in the loop. (See
+  // AGENTS.md: "no model-based retrieval" was always about memory.) The one
+  // edge: if the server-side loop hits its iteration cap the stream ends with
+  // stop_reason 'pause_turn' instead of 'end_turn'; we deliberately do NOT
+  // resume (resuming is a second call) — see the finalMessage handler below.
+  // Fetch is unrestricted (no allowed_domains) by design.
+  //
   // No prompt caching: the system prompt is ~1-2k tokens (below Opus 4.7's
   // 4096-token cache minimum) and is rebuilt every turn from the memory tiers —
   // there is no stable prefix to cache. Adaptive thinking is left off (Opus 4.7
@@ -98,6 +112,10 @@ app.post('/api/turn', async (req, res) => {
     max_tokens: MAX_TOKENS,
     system,
     messages: [{ role: 'user', content: message }],
+    tools: [
+      { type: 'web_search_20260209', name: 'web_search' },
+      { type: 'web_fetch_20260209', name: 'web_fetch' },
+    ],
   });
 
   // The error event is handled via the finalMessage() rejection below; this
@@ -121,9 +139,19 @@ app.post('/api/turn', async (req, res) => {
   try {
     const final = await stream.finalMessage();
     settled = true;
+    // The server-side web-tool loop hit its iteration cap. Resuming would be a
+    // second API call; the one-call-per-turn invariant is worth more than the
+    // rare over-long research turn, so we let it end here and just log it. If
+    // this ever fires in practice, that's the signal to reconsider — not a bug.
+    if (final.stop_reason === 'pause_turn') {
+      console.warn('turn ended on pause_turn (web-tool loop cap) — not resuming; one-call invariant held');
+    }
     send('done', {
       inputTokens: final.usage.input_tokens,
       outputTokens: final.usage.output_tokens,
+      // Server-side web tool counts (0 when Sal didn't reach for the web).
+      webSearchRequests: final.usage.server_tool_use?.web_search_requests ?? 0,
+      webFetchRequests: final.usage.server_tool_use?.web_fetch_requests ?? 0,
     });
     res.end();
   } catch (err) {
@@ -141,6 +169,218 @@ app.post('/api/turn', async (req, res) => {
       send('error', { error: detail });
       res.end();
     }
+  }
+});
+
+// ============================================================
+// URL PRE-FETCH (deterministic, NO model)
+//
+// For the "read this page" case the browser sends a pasted URL here BEFORE the
+// turn. We fetch it and run Readability extraction — a pure algorithm, no model,
+// no drift — and hand back clean article text. The browser folds that into the
+// single /api/turn prompt as a LINKED PAGE block, so the page is read in ONE
+// model call and counted ONCE. This is far cheaper than the server-side
+// web_fetch tool, which dumps full page chrome into context and re-counts it
+// across the internal tool loop (the 94k-token turn that prompted this). It is
+// the web-knowledge analogue of the cosine grep: mechanical retrieval, no model
+// in the loop. web_search / web_fetch stay on /api/turn for the case where Sal
+// must DISCOVER what to read.
+// ============================================================
+
+const FETCH_TIMEOUT_MS = 15_000;
+const MAX_HTML_BYTES = 5_000_000; // refuse to ingest a monster page
+const MAX_EXTRACT_CHARS = 60_000; // ~15k tokens — the deterministic content cap
+const MAX_REDIRECT_HOPS = 5;
+
+// This endpoint fetches an arbitrary user-supplied URL server-side — an SSRF
+// surface. The request originates inside the host's trust boundary, so a crafted
+// link could otherwise reach localhost services, the LAN, or cloud metadata
+// (169.254.169.254). Defence is layered:
+//   1. asFetchableUrl   — scheme must be http(s); reject obvious by-name hosts.
+//   2. assertPublicHost — resolve DNS and reject if ANY address is private, so a
+//      public hostname pointing at a private IP (DNS rebinding) is caught.
+//   3. safeFetch        — redirects are followed MANUALLY and every hop is
+//      re-validated through (1)+(2), so a 30x to a private target can't slip past.
+// Residual: resolve→connect is a TOCTOU window — a hostile resolver could return
+// a public IP for our check and a private one for fetch's own lookup. Closing it
+// fully needs connecting to the validated IP directly (a pinned agent); that's
+// out of scope for a local prototype, noted so this isn't mistaken for airtight.
+
+class BlockedUrlError extends Error {}
+
+function asFetchableUrl(raw: string): URL | null {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  // Numeric private/loopback hosts are caught by assertPublicHost (which also
+  // covers DNS); here we only fast-reject by-name hosts that may never resolve.
+  if (host === 'localhost' || host.endsWith('.local')) return null;
+  return u;
+}
+
+function isPrivateIp(addr: string): boolean {
+  let ip = addr;
+  const mapped = ip.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i); // IPv4-mapped IPv6
+  if (mapped) ip = mapped[1];
+  if (isIP(ip) === 4) {
+    const [a, b] = ip.split('.').map(Number);
+    return (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 169 && b === 254) || // link-local, incl. cloud metadata
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 100 && b >= 64 && b <= 127) // CGNAT
+    );
+  }
+  const v6 = ip.toLowerCase();
+  return (
+    v6 === '::1' ||
+    v6 === '::' ||
+    v6.startsWith('fc') ||
+    v6.startsWith('fd') || // fc00::/7 unique-local
+    /^fe[89ab]/.test(v6) // fe80::/10 link-local
+  );
+}
+
+// Resolve a host and throw unless every address it maps to is public. Literal
+// IPs are checked directly; names are resolved (all records) so a name pointing
+// at a private address is rejected.
+async function assertPublicHost(host: string): Promise<void> {
+  const bare = host.replace(/^\[|\]$/g, '');
+  if (isIP(bare)) {
+    if (isPrivateIp(bare)) throw new BlockedUrlError(`blocked private address ${bare}`);
+    return;
+  }
+  let addrs: { address: string }[];
+  try {
+    addrs = await lookup(bare, { all: true });
+  } catch {
+    throw new BlockedUrlError(`could not resolve host ${bare}`);
+  }
+  if (addrs.length === 0 || addrs.some((a) => isPrivateIp(a.address))) {
+    throw new BlockedUrlError(`host ${bare} resolves to a non-public address`);
+  }
+}
+
+// Fetch with MANUAL redirect handling; re-validate scheme/host and resolved IP
+// at every hop. Throws BlockedUrlError if any hop targets a non-public address.
+async function safeFetch(start: URL, signal: AbortSignal): Promise<Response> {
+  let current: URL = start;
+  for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
+    await assertPublicHost(current.hostname);
+    const resp = await fetch(current, {
+      signal,
+      redirect: 'manual',
+      headers: {
+        // Some sites refuse the default fetch User-Agent.
+        'User-Agent': 'Mozilla/5.0 (compatible; SGC-Sal/0.1; local prototype)',
+        Accept: 'text/html,application/xhtml+xml',
+      },
+    });
+    if (resp.status < 300 || resp.status >= 400) return resp;
+    const loc = resp.headers.get('location');
+    await resp.body?.cancel(); // free the socket; the 3xx body is unused
+    if (!loc) return resp; // redirect with no target — caller will see non-OK
+    const next = asFetchableUrl(new URL(loc, current).href);
+    if (!next) throw new BlockedUrlError('redirect to a blocked or invalid URL');
+    current = next;
+  }
+  throw new BlockedUrlError('too many redirects');
+}
+
+// Read a body as UTF-8, enforcing a byte cap DURING the read so an unbounded or
+// oversized response can't buffer the whole thing into memory. Returns null when
+// the cap is exceeded.
+async function readCapped(resp: Response, maxBytes: number): Promise<string | null> {
+  if (!resp.body) return '';
+  const reader = resp.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+app.post('/api/fetch-url', async (req, res) => {
+  const { url } = (req.body ?? {}) as { url?: unknown };
+  if (typeof url !== 'string') {
+    res.status(400).json({ error: 'Body must include a string `url`.' });
+    return;
+  }
+  const parsed = asFetchableUrl(url);
+  if (!parsed) {
+    res.status(400).json({ error: 'URL must be a public http(s) address.' });
+    return;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const upstream = await safeFetch(parsed, controller.signal);
+    if (!upstream.ok) {
+      res.status(502).json({ error: `Upstream returned HTTP ${upstream.status}.` });
+      return;
+    }
+    const ctype = upstream.headers.get('content-type') ?? '';
+    if (!ctype.includes('html') && !ctype.includes('text')) {
+      res.status(415).json({ error: `Unsupported content-type: ${ctype || 'unknown'}.` });
+      return;
+    }
+    const html = await readCapped(upstream, MAX_HTML_BYTES);
+    if (html === null) {
+      res.status(413).json({ error: 'Page too large to extract.' });
+      return;
+    }
+
+    // JSDOM runs no scripts and loads no subresources by default, so this parse
+    // is inert. Pass the final (post-redirect) URL so relative links resolve.
+    const finalUrl = upstream.url || parsed.href;
+    const dom = new JSDOM(html, { url: finalUrl });
+    const article = new Readability(dom.window.document).parse();
+    const text = (article?.textContent ?? '').trim();
+    if (!text) {
+      res.status(422).json({ error: 'No readable article content found.' });
+      return;
+    }
+
+    const truncated = text.length > MAX_EXTRACT_CHARS;
+    res.json({
+      url: finalUrl,
+      title: (article?.title ?? '').trim() || parsed.hostname,
+      text: truncated ? text.slice(0, MAX_EXTRACT_CHARS) : text,
+      truncated,
+    });
+  } catch (err) {
+    if (err instanceof BlockedUrlError) {
+      res.status(400).json({ error: `Refused: ${err.message}.` });
+      return;
+    }
+    const aborted = err instanceof Error && err.name === 'AbortError';
+    if (!aborted) console.error('fetch-url failed:', err);
+    res.status(aborted ? 504 : 502).json({
+      error: aborted ? 'Fetch timed out.' : 'Failed to fetch or parse the URL.',
+    });
+  } finally {
+    clearTimeout(timer);
   }
 });
 

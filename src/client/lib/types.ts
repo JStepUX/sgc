@@ -24,3 +24,16 @@ export interface Memory {
   confidence: number;
   history: MemoryHistoryEntry[];
 }
+
+/**
+ * A web page the user linked, pre-fetched and extracted (Readability) on the
+ * server BEFORE the turn, then folded into the prompt as ephemeral, this-turn-
+ * only context. Deterministic retrieval — no model in the loop. `truncated` is
+ * set when the extracted text exceeded the server's character cap.
+ */
+export interface FetchedDoc {
+  url: string;
+  title: string;
+  text: string;
+  truncated: boolean;
+}

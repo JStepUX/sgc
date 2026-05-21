@@ -29,6 +29,42 @@ documented:
 
 ---
 
+## "No model-based retrieval" means MEMORY retrieval — web search/fetch is a different axis (web tools, 2026-05-20)
+
+The Phase 1.5 invariant "no model-based retrieval / no drift surface" is about
+how Sal recalls **the person** — chat history and memories. Phase 1 used a model
+as the grepper ("Grepory"); it was slow and unhelpful, so cosine TF-IDF replaced
+it (`lib/tfidf.ts`). That story is the whole point of the invariant: *memory*
+retrieval must be deterministic math, not a reasoning component. It was never
+about whether Sal can reach the outside world. So the server-side `web_search` /
+`web_fetch` tools added to `/api/turn` (`src/server/index.ts`) do **not** violate
+it — they're web/knowledge retrieval, an orthogonal axis. The cosine grep remains
+the sole memory mechanism. Don't "fix" the web tools by routing them through a
+model-retrieval objection that doesn't apply; and equally, don't let web access
+creep into the *memory* path — that line is still load-bearing. The prompt
+(`lib/prompt.ts`) tells Sal explicitly: web is for the world, memories are for the
+person.
+
+These are Anthropic server-side tools: the search/fetch loop runs inside the one
+`messages.stream()` request, so "one API call per turn" still holds. But note
+(per CLAUDE.md → Mission Brief) that the call count is a **guardrail, not the
+law** — the thesis is Sal's per-turn ephemerality + curated-tier context, not the
+integer 1. A call added *within* a turn that keeps Sal ephemeral and leaves
+*memory* retrieval deterministic doesn't breach the thesis. The single caveat
+here is `stop_reason: 'pause_turn'` (server loop hit its iteration cap) — we log
+it and deliberately do **not** resume, because resuming costs a second call for
+no thesis benefit. See the comment at the stream/`finalMessage` site in
+`src/server/index.ts`.
+
+For the explicit-URL case ("read this page"), retrieval is even cleaner: a
+deterministic server-side **pre-fetch** (`POST /api/fetch-url`, Readability
+extraction — no model) pulls clean article text *before* the single model call,
+and the browser folds it into the prompt as a `LINKED PAGE` block. One call, page
+counted once, no loop, no model in the loop. `web_search` (and `web_fetch` as a
+discovery-read fallback) stay server-side for the case where Sal must decide what
+to read. The pre-fetch is the web-knowledge analogue of cosine-replacing-Grepory:
+mechanical retrieval, no drift.
+
 ## Web fonts must load via `<link>` in `index.html`, not `@import` in `index.css` (Sal re-skin, 2026-05-19)
 
 A web-font `@import url("https://fonts.googleapis.com/…")` placed in
