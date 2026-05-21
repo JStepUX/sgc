@@ -27,6 +27,8 @@ export interface ChatTurn {
   content: string;
   createdAt: number;
   inspectorJson: string | null;
+  /** Whether this turn participates in cosine-grep retrieval (chat memory editor gate). */
+  active: boolean;
 }
 
 export interface ChatDetail {
@@ -106,6 +108,24 @@ export function saveTurn(chatId: string, args: SaveTurnArgs): Promise<{ ok: true
   return jsonFetch<{ ok: true }>(
     `/api/chats/${encodeURIComponent(chatId)}/turns`,
     { method: 'POST', body: JSON.stringify(args) },
+  );
+}
+
+/** One turn's gate state for {@link setTurnsActive}. */
+export interface TurnActiveState {
+  id: number;
+  active: boolean;
+}
+
+// Persist the cosine-grep gate for one or more turns (chat memory editor).
+// Bulk so a mass action ("All off", select-mode apply) is a single round-trip.
+export function setTurnsActive(
+  chatId: string,
+  states: TurnActiveState[],
+): Promise<{ ok: true }> {
+  return jsonFetch<{ ok: true }>(
+    `/api/chats/${encodeURIComponent(chatId)}/turn-active`,
+    { method: 'PUT', body: JSON.stringify({ states }) },
   );
 }
 

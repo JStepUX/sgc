@@ -4,6 +4,20 @@
 export interface ChatEntry {
   role: 'user' | 'assistant';
   content: string;
+  /**
+   * DB turn-row id, present when this entry was loaded from persistence.
+   * Absent for entries created in-session before their first save. The chat
+   * memory editor uses it to address individual turns when gating them.
+   */
+  id?: number;
+  /**
+   * Whether this turn participates in cosine-grep retrieval. `undefined`/`true`
+   * = retrievable; `false` = gated off by the user in the chat memory editor.
+   * Gating curates the cosine-grep corpus (older history) only — the local
+   * buffer still sends the last 2 turns verbatim regardless. Deterministic
+   * curation, no model in the loop: it strengthens the Phase 1.5 thesis.
+   */
+  active?: boolean;
 }
 
 /** A single confidence-score change applied to a memory on one turn. */

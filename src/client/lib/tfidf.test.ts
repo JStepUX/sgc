@@ -141,4 +141,36 @@ describe('cosineSearch', () => {
     const results = cosineSearch('quantum pasta', log, 4, 1);
     expect(results.length).toBeLessThanOrEqual(1);
   });
+
+  // --- Gating: turns switched off in the chat memory editor are excluded ---
+  describe('gating (active flag)', () => {
+    it('excludes a turn whose both halves are gated off', () => {
+      const gated: ChatEntry[] = log.map((e, i) =>
+        i < 2 ? { ...e, active: false } : e,
+      );
+      // Turn 1 (the quantum pair) is gated off; the query that used to match it
+      // now finds nothing in the searchable window.
+      const results = cosineSearch('quantum particles physics', gated);
+      expect(results.every((r) => r.turnIndex !== 1)).toBe(true);
+    });
+
+    it('treats undefined active as retrievable (ungated logs unchanged)', () => {
+      const results = cosineSearch('quantum particles physics', log);
+      expect(results[0]?.turnIndex).toBe(1);
+    });
+
+    it('drops a gated half from the matched document and its returned content', () => {
+      // Gate only the assistant half of turn 1. The user half ("quantum
+      // entanglement particles") still matches; the assistant text must not
+      // leak into the result that feeds Sal's prompt.
+      const gated: ChatEntry[] = log.map((e, i) =>
+        i === 1 ? { ...e, active: false } : e,
+      );
+      const results = cosineSearch('quantum entanglement particles', gated);
+      const turn1 = results.find((r) => r.turnIndex === 1);
+      expect(turn1).toBeDefined();
+      expect(turn1?.userContent).toContain('quantum');
+      expect(turn1?.assistContent).toBe('');
+    });
+  });
 });

@@ -129,17 +129,31 @@ export function cosineSearch(
   if (searchable.length === 0) return [];
 
   // Build turn-pair documents (user + assistant grouped).
+  //
+  // Per-message gating: a turn the user switched off in the chat memory editor
+  // is excluded from retrieval. `active !== false` treats undefined (the common
+  // case — entries with no flag) as active, so this is a no-op for ungated
+  // logs. A gated half contributes nothing to the document text, the IDF
+  // statistics, or the returned `userContent`/`assistContent` (so its words
+  // never reach Sal's prompt). This is deterministic curation of the memory
+  // tier — no model decides what's retrievable, the person does.
   const turnDocs: TurnDoc[] = [];
   for (let i = 0; i < searchable.length; i += 2) {
-    const userMsg = searchable[i]?.content || '';
-    const assistMsg = searchable[i + 1]?.content || '';
+    const userEntry = searchable[i];
+    const assistEntry = searchable[i + 1];
+    const userMsg = userEntry && userEntry.active !== false ? userEntry.content : '';
+    const assistMsg = assistEntry && assistEntry.active !== false ? assistEntry.content : '';
     const tokens = tokenize(`${userMsg} ${assistMsg}`);
+    // Both halves gated off (or genuinely content-free) → the turn drops out of
+    // the corpus entirely. turnIndex stays position-based (`i / 2`), so the
+    // diagnostics panel's "Turn N" labels are unaffected by what's gated.
+    if (tokens.length === 0) continue;
     turnDocs.push({
       tokens,
       tf: buildTFVector(tokens),
       turnIndex: Math.floor(i / 2) + 1,
-      userContent: searchable[i]?.content || '',
-      assistContent: searchable[i + 1]?.content || '',
+      userContent: userMsg,
+      assistContent: assistMsg,
     });
   }
 

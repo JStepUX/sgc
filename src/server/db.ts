@@ -38,7 +38,8 @@ db.exec(`
     role TEXT NOT NULL,
     content TEXT NOT NULL,
     created_at INTEGER NOT NULL,
-    inspector_json TEXT
+    inspector_json TEXT,
+    active INTEGER NOT NULL DEFAULT 1
   );
   CREATE INDEX IF NOT EXISTS idx_turns_chat ON turns(chat_id, ordinal);
 
@@ -60,6 +61,17 @@ db.exec(`
   );
 `);
 
+// Migration: DBs created before the chat memory editor predate turns.active.
+// CREATE TABLE IF NOT EXISTS won't add a column to an existing table, so add it
+// explicitly when missing. Default 1 means every pre-existing turn stays
+// retrievable — gating is opt-out, never silently applied.
+{
+  const turnCols = db.prepare(`PRAGMA table_info(turns)`).all() as { name: string }[];
+  if (!turnCols.some((c) => c.name === 'active')) {
+    db.exec(`ALTER TABLE turns ADD COLUMN active INTEGER NOT NULL DEFAULT 1`);
+  }
+}
+
 // ============================================================
 // TYPES — shape on the wire (camelCase). DB columns are snake_case
 // and get mapped explicitly in each helper.
@@ -80,6 +92,8 @@ export interface ChatTurn {
   content: string;
   createdAt: number;
   inspectorJson: string | null;
+  /** Whether this turn participates in cosine-grep retrieval (chat memory editor gate). */
+  active: boolean;
 }
 
 export interface ChatDetail {
@@ -168,7 +182,7 @@ export function listChats(): ChatSummary[] {
 
 const getChatStmt = db.prepare(`SELECT id, title FROM chats WHERE id = ?`);
 const getChatTurnsStmt = db.prepare(`
-  SELECT id, ordinal, role, content, created_at, inspector_json
+  SELECT id, ordinal, role, content, created_at, inspector_json, active
   FROM turns
   WHERE chat_id = ?
   ORDER BY ordinal ASC
@@ -182,6 +196,7 @@ interface TurnRow {
   content: string;
   created_at: number;
   inspector_json: string | null;
+  active: number;
 }
 
 export function loadChat(id: string): ChatDetail | null {
@@ -195,6 +210,7 @@ export function loadChat(id: string): ChatDetail | null {
     content: r.content,
     createdAt: r.created_at,
     inspectorJson: r.inspector_json,
+    active: r.active !== 0,
   }));
   // The latest assistant turn carries the inspector blob worth restoring into
   // the right-rail diagnostics — older turns' blobs aren't displayed.
@@ -258,6 +274,31 @@ export function saveTurnPair(chatId: string, input: SaveTurnInput): void {
       setTitleStmt.run(deriveTitle(input.user.content), chatId);
     }
     touchChatStmt.run(now, chatId);
+  });
+  txn();
+}
+
+const setTurnActiveStmt = db.prepare(
+  `UPDATE turns SET active = ? WHERE id = ? AND chat_id = ?`,
+);
+
+export interface TurnActiveState {
+  id: number;
+  active: boolean;
+}
+
+// Toggle the cosine-grep gate on one or more turns (chat memory editor). The
+// UPDATE is scoped by chat_id as well as id, so a turn-id from another chat
+// can't be flipped through this chat's route. Does NOT bump updated_at: gating
+// is a curation of an existing chat, not new activity, so it shouldn't
+// reshuffle the history list's recency order.
+export function setTurnsActive(chatId: string, states: TurnActiveState[]): void {
+  const exists = getChatStmt.get(chatId) as ChatHeaderRow | undefined;
+  if (!exists) throw new Error(`chat not found: ${chatId}`);
+  const txn = db.transaction(() => {
+    for (const s of states) {
+      setTurnActiveStmt.run(s.active ? 1 : 0, s.id, chatId);
+    }
   });
   txn();
 }

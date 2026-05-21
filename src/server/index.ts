@@ -27,8 +27,10 @@ import {
   loadChat as dbLoadChat,
   saveMemories as dbSaveMemories,
   saveTurnPair as dbSaveTurnPair,
+  setTurnsActive as dbSetTurnsActive,
   type SaveMemoryInput,
   type SaveTurnInput,
+  type TurnActiveState,
 } from './db.js';
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -480,6 +482,47 @@ app.post('/api/chats/:id/turns', (req, res) => {
     }
     console.error('saveTurn failed:', err);
     res.status(500).json({ error: 'Failed to save turn.' });
+  }
+});
+
+// Toggle the cosine-grep gate on turns (chat memory editor). Bulk by design —
+// the editor's "All off" / select-mode actions flip many turns in one request.
+// This is NOT a model route: gating is deterministic curation of the memory
+// tier, the Phase 1.5 "no model in the retrieval path" line holds.
+interface SetTurnActiveBody {
+  states?: unknown;
+}
+
+app.put('/api/chats/:id/turn-active', (req, res) => {
+  const body = (req.body ?? {}) as SetTurnActiveBody;
+  if (!Array.isArray(body.states)) {
+    res.status(400).json({ error: 'states must be an array of {id, active}.' });
+    return;
+  }
+  const states: TurnActiveState[] = [];
+  for (const raw of body.states) {
+    if (!raw || typeof raw !== 'object') {
+      res.status(400).json({ error: 'each state must be {id: number, active: boolean}.' });
+      return;
+    }
+    const r = raw as Record<string, unknown>;
+    if (typeof r.id !== 'number' || typeof r.active !== 'boolean') {
+      res.status(400).json({ error: 'each state must be {id: number, active: boolean}.' });
+      return;
+    }
+    states.push({ id: r.id, active: r.active });
+  }
+  try {
+    dbSetTurnsActive(req.params.id, states);
+    res.json({ ok: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'unknown';
+    if (msg.startsWith('chat not found')) {
+      res.status(404).json({ error: 'Chat not found.' });
+      return;
+    }
+    console.error('setTurnsActive failed:', err);
+    res.status(500).json({ error: 'Failed to update turn states.' });
   }
 });
 
