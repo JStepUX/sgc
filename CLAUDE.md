@@ -27,9 +27,11 @@ and handed to one ephemeral reasoning instance:
 
 These feed **Sal**, an ephemeral reasoning instance that exists for exactly one
 turn, then is retired — it has no memory of prior turns. Sal responds in natural
-language, then emits a `<turn-meta>` block with updated confidence scores. **One
-API call per turn**, total — streamed to the browser as Server-Sent Events. The
-TF-IDF retrieval costs 0 ms and 0 tokens.
+language, then emits a `<turn-meta>` block with updated confidence scores. In the
+base loop that's **one API call per turn**, total — streamed to the browser as
+Server-Sent Events; the TF-IDF retrieval costs 0 ms and 0 tokens. (That
+single-call count is a *guardrail*, not the thesis — the thesis is Sal's
+ephemerality + the curated-tier context. See Mission Brief.)
 
 > **Naming:** the model's identity is **Sal** — used everywhere a user sees it
 > (the persona prompt, the chat label). "Turn" is the codebase's neutral word
@@ -41,10 +43,31 @@ TF-IDF retrieval costs 0 ms and 0 tokens.
 
 `docs/phase-1-5-reference.jsx` is both the original implementation *and* the
 spec — its banner comments state the Phase 1.5 contract ("No model-based
-retrieval. One reasoning component. One API call."). Preserve those invariants.
-A change that adds a second API call, or makes retrieval model-based (embeddings,
-a semantic-search model), is a **phase change, not a fix** — raise it with the
-developer first. The cosine grep is the thesis of Phase 1.5, not a placeholder.
+retrieval. One reasoning component. One API call."). But be precise about what
+those words are *protecting*. The real invariant is the **architecture, not a
+count**:
+
+- **Sal is ephemeral and never accumulates.** Every turn, a fresh reasoning
+  instance is handed a context *rebuilt from the curated tiers* (memories +
+  4-message buffer + cosine grep) and then retired. No growing transcript, no
+  context rot, no model carrying its own state forward. That separation of
+  chat-log from model — with the context reconstructed each turn rather than
+  accreting — is the thesis.
+- **No model in the memory/retrieval path.** Retrieval over the user's *own
+  history* must stay deterministic math (the cosine grep), never a reasoning
+  component. Phase 1 tried a model as the grepper ("Grepory") — slow, drifty;
+  cosine replaced it. Re-introducing a model into *memory* retrieval (embeddings,
+  a semantic-search model) is a **phase change, not a fix** — raise it first.
+
+"One API call per turn" is a **guardrail, not the law.** It's a cheap, checkable
+tripwire: historically the way you'd violate the real thesis (a model creeping
+back into the retrieval path) showed up as an extra model call. So treat a *new*
+model call as a smell worth investigating — not a forbidden act. Work that adds a
+call *within a single turn* while keeping Sal ephemeral and leaving memory
+retrieval deterministic — a tool loop, or external web/knowledge retrieval — does
+**not** breach the thesis (cost and latency are still real and worth weighing).
+The cosine grep is the thesis of Phase 1.5, not a placeholder; web/knowledge
+retrieval is a separate axis from memory — see `AGENTS.md`.
 
 ### Project Structure
 
