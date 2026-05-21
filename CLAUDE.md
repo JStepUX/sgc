@@ -23,7 +23,10 @@ and handed to one ephemeral reasoning instance:
 3. **Cosine Grep ("Grepory")** — TF-IDF + cosine similarity search over *older*
    chat history (everything before the local buffer). **Pure math. No model. No
    API call. No drift surface.** This is the deliberate design choice of Phase
-   1.5: retrieval must not be a reasoning component.
+   1.5: retrieval must not be a reasoning component. The user can gate individual
+   turns *out* of this corpus in the **chat memory editor** (a turn switched off
+   dims and stops being retrievable) — deterministic curation of the memory tier,
+   still no model in the loop. It strengthens the thesis rather than touching it.
 
 These feed **Sal**, an ephemeral reasoning instance that exists for exactly one
 turn, then is retired — it has no memory of prior turns. Sal responds in natural
@@ -76,7 +79,10 @@ src/client/
   main.tsx                    React entry point — imports index.css
   index.css                   Tailwind v4 entry — design tokens (@theme), shadcn theme, aurora CSS
   SalienceGatedCognition.tsx  the UI — main app + MemoryPanel / TurnInspector / TokenChart
-  components/ui/               shadcn/ui primitives (button, card)
+  components/
+    ChatHistoryModal.tsx      history list + (editor mode) the rail
+    ChatMemoryEditor.tsx      per-turn cosine-grep gating editor (4-col card grid)
+    ui/                       shadcn/ui primitives (button, card)
   lib/
     types.ts                  shared domain types (ChatEntry, Memory)
     utils.ts                  cn() — Tailwind-aware class-name merge
