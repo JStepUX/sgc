@@ -33,44 +33,33 @@ turn, then is retired — it has no memory of prior turns. Sal responds in natur
 language, then emits a `<turn-meta>` block with updated confidence scores. In the
 base loop that's **one API call per turn**, total — streamed to the browser as
 Server-Sent Events; the TF-IDF retrieval costs 0 ms and 0 tokens. (That
-single-call count is a *guardrail*, not the thesis — the thesis is Sal's
-ephemerality + the curated-tier context. See Mission Brief.)
+single-call count is a guardrail, not the thesis — see Mission Brief.)
 
-> **Naming:** the model's identity is **Sal** — used everywhere a user sees it
-> (the persona prompt, the chat label). "Turn" is the codebase's neutral word
-> for the mechanism — one user input → one model call → one response. ("Synth"
-> was an early working title; it has been retired except inside the frozen
-> `docs/phase-1-5-reference.jsx`.)
+> **Naming:** the model's identity is **Sal** (used everywhere a user sees it).
+> "Turn" is the codebase's neutral word for the mechanism — one user input → one
+> model call → one response. ("Synth" was an early working title, retired except
+> in the frozen reference.)
 
 ### Mission Brief — preserve the invariants
 
-`docs/phase-1-5-reference.jsx` is both the original implementation *and* the
-spec — its banner comments state the Phase 1.5 contract ("No model-based
-retrieval. One reasoning component. One API call."). But be precise about what
-those words are *protecting*. The real invariant is the **architecture, not a
-count**:
+The Phase 1.5 contract on `docs/phase-1-5-reference.jsx` reads "No model-based
+retrieval. One reasoning component. One API call." The real invariant is the
+**architecture, not the count**: Sal stays ephemeral — every turn a fresh
+instance gets a context rebuilt from the curated tiers, then is retired (no
+growing transcript, no model carrying its own state). Two rules protect that:
 
-- **Sal is ephemeral and never accumulates.** Every turn, a fresh reasoning
-  instance is handed a context *rebuilt from the curated tiers* (memories +
-  4-message buffer + cosine grep) and then retired. No growing transcript, no
-  context rot, no model carrying its own state forward. That separation of
-  chat-log from model — with the context reconstructed each turn rather than
-  accreting — is the thesis.
 - **No model in the memory/retrieval path.** Retrieval over the user's *own
-  history* must stay deterministic math (the cosine grep), never a reasoning
-  component. Phase 1 tried a model as the grepper ("Grepory") — slow, drifty;
-  cosine replaced it. Re-introducing a model into *memory* retrieval (embeddings,
-  a semantic-search model) is a **phase change, not a fix** — raise it first.
-
-"One API call per turn" is a **guardrail, not the law.** It's a cheap, checkable
-tripwire: historically the way you'd violate the real thesis (a model creeping
-back into the retrieval path) showed up as an extra model call. So treat a *new*
-model call as a smell worth investigating — not a forbidden act. Work that adds a
-call *within a single turn* while keeping Sal ephemeral and leaving memory
-retrieval deterministic — a tool loop, or external web/knowledge retrieval — does
-**not** breach the thesis (cost and latency are still real and worth weighing).
-The cosine grep is the thesis of Phase 1.5, not a placeholder; web/knowledge
-retrieval is a separate axis from memory — see `AGENTS.md`.
+  history* stays deterministic math (the cosine grep), never a reasoning
+  component. Phase 1 tried a model as the grepper — slow, drifty; cosine
+  replaced it. Re-introducing a model into *memory* retrieval (embeddings,
+  semantic search) is a **phase change, not a fix — raise it first.**
+- **"One API call per turn" is a guardrail, not the law.** A cheap tripwire:
+  historically a model creeping back into retrieval showed up as an extra call.
+  So treat a *new* model call as a smell worth investigating, not a forbidden
+  act — work that adds a call within a single turn (a tool loop, external
+  web/knowledge retrieval) while keeping Sal ephemeral and memory retrieval
+  deterministic does **not** breach the thesis. Web/knowledge retrieval is a
+  separate axis from memory — see `AGENTS.md`.
 
 ### Project Structure
 
@@ -94,13 +83,21 @@ src/server/
   index.ts                    Express proxy — holds ANTHROPIC_API_KEY, one route
 docs/
   phase-1-5-reference.jsx     frozen original single-file artifact
+  *-spec.yaml                 implementation specs (YAML — see "Spec format" below)
   changelogs/                 month-by-month change log
 ```
 
-The reasoning split: **all three memory tiers are assembled in the browser**
-(`SalienceGatedCognition.tsx` + `lib/`). The server (`src/server/index.ts`) is
-deliberately dumb — it attaches the API key and forwards the request. No memory
-logic lives server-side.
+### Spec format — YAML, not prose
+
+Specs in `docs/` are **machine-legible YAML for an executing agent, not reports
+for stakeholders.** A spec exists to drive a code task: it carries the *facts*
+an implementer acts on — file paths, line numbers, type/signature deltas,
+ordered build steps, and the load-bearing constraints — not the argument for
+those facts. Do **not** write narrative justification, "why this matters"
+prose, history, or blog-post framing. Keep `goal` to a sentence; compress the
+thesis/invariant check to a short key/value block (`invariant_check:`); make
+everything else actionable. (Earlier `.md` specs were prose-heavy; that style is
+retired.)
 
 ### Tech / Shape
 
@@ -109,9 +106,11 @@ logic lives server-side.
   **shadcn/ui** primitives. Tokens, the shadcn theme, and the aurora CSS all
   live in `src/client/index.css`; `components.json` configures shadcn. The
   visual language is the "Sal" design system — a warm near-black field.
-- **Server:** a thin Express proxy. `@anthropic-ai/sdk`, one route
-  (`POST /api/turn`). Model defaults to `claude-opus-4-7`, overridable via the
-  `ANTHROPIC_MODEL` env var.
+- **Server:** a thin Express proxy, **deliberately dumb** — it attaches the API
+  key and forwards the request, with no memory logic server-side (all three
+  tiers are assembled in the browser, `SalienceGatedCognition.tsx` + `lib/`).
+  `@anthropic-ai/sdk`, one route (`POST /api/turn`); model defaults to
+  `claude-opus-4-7`, overridable via the `ANTHROPIC_MODEL` env var.
 - **Tests:** Vitest. The TF-IDF engine (`lib/tfidf.ts`) is pure logic and the
   prime test target — see `lib/tfidf.test.ts`.
 - **Run it:** `npm install`, then `cp .env.example .env` and add an
@@ -161,12 +160,11 @@ Shared utilities (project-root detection, colors, exclude patterns,
 
 ## Committing
 
-**Solo repo — commit on `main` directly.** The harness default is to branch
-when commits would land on a project's default branch; for SGC, override that
-and commit straight to `main`. There's no review workflow here that benefits
-from feature branches, and the publish/sync IDE workflow turns every stray
-branch into a "compare & pull request" banner on GitHub. Single linear
-history on `main` is the convention.
+**Solo repo — commit on `main` directly.** The harness default is to branch when
+commits would land on the default branch; override that for SGC. There's no
+review workflow that benefits from feature branches, and stray branches turn into
+"compare & pull request" banners on GitHub. Single linear history on `main` is
+the convention.
 
 `git commit` is gated. Run the `/pre-commit-qa` skill when work is ready; it
 walks a checklist and, only if every item passes, writes the marker that
