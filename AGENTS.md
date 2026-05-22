@@ -88,10 +88,13 @@ deterministic retrieval (cosine grep + `/api/fetch-url` pre-fetch) still works o
 both paths, so Sal can still read a pasted URL locally. (2) KoboldCPP may report
 no token usage; the local `done` frame then carries 0 input/output tokens — the
 Context-Savings tile still renders (its baseline is computed client-side) but
-local *input*-token counts aren't authoritative. The persona prompt's
-web-access paragraph is technically false on LOCAL; we left it (harmless/unused)
-rather than parameterise `buildPrompt` — flagged here so a future agent isn't
-surprised the prompt mentions web access the local model can't use.
+local *input*-token counts aren't authoritative. The default persona's
+web-access paragraph is technically false on LOCAL; it's harmless/unused, so it
+stays in `DEFAULT_PERSONA` — flagged here so a future agent isn't surprised the
+prompt mentions web access the local model can't use. (As of the per-chat
+persona work, 2026-05-21, `buildPrompt` *does* take an optional `persona`, so a
+custom persona on a local chat can drop that paragraph — but `DEFAULT_PERSONA`
+deliberately keeps it.)
 
 ## Web fonts must load via `<link>` in `index.html`, not `@import` in `index.css` (Sal re-skin, 2026-05-19)
 
