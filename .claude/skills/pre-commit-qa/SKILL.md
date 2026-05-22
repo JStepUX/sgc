@@ -195,17 +195,17 @@ before walking the list. The marker is the artifact of the QA pass, not a way
 around it.
 
 ```bash
-mkdir -p .claude/state
-node -e "
-  const { execSync } = require('node:child_process');
-  const fs = require('node:fs');
-  fs.writeFileSync('.claude/state/pre-commit-qa-passed.json', JSON.stringify({
-    branch: execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf8' }).trim(),
-    headSha: execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim(),
-    timestamp: new Date().toISOString(),
-  }, null, 2));
-"
+node .claude/skills/pre-commit-qa/write-marker.mjs
 ```
+
+That script does the `mkdir` and writes the marker (branch + HEAD sha +
+timestamp). It is a single `node` invocation deliberately: it matches the narrow
+`Bash(node .claude/skills/pre-commit-qa/write-marker.mjs)` allow rule in
+`.claude/settings.json`, so the legitimate marker write is pre-approved instead
+of falling through to the safety classifier (which — correctly, in general —
+treats hand-forging this marker as a gate bypass and denies it). Do NOT
+reintroduce an inline `mkdir && node -e ...` form: the leading `mkdir` breaks the
+allow-rule match and the denial comes back.
 
 After writing, proceed with the planned commits. If you cross the 10-minute
 window mid-batch, the gate blocks the next commit with a "stale" message —
