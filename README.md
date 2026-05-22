@@ -43,6 +43,13 @@ npm run dev
 together. Open `http://localhost:5555`. The API key lives only on the server —
 the browser never touches `api.anthropic.com`.
 
+**Optional — run Sal on a local model.** Sal's single reasoning call can target
+a local OpenAI-compatible server (KoboldCPP/Ollama) instead of Anthropic,
+switchable at runtime from the header provider chip. It's opt-in: uncomment
+`OPENAI_BASE_URL` in `.env` (see the LOCAL block in `.env.example`). The
+deterministic memory tiers work identically; Anthropic-only web tools are dark
+on the local path.
+
 | Command | Does |
 |---------|------|
 | `npm run dev` | Client + server, hot-reloading |

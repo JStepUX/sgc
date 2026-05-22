@@ -65,6 +65,34 @@ discovery-read fallback) stay server-side for the case where Sal must decide wha
 to read. The pre-fetch is the web-knowledge analogue of cosine-replacing-Grepory:
 mechanical retrieval, no drift.
 
+## Swapping Sal's model to a local OpenAI-compatible server is thesis-compatible; web tools are a provider-dependent axis, dark on LOCAL (local provider, 2026-05-21)
+
+The header provider chip can point Sal's single reasoning call at a local
+OpenAI-compatible server (KoboldCPP/Ollama, `OPENAI_BASE_URL`) instead of
+Anthropic. This is **not** a Phase change: a local model is just a different
+*Sal* — still ephemeral (one fresh instance per turn, rebuilt from the curated
+tiers, then retired), and the memory/retrieval path is untouched (cosine grep in
+`lib/tfidf.ts` + the `/api/fetch-url` pre-fetch stay deterministic, no model in
+the loop, on either provider). Switching mid-chat is harmless because no state is
+carried between turns; a single chat may mix anthropic and local turns. The
+client sends only a provider TOKEN (`'anthropic'|'openai'`) — never a URL or key;
+the server (`src/server/providers.ts` + `index.ts`) owns those. Both providers
+emit the **same** `delta`/`done`/`error` SSE frames, so the browser parser
+(`lib/api.ts`) is provider-agnostic.
+
+Two things to know. (1) `web_search` / `web_fetch` are **Anthropic server-side
+tools** — they're a *different axis* from memory (see the entry above) and they
+go **dark on the local path** (`openaiProvider` doesn't offer them; the `done`
+frame carries 0 for both counts). That's an accepted trade-off, not a bug:
+deterministic retrieval (cosine grep + `/api/fetch-url` pre-fetch) still works on
+both paths, so Sal can still read a pasted URL locally. (2) KoboldCPP may report
+no token usage; the local `done` frame then carries 0 input/output tokens — the
+Context-Savings tile still renders (its baseline is computed client-side) but
+local *input*-token counts aren't authoritative. The persona prompt's
+web-access paragraph is technically false on LOCAL; we left it (harmless/unused)
+rather than parameterise `buildPrompt` — flagged here so a future agent isn't
+surprised the prompt mentions web access the local model can't use.
+
 ## Web fonts must load via `<link>` in `index.html`, not `@import` in `index.css` (Sal re-skin, 2026-05-19)
 
 A web-font `@import url("https://fonts.googleapis.com/…")` placed in
