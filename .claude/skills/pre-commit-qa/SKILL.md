@@ -50,8 +50,8 @@ is documentation- or config-only, say so and mark this N/A.
 
 ## 2. Spec Archival (if applicable)
 
-If this work was driven by a spec document in `docs/specs/`, move it to
-`docs/ignored/` once the work is fully complete. This keeps the active spec
+If this work was driven by a spec document in `docs/` (the `*-spec.yaml` files),
+move it to `docs/ignored/` once the work is fully complete. This keeps the active spec
 directory clean and preserves the spec as a historical artifact.
 
 **Rules:**
@@ -134,8 +134,10 @@ surprises.
 
 ## 6. Visual Verification (UI changes only)
 
-SGC *is* a UI — a React component (`sgc-phase-1-5.jsx`). If the work touched
-components, styles, layout, or user flows, visual verification is required.
+SGC *is* a UI — the live React + TypeScript app under `src/client/`
+(`SalienceGatedCognition.tsx` + `components/`; the frozen original artifact is
+`docs/phase-1-5-reference.jsx`). If the work touched components, styles, layout,
+or user flows, visual verification is required.
 Automated checks catch logic; they do not catch layout shift, color rendering,
 or interaction feel.
 
@@ -143,9 +145,10 @@ or interaction feel.
 - If a browser MCP is available (Playwright at `mcp__playwright__*`), render the
   component, drive the affected interaction, and capture a screenshot. Confirm
   the change visually — exercise the changed flow, not just "it renders."
-- Note that `callClaude` will not return a real response without a proxied/keyed
-  endpoint (see `AGENTS.md`). Verify layout, state transitions, and the TF-IDF
-  diagnostics panel, which do not depend on a live API response.
+- Note that a turn (`runTurn` in `lib/api.ts` → `POST /api/turn`) will not return
+  a real response without the server running with a configured provider (see
+  `AGENTS.md`). Verify layout, state transitions, and the TF-IDF diagnostics
+  panel, which do not depend on a live API response.
 - If no browser MCP is available, say so explicitly in the completion report and
   ask the user to eyeball it. Do not claim the UI works from code inspection.
 - N/A only when the change touches zero user-visible surface (pure-logic or
