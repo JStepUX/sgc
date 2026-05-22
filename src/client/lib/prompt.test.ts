@@ -144,7 +144,7 @@ describe('buildPrompt', () => {
     expect(buildPrompt(memories, [], null, [])).not.toContain('LINKED PAGES');
   });
 
-  it('embeds a fetched page, its title/url, and instructs Sal not to re-fetch', () => {
+  it('embeds a fetched page with its title/url and labels it already-provided', () => {
     const docs: FetchedDoc[] = [
       { url: 'https://example.com/post', title: 'The Amnesiac', text: 'Article body here.', truncated: false },
     ];
@@ -152,7 +152,7 @@ describe('buildPrompt', () => {
     expect(prompt).toContain('LINKED PAGES');
     expect(prompt).toContain('[The Amnesiac] https://example.com/post');
     expect(prompt).toContain('Article body here.');
-    expect(prompt).toContain('do NOT web_fetch these again');
+    expect(prompt).toContain('already fetched and extracted for you');
   });
 
   it('marks a truncated page so Sal knows the text was clipped', () => {
@@ -227,11 +227,11 @@ describe('buildPrompt', () => {
     }
   });
 
-  it('lists links that failed to pre-load and hands the fallback back to Sal', () => {
+  it('lists links that failed to pre-load and tells Sal to ask the person', () => {
     const prompt = buildPrompt(memories, [], null, null, ['https://broken.example/x']);
     expect(prompt).toContain('LINKS NOT PRE-LOADED');
     expect(prompt).toContain('https://broken.example/x');
-    expect(prompt).toContain('web_fetch them yourself');
+    expect(prompt).toContain('ask the person to paste the contents');
   });
 
   it('omits the failed-links section when none failed', () => {
