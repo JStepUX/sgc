@@ -1117,14 +1117,13 @@ export default function SalienceGatedCognition() {
     // ---- URL PRE-FETCH (deterministic, no model) ----
     // If the person pasted link(s), pull clean article text now — before the
     // single model call — so Sal reads the page in-context and the tokens are
-    // counted once, instead of the server-side web_fetch tool dumping full page
-    // chrome into its loop and re-counting it across passes. Failures return
-    // null and are simply skipped (web_fetch stays as Sal's fallback). Folded
-    // into BOTH the real prompt and the naive baseline below, so a one-off fetch
-    // doesn't skew the Context Savings tile. URLs that fail to pre-load are
-    // passed through separately so Sal is told it may web_fetch them itself
-    // (otherwise the "already provided, don't re-fetch" guidance would suppress
-    // the fallback).
+    // counted once. This is Sal's ONLY window onto the outside world: there are
+    // no model web tools (removed for cost — see AGENTS.md). Successful fetches
+    // are folded into BOTH the real prompt and the naive baseline below, so a
+    // one-off fetch doesn't skew the Context Savings tile. URLs that fail to
+    // pre-load are passed through separately so Sal is told it couldn't read
+    // them and should ask the person for the contents (it cannot fetch them
+    // itself).
     const urls = extractUrls(userInput);
     const fetched = await Promise.all(urls.map(fetchUrl));
     const fetchedDocs: FetchedDoc[] = [];

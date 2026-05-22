@@ -45,9 +45,10 @@ export function extractUrls(text: string, max = 3): string[] {
 /**
  * Pre-fetch + extract a single URL via the server (`POST /api/fetch-url`).
  * Returns null on ANY failure (bad URL, timeout, no article content) — the turn
- * then proceeds without the page, and Sal still has web_fetch as a fallback. The
- * caller folds successful results into the prompt as ephemeral LINKED PAGE
- * context. No model is involved here; this is deterministic retrieval.
+ * then proceeds without the page (Sal is told it couldn't be loaded; there is no
+ * web_fetch fallback). The caller folds successful results into the prompt as
+ * ephemeral LINKED PAGE context. No model is involved here; this is the only
+ * outside-world input Sal gets, and it is deterministic retrieval.
  */
 export async function fetchUrl(url: string): Promise<FetchedDoc | null> {
   try {
@@ -75,9 +76,6 @@ export interface TurnResult {
   text: string;
   inputTokens: number;
   outputTokens: number;
-  /** Server-side web tool requests Sal made this turn (0 when it didn't browse). */
-  webSearchRequests: number;
-  webFetchRequests: number;
   /** Round-trip latency in ms, measured client-side. */
   elapsed: number;
 }
@@ -132,8 +130,6 @@ export async function runTurn(
   let text = '';
   let inputTokens = 0;
   let outputTokens = 0;
-  let webSearchRequests = 0;
-  let webFetchRequests = 0;
 
   // SSE frames are `event: <name>\ndata: <json>\n\n`. A single frame can be
   // split across network chunks, so the accumulator state lives OUTSIDE the
@@ -172,13 +168,9 @@ export async function runTurn(
       const d = payload as {
         inputTokens?: number;
         outputTokens?: number;
-        webSearchRequests?: number;
-        webFetchRequests?: number;
       };
       inputTokens = d.inputTokens ?? 0;
       outputTokens = d.outputTokens ?? 0;
-      webSearchRequests = d.webSearchRequests ?? 0;
-      webFetchRequests = d.webFetchRequests ?? 0;
     } else if (name === 'error') {
       const message = (payload as { error?: string }).error ?? 'stream error';
       throw new Error(`Turn request failed: ${message}`);
@@ -209,8 +201,6 @@ export async function runTurn(
     text,
     inputTokens,
     outputTokens,
-    webSearchRequests,
-    webFetchRequests,
     elapsed: Date.now() - startTime,
   };
 }
