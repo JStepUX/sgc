@@ -460,10 +460,41 @@ app.get('/api/chats', (_req, res) => {
   }
 });
 
-app.post('/api/chats', (_req, res) => {
+// Caps on the per-chat persona + mask. The persona becomes the head of the
+// per-turn system prompt (a generous cap — body limit is already 1MB); the mask
+// is a short display-only label (NEVER reaches the model — see prompt path).
+const MAX_PERSONA_CHARS = 20_000;
+const MAX_MASK_CHARS = 80;
+
+interface CreateChatBody {
+  persona?: unknown;
+  mask?: unknown;
+}
+
+app.post('/api/chats', (req, res) => {
+  // Optional { persona, mask }; each must be a string when present. The server
+  // stores both as opaque strings — it never interprets the persona (it forwards
+  // the fully-built system prompt on /api/turn) and the mask is display-only.
+  const { persona, mask } = (req.body ?? {}) as CreateChatBody;
+  if (persona !== undefined && typeof persona !== 'string') {
+    res.status(400).json({ error: 'persona must be a string when provided.' });
+    return;
+  }
+  if (mask !== undefined && typeof mask !== 'string') {
+    res.status(400).json({ error: 'mask must be a string when provided.' });
+    return;
+  }
+  if (typeof persona === 'string' && persona.length > MAX_PERSONA_CHARS) {
+    res.status(400).json({ error: `persona exceeds ${MAX_PERSONA_CHARS} characters.` });
+    return;
+  }
+  if (typeof mask === 'string' && mask.length > MAX_MASK_CHARS) {
+    res.status(400).json({ error: `mask exceeds ${MAX_MASK_CHARS} characters.` });
+    return;
+  }
   try {
     const id = randomUUID();
-    dbCreateChat(id);
+    dbCreateChat(id, typeof persona === 'string' ? persona : null, typeof mask === 'string' ? mask : null);
     res.json({ id });
   } catch (err) {
     console.error('createChat failed:', err);

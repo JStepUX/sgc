@@ -72,6 +72,22 @@ db.exec(`
   }
 }
 
+// Migration: per-chat persona + assistant mask. Additive, same pattern as
+// turns.active above. NULL persona → DEFAULT_PERSONA is resolved client-side at
+// prompt-build time; NULL/'' mask → "Sal" at render time. Old chats are
+// untouched and read as default-Sal. The server stores both as opaque strings —
+// it never interprets the persona (it forwards the fully-built system prompt)
+// and the mask never reaches the model at all (display-only).
+{
+  const chatCols = db.prepare(`PRAGMA table_info(chats)`).all() as { name: string }[];
+  if (!chatCols.some((c) => c.name === 'persona')) {
+    db.exec(`ALTER TABLE chats ADD COLUMN persona TEXT`);
+  }
+  if (!chatCols.some((c) => c.name === 'mask')) {
+    db.exec(`ALTER TABLE chats ADD COLUMN mask TEXT`);
+  }
+}
+
 // ============================================================
 // TYPES — shape on the wire (camelCase). DB columns are snake_case
 // and get mapped explicitly in each helper.
@@ -83,6 +99,8 @@ export interface ChatSummary {
   snippet: string;
   updatedAt: number;
   turnCount: number;
+  /** Display-only assistant mask. null/'' → rendered as "Sal". Never sent to the model. */
+  mask: string | null;
 }
 
 export interface ChatTurn {
@@ -101,6 +119,10 @@ export interface ChatDetail {
   title: string;
   turns: ChatTurn[];
   latestInspector: unknown | null;
+  /** Per-chat system-prompt persona. null → client resolves DEFAULT_PERSONA. */
+  persona: string | null;
+  /** Display-only assistant mask. null/'' → "Sal". Never sent to the model. */
+  mask: string | null;
 }
 
 export interface MemoryRow {
@@ -132,13 +154,21 @@ export function deriveTitle(userContent: string): string {
 }
 
 const insertChatStmt = db.prepare(`
-  INSERT INTO chats (id, title, created_at, updated_at)
-  VALUES (?, ?, ?, ?)
+  INSERT INTO chats (id, title, created_at, updated_at, persona, mask)
+  VALUES (?, ?, ?, ?, ?, ?)
 `);
 
-export function createChat(id: string): { id: string } {
+// Create a chat. `persona` is the per-chat system-prompt head (null → the
+// client resolves DEFAULT_PERSONA at build time); `mask` is the display-only
+// assistant label (null/'' → "Sal"). Both are stored as opaque strings — the
+// server never interprets the persona and the mask never reaches the model.
+export function createChat(
+  id: string,
+  persona?: string | null,
+  mask?: string | null,
+): { id: string } {
   const now = Date.now();
-  insertChatStmt.run(id, NEW_CHAT_TITLE, now, now);
+  insertChatStmt.run(id, NEW_CHAT_TITLE, now, now, persona ?? null, mask ?? null);
   return { id };
 }
 
@@ -148,6 +178,7 @@ const listChatsStmt = db.prepare(`
   SELECT
     c.id           AS id,
     c.title        AS title,
+    c.mask         AS mask,
     c.updated_at   AS updated_at,
     (SELECT COUNT(*) FROM turns t WHERE t.chat_id = c.id)                       AS turn_count,
     (SELECT t.content
@@ -162,6 +193,7 @@ const listChatsStmt = db.prepare(`
 interface ListChatRow {
   id: string;
   title: string;
+  mask: string | null;
   updated_at: number;
   turn_count: number;
   last_assistant: string | null;
@@ -177,10 +209,11 @@ export function listChats(): ChatSummary[] {
       : '',
     updatedAt: r.updated_at,
     turnCount: r.turn_count,
+    mask: r.mask,
   }));
 }
 
-const getChatStmt = db.prepare(`SELECT id, title FROM chats WHERE id = ?`);
+const getChatStmt = db.prepare(`SELECT id, title, persona, mask FROM chats WHERE id = ?`);
 const getChatTurnsStmt = db.prepare(`
   SELECT id, ordinal, role, content, created_at, inspector_json, active
   FROM turns
@@ -188,7 +221,7 @@ const getChatTurnsStmt = db.prepare(`
   ORDER BY ordinal ASC
 `);
 
-interface ChatHeaderRow { id: string; title: string }
+interface ChatHeaderRow { id: string; title: string; persona: string | null; mask: string | null }
 interface TurnRow {
   id: number;
   ordinal: number;
@@ -225,7 +258,14 @@ export function loadChat(id: string): ChatDetail | null {
       break;
     }
   }
-  return { id: header.id, title: header.title, turns, latestInspector };
+  return {
+    id: header.id,
+    title: header.title,
+    turns,
+    latestInspector,
+    persona: header.persona,
+    mask: header.mask,
+  };
 }
 
 const deleteChatStmt = db.prepare(`DELETE FROM chats WHERE id = ?`);
