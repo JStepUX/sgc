@@ -406,13 +406,22 @@ function ChatRow({ chat, active, onSelect, onDelete, onEdit }: ChatRowProps) {
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-3">
-          <span
-            className={cn(
-              'truncate text-[14px] font-medium leading-snug',
-              active ? 'text-fg-1' : 'text-fg-1/90',
+          <span className="flex min-w-0 items-baseline gap-2">
+            <span
+              className={cn(
+                'truncate text-[14px] font-medium leading-snug',
+                active ? 'text-fg-1' : 'text-fg-1/90',
+              )}
+            >
+              {chat.title}
+            </span>
+            {/* Display-only mask tag — the chat's assistant label. Quiet mono
+                chip; absent when the chat uses the default "Sal". */}
+            {chat.mask && chat.mask.trim() && (
+              <span className="shrink-0 font-mono text-[9.5px] tracking-[0.14em] uppercase text-ember-soft">
+                {chat.mask}
+              </span>
             )}
-          >
-            {chat.title}
           </span>
           <span className="shrink-0 font-mono text-[10.5px] tracking-[0.04em] text-fg-3">
             {stamp}

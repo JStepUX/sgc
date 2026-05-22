@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm';
 import type { Memory, ChatEntry, FetchedDoc } from './lib/types';
 import { cosineSearch } from './lib/tfidf';
 import {
+  DEFAULT_PERSONA,
   buildPrompt,
   estimateNaiveContextTokens,
   parseTurnResponse,
@@ -23,6 +24,7 @@ import {
   type TurnActiveState,
 } from './lib/persistence';
 import { ChatHistoryModal } from './components/ChatHistoryModal';
+import { ConfirmPersonaModal } from './components/ConfirmPersonaModal';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -624,14 +626,29 @@ const TokenChart = memo(function TokenChart({ tokenHistory }: { tokenHistory: To
 // Memoized so finalized messages don't re-run ReactMarkdown on every parent
 // re-render (typing, pulse-key bumps, streaming token arrival). Only the
 // in-flight streaming bubble re-renders as its `text` grows.
-const AssistantMessage = memo(function AssistantMessage({ text, streaming = false }: { text: string; streaming?: boolean }) {
+const AssistantMessage = memo(function AssistantMessage({
+  text,
+  streaming = false,
+  label,
+}: {
+  text: string;
+  streaming?: boolean;
+  /** Display-only author label for this turn. Falls back to "Sal" when empty.
+   * NEVER sourced from / sent to the model — this is the per-chat mask. */
+  label?: string;
+}) {
+  const name = label && label.trim() ? label : 'Sal';
   return (
     <div
       className={cn(
-        'flex flex-col gap-3.5 text-pretty text-[15px] font-light leading-[1.7] text-fg-1',
+        'flex flex-col gap-2 text-pretty text-[15px] font-light leading-[1.7] text-fg-1',
         streaming && 'sal-streaming',
       )}
     >
+      <span className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-fg-3">
+        {name}
+      </span>
+      <div className="flex flex-col gap-3.5">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -709,6 +726,7 @@ const AssistantMessage = memo(function AssistantMessage({ text, streaming = fals
       >
         {text}
       </ReactMarkdown>
+      </div>
     </div>
   );
 });
@@ -875,6 +893,15 @@ export default function SalienceGatedCognition() {
   const [chatId, setChatId] = useState<string | null>(null);
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Per-chat persona + display-only mask for the active chat.
+  // `activePersona` is the head of the per-turn system prompt (DEFAULT_PERSONA
+  // when the chat carries none). `activeMask` is the author label shown on
+  // assistant turns ('' → "Sal"); it is DISPLAY-ONLY and never reaches the
+  // prompt or /api/turn. `personaModalOpen` gates the Confirm Persona step that
+  // now precedes a "Begin again".
+  const [activePersona, setActivePersona] = useState<string>(DEFAULT_PERSONA);
+  const [activeMask, setActiveMask] = useState<string>('');
+  const [personaModalOpen, setPersonaModalOpen] = useState(false);
   // Has the initial hydration completed? Guards the memory-save effect from
   // firing on mount with the DEFAULT_MEMORIES placeholder before the server
   // set has had a chance to load.
@@ -969,10 +996,15 @@ export default function SalienceGatedCognition() {
           setMessages(replay);
           setChatLog(replay);
           setTurnCount(Math.floor(replay.length / 2));
+          // Restore the chat's persona (null → DEFAULT_PERSONA) + display mask.
+          setActivePersona(detail.persona?.trim() ? detail.persona : DEFAULT_PERSONA);
+          setActiveMask(detail.mask ?? '');
           if (detail.latestInspector) {
             setLatestTurn(detail.latestInspector as TurnData);
           }
         } else {
+          // Fresh install: the starter chat stays default-Sal — no persona modal
+          // on first run (Q2). activePersona/activeMask keep their defaults.
           const created = await apiCreateChat();
           if (cancelled) return;
           activeId = created.id;
@@ -1117,7 +1149,7 @@ export default function SalienceGatedCognition() {
       // turn" pipeline would have sent. Computed BEFORE the new pair is
       // appended to chatLog, so `chatLog` here is everything prior to this
       // turn — same baseline the local buffer and cosine grep see.
-      naiveTokens: estimateNaiveContextTokens(memories, chatLog, userInput, fetchedDocs, failedUrls),
+      naiveTokens: estimateNaiveContextTokens(memories, chatLog, userInput, fetchedDocs, failedUrls, activePersona),
     };
 
     try {
@@ -1138,7 +1170,7 @@ export default function SalienceGatedCognition() {
       }
 
       // ---- SINGLE MODEL CALL (streamed) ----
-      const systemPrompt = buildPrompt(memories, localBuffer, grepResults.length > 0 ? grepResults : null, fetchedDocs, failedUrls);
+      const systemPrompt = buildPrompt(memories, localBuffer, grepResults.length > 0 ? grepResults : null, fetchedDocs, failedUrls, activePersona);
       const turnResult = await runTurn(
         systemPrompt,
         userInput,
@@ -1235,18 +1267,37 @@ export default function SalienceGatedCognition() {
     }
   };
 
-  // "Begin again" creates a NEW chat and clears the visible session. Memories
-  // are global — they persist across chats and are intentionally NOT reset.
-  const handleReset = useCallback(async () => {
+  // Clear the visible session and create a NEW chat with the given persona +
+  // display-only mask. Memories are global — they persist across chats and are
+  // intentionally NOT reset. `mask` is stored for display only; it is NOT part
+  // of the persona/prompt and never reaches /api/turn.
+  //
+  // Shared by the user-facing "Begin again" flow (via confirmPersona, which
+  // supplies an edited persona/mask) and the delete-fallback path (which passes
+  // nothing → default Sal). A null/blank persona is stored server-side as NULL
+  // and resolves to DEFAULT_PERSONA at build time.
+  const startNewChat = useCallback(async (persona?: string, mask?: string) => {
     setChatLog([]);
     setMessages([]);
     setLatestTurn(null);
     setTokenHistory([]);
     setTurnCount(0);
+    // The active persona/mask follow the new chat. Empty/blank persona → the
+    // default; trimmed mask, '' → "Sal" at render.
+    const resolvedPersona = persona?.trim() ? persona : DEFAULT_PERSONA;
+    const resolvedMask = mask?.trim() ?? '';
+    setActivePersona(resolvedPersona);
+    setActiveMask(resolvedMask);
     // Clear + refocus the composer's textarea (it owns its own input state).
     setComposerResetSignal((s) => s + 1);
     try {
-      const created = await apiCreateChat();
+      // Only send a persona when it differs from the default — a default chat
+      // stores NULL persona (old chats stay byte-identical on the wire). Always
+      // send the mask when non-empty so the label persists across reloads.
+      const args: { persona?: string; mask?: string } = {};
+      if (persona?.trim() && persona !== DEFAULT_PERSONA) args.persona = persona;
+      if (resolvedMask) args.mask = resolvedMask;
+      const created = await apiCreateChat(Object.keys(args).length ? args : undefined);
       setChatId(created.id);
       const refreshed = await apiListChats();
       setChats(refreshed);
@@ -1254,6 +1305,25 @@ export default function SalienceGatedCognition() {
       console.warn('createChat failed:', err);
     }
   }, []);
+
+  // "Begin again" no longer creates a chat immediately — it opens the Confirm
+  // Persona modal first. Both existing entry points (PhaseBar onReset, the
+  // history modal's Begin again) route here. Close the history modal if it's
+  // open so the persona modal is the only thing on screen.
+  const openPersonaModal = useCallback(() => {
+    setHistoryOpen(false);
+    setPersonaModalOpen(true);
+  }, []);
+
+  // Confirm from the persona modal: do the new-chat work with the chosen
+  // persona + mask, then close the modal.
+  const confirmPersona = useCallback(
+    async (persona: string, mask: string) => {
+      setPersonaModalOpen(false);
+      await startNewChat(persona, mask);
+    },
+    [startNewChat],
+  );
 
   // Load an existing chat from the history modal: fetch its turns, replay
   // them into the in-memory log + visible messages, restore the right-rail
@@ -1276,6 +1346,9 @@ export default function SalienceGatedCognition() {
       setTurnCount(Math.floor(replay.length / 2));
       setLatestTurn((detail.latestInspector as TurnData | null) ?? null);
       setTokenHistory([]);
+      // Restore the chat's persona (null → DEFAULT_PERSONA) + display mask.
+      setActivePersona(detail.persona?.trim() ? detail.persona : DEFAULT_PERSONA);
+      setActiveMask(detail.mask ?? '');
       setChatId(id);
       setHistoryOpen(false);
     } catch (err) {
@@ -1342,13 +1415,16 @@ export default function SalienceGatedCognition() {
         if (refreshed.length > 0) {
           await handleLoadChat(refreshed[0].id);
         } else {
-          await handleReset();
+          // No chats left — spin up a fresh default-Sal chat directly. This is
+          // an automatic fallback, not a user "Begin again", so it must NOT pop
+          // the Confirm Persona modal.
+          await startNewChat();
         }
       }
     } catch (err) {
       console.warn('deleteChat failed:', err);
     }
-  }, [chatId, handleLoadChat, handleReset]);
+  }, [chatId, handleLoadChat, startNewChat]);
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-ground font-sans text-fg-1">
@@ -1357,7 +1433,7 @@ export default function SalienceGatedCognition() {
       <div className="relative z-10 flex h-full w-full flex-col">
         <PhaseBar
           processing={isProcessing}
-          onReset={handleReset}
+          onReset={openPersonaModal}
           provider={provider}
           health={health}
           onSelectProvider={handleSelectProvider}
@@ -1379,11 +1455,11 @@ export default function SalienceGatedCognition() {
                 {messages.map((msg, i) =>
                   msg.role === 'user'
                     ? <UserPill key={i} text={msg.content} />
-                    : <AssistantMessage key={i} text={msg.content} />,
+                    : <AssistantMessage key={i} text={msg.content} label={activeMask} />,
                 )}
 
                 {streamingText !== null && (
-                  <AssistantMessage text={streamingText || ' '} streaming />
+                  <AssistantMessage text={streamingText || ' '} streaming label={activeMask} />
                 )}
 
                 {/* Dot-pulse loader: shown only before the first streamed token. */}
@@ -1435,9 +1511,16 @@ export default function SalienceGatedCognition() {
         activeChatId={chatId}
         onSelect={handleLoadChat}
         onDelete={handleDeleteChat}
-        onBeginAgain={handleReset}
+        onBeginAgain={openPersonaModal}
         onActiveTurnsChanged={handleActiveTurnsChanged}
         returnFocusRef={historyButtonRef}
+      />
+
+      <ConfirmPersonaModal
+        open={personaModalOpen}
+        defaultPersona={DEFAULT_PERSONA}
+        onConfirm={confirmPersona}
+        onCancel={() => setPersonaModalOpen(false)}
       />
     </div>
   );

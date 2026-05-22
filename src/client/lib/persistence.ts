@@ -18,6 +18,8 @@ export interface ChatSummary {
   snippet: string;
   updatedAt: number;
   turnCount: number;
+  /** Display-only assistant mask. null/'' → rendered as "Sal". Never sent to the model. */
+  mask: string | null;
 }
 
 export interface ChatTurn {
@@ -37,6 +39,10 @@ export interface ChatDetail {
   turns: ChatTurn[];
   /** Parsed TurnData JSON from the chat's latest assistant turn (server-decoded). */
   latestInspector: unknown | null;
+  /** Per-chat system-prompt persona. null → resolve DEFAULT_PERSONA at build time. */
+  persona: string | null;
+  /** Display-only assistant mask. null/'' → "Sal". Never sent to the model. */
+  mask: string | null;
 }
 
 export interface MemoryHistoryRow {
@@ -96,8 +102,17 @@ export function loadChat(id: string): Promise<ChatDetail> {
   return jsonFetch<ChatDetail>(`/api/chats/${encodeURIComponent(id)}`);
 }
 
-export function createChat(): Promise<{ id: string }> {
-  return jsonFetch<{ id: string }>('/api/chats', { method: 'POST', body: '{}' });
+/**
+ * Create a chat, optionally with a per-chat persona + display-only mask.
+ * Called with no args for the default-Sal flow (hydration spawn, delete-fallback)
+ * and with { persona, mask } from the Confirm Persona modal. The mask is stored
+ * for display only — it never crosses into the prompt or /api/turn.
+ */
+export function createChat(args?: { persona?: string; mask?: string }): Promise<{ id: string }> {
+  const body: Record<string, string> = {};
+  if (args?.persona !== undefined) body.persona = args.persona;
+  if (args?.mask !== undefined) body.mask = args.mask;
+  return jsonFetch<{ id: string }>('/api/chats', { method: 'POST', body: JSON.stringify(body) });
 }
 
 export function deleteChat(id: string): Promise<{ ok: true }> {
