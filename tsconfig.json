@@ -14,5 +14,5 @@
       "@/*": ["./src/client/*"]
     }
   },
-  "include": ["src/client"]
+  "include": ["src/client", "src/server/**/*.test.ts"]
 }

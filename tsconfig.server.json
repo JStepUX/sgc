@@ -8,5 +8,5 @@
     "paths": {}
   },
   "include": ["src/server"],
-  "exclude": ["src/client", "node_modules", "dist"]
+  "exclude": ["src/client", "node_modules", "dist", "src/server/**/*.test.ts"]
 }

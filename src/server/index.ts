@@ -20,6 +20,13 @@ import Anthropic from '@anthropic-ai/sdk';
 import { JSDOM } from 'jsdom';
 import { Readability } from '@mozilla/readability';
 import {
+  createAnthropicProvider,
+  createOpenAIProvider,
+  resolveTurnProvider,
+  type TurnProvider,
+  type ProviderId,
+} from './providers.js';
+import {
   createChat as dbCreateChat,
   deleteChat as dbDeleteChat,
   getMemories as dbGetMemories,
@@ -39,48 +46,121 @@ const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-7';
 const MAX_TOKENS = Number(process.env.ANTHROPIC_MAX_TOKENS) || 16384;
 const API_KEY = process.env.ANTHROPIC_API_KEY;
 
-// Construct the client only when a key is present. With no key the server
-// still starts (so UI-only dev still works), but /api/turn returns a clear
-// setup error instead of a generic 500 — the SDK's missing-key error is a
-// client-side AnthropicError, not an Anthropic.APIError, so it would otherwise
-// fall through to the catch-all 500. A turn is a single short request; 60s is
+// --- Local OpenAI-compatible provider config (KoboldCPP / Ollama / …) ---
+// The client picks a provider per turn; the server holds the URL + key. A local
+// provider is just a different (still ephemeral) Sal — see providers.ts.
+const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL; // e.g. http://localhost:5001/v1
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || ''; // KoboldCPP ignores this
+const LLM_MODEL = process.env.LLM_MODEL || 'koboldcpp'; // label only — local server serves whatever is loaded
+const LLM_MAX_TOKENS = Number(process.env.LLM_MAX_TOKENS) || 512;
+
+// ProviderId ('anthropic' | 'openai') and the per-turn routing rule live in
+// providers.ts (resolveTurnProvider) so the routing logic is unit-tested.
+
+// Construct the Anthropic client only when a key is present. With no key the
+// server still starts (so UI-only dev still works), but the anthropic provider
+// is simply absent from the registry and selecting it returns a clear setup
+// error instead of a generic 500. A turn is a single short request; 60s is
 // generous and well under the SDK's 10-min default, so a wedged turn fails
 // fast instead of hanging the UI.
 const anthropic = API_KEY ? new Anthropic({ apiKey: API_KEY, timeout: 60_000 }) : null;
+
+// Provider registry. A provider is "available" when its config is present
+// (Anthropic key set / OPENAI_BASE_URL set) — config-presence only; a live
+// /v1/models ping is deferred (spec: availability). LLM_MAX_TOKENS is small by
+// default because local context windows are small (configured in KoboldCPP).
+const providers: Partial<Record<ProviderId, TurnProvider>> = {};
+if (anthropic) {
+  providers.anthropic = createAnthropicProvider({ client: anthropic, model: MODEL, maxTokens: MAX_TOKENS });
+}
+if (OPENAI_BASE_URL) {
+  providers.openai = createOpenAIProvider({
+    baseUrl: OPENAI_BASE_URL,
+    apiKey: OPENAI_API_KEY,
+    model: LLM_MODEL,
+    maxTokens: LLM_MAX_TOKENS,
+  });
+}
+
+// Which providers are configured. Computed once (config is fixed at boot) and
+// shared by /api/health and the per-turn resolver.
+const providerAvailable: Record<ProviderId, boolean> = {
+  anthropic: providers.anthropic !== undefined,
+  openai: providers.openai !== undefined,
+};
+
+// Boot default used when the client doesn't specify (or sends an invalid /
+// unavailable token). Honour LLM_PROVIDER when it points at an available
+// provider; otherwise fall back to whatever IS available (anthropic first).
+function resolveDefaultProvider(): ProviderId | null {
+  const requested = process.env.LLM_PROVIDER as ProviderId | undefined;
+  if (requested && providers[requested]) return requested;
+  if (providers.anthropic) return 'anthropic';
+  if (providers.openai) return 'openai';
+  return null;
+}
+const DEFAULT_PROVIDER = resolveDefaultProvider();
+
+// Human-facing model label per provider, for the health response / picker.
+const providerModel: Record<ProviderId, string> = {
+  anthropic: MODEL,
+  openai: LLM_MODEL,
+};
 
 const app = express();
 app.use(cors({ origin: CORS_ORIGIN }));
 app.use(express.json({ limit: '1mb' }));
 
+// Report which providers are configured + their model labels so the header
+// picker can render and disable accordingly. `default` is the boot provider the
+// client should adopt when it has no stored preference. `keyConfigured` /
+// `model` are kept for back-compat with anything reading the old shape.
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, model: MODEL, keyConfigured: anthropic !== null });
+  res.json({
+    ok: true,
+    model: MODEL,
+    keyConfigured: anthropic !== null,
+    default: DEFAULT_PROVIDER,
+    providers: {
+      anthropic: { available: providerAvailable.anthropic, model: providerModel.anthropic },
+      openai: { available: providerAvailable.openai, model: providerModel.openai, label: 'LOCAL' },
+    },
+  });
 });
 
 interface TurnRequestBody {
   system?: unknown;
   message?: unknown;
+  provider?: unknown;
 }
 
 app.post('/api/turn', async (req, res) => {
-  if (!anthropic) {
-    res.status(500).json({
-      error:
-        'Server misconfigured: ANTHROPIC_API_KEY is not set. ' +
-        'Copy .env.example to .env and add your key, then restart the server.',
-    });
-    return;
-  }
-
-  const { system, message } = (req.body ?? {}) as TurnRequestBody;
+  const { system, message, provider: rawProvider } = (req.body ?? {}) as TurnRequestBody;
   if (typeof system !== 'string' || typeof message !== 'string') {
     res.status(400).json({ error: 'Body must include string `system` and `message`.' });
     return;
   }
 
-  // Open the SSE stream. The two guards above stay plain JSON-over-HTTP — they
-  // run BEFORE flushHeaders, so a bad request still gets a clean 400/500.
-  // Everything past this point is an event stream: failures become an `error`
-  // frame, because the HTTP status line is already on the wire.
+  // Resolve which provider runs this turn. The client sends only a token
+  // ('anthropic' | 'openai'); the server holds keys/URLs. An EXPLICIT but
+  // unavailable token is rejected, not silently rerouted — a LOCAL request must
+  // never be answered by the cloud. Only an absent/unrecognised token falls
+  // back to the boot default. (spec: architecture.key_invariant; resolver +
+  // tests in providers.ts.) These guards stay plain JSON (pre-flushHeaders), so
+  // the client surfaces a clean error rather than a stream `error`.
+  const resolution = resolveTurnProvider(rawProvider, providerAvailable, DEFAULT_PROVIDER);
+  if (!resolution.ok) {
+    res.status(resolution.status).json({ error: resolution.error });
+    return;
+  }
+  const provider = providers[resolution.id]!;
+
+  // Open the SSE stream. The guards above stay plain JSON-over-HTTP — they run
+  // BEFORE flushHeaders, so a bad request still gets a clean 400/500. Everything
+  // past this point is an event stream: failures become an `error` frame,
+  // because the HTTP status line is already on the wire. The delta/done/error
+  // frame shapes are IDENTICAL regardless of provider — the wire contract to
+  // the browser is unchanged.
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -91,82 +171,58 @@ app.post('/api/turn', async (req, res) => {
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   };
 
-  // One API call per turn — streamed. messages.stream() is still a single
-  // request to Anthropic; it just delivers the response incrementally. The
-  // Phase 1.5 "one API call per turn" invariant holds.
+  // One reasoning call per turn — streamed. The provider yields text deltas and
+  // a final usage chunk; both map onto the same delta/done frames as before.
+  // (For the Anthropic provider the web_search / web_fetch server-side tool loop
+  // still runs INSIDE that single request — see providers.ts; web tools are dark
+  // on the local path.)
   //
-  // web_search / web_fetch are Anthropic SERVER-SIDE tools: their search/fetch
-  // loop runs INSIDE this one request, so the single-call invariant survives.
-  // This is web/knowledge retrieval — a different axis from the cosine-grep
-  // MEMORY retrieval, which stays pure math with no model in the loop. (See
-  // AGENTS.md: "no model-based retrieval" was always about memory.) The one
-  // edge: if the server-side loop hits its iteration cap the stream ends with
-  // stop_reason 'pause_turn' instead of 'end_turn'; we deliberately do NOT
-  // resume (resuming is a second call) — see the finalMessage handler below.
-  // Fetch is unrestricted (no allowed_domains) by design.
-  //
-  // No prompt caching: the system prompt is ~1-2k tokens (below Opus 4.7's
-  // 4096-token cache minimum) and is rebuilt every turn from the memory tiers —
-  // there is no stable prefix to cache. Adaptive thinking is left off (Opus 4.7
-  // default) to keep the turn fast and the latency readout in the UI honest.
-  const stream = anthropic.messages.stream({
-    model: MODEL,
-    max_tokens: MAX_TOKENS,
-    system,
-    messages: [{ role: 'user', content: message }],
-    tools: [
-      { type: 'web_search_20260209', name: 'web_search' },
-      { type: 'web_fetch_20260209', name: 'web_fetch' },
-    ],
-  });
-
-  // The error event is handled via the finalMessage() rejection below; this
-  // no-op listener just stops an emitted `error` from becoming an unhandled
-  // EventEmitter exception that would crash the process.
-  stream.on('error', () => {});
-  stream.on('text', (delta) => send('delta', { text: delta }));
-
-  let settled = false;
   // If the browser hangs up mid-turn, abort the upstream call so we don't pay
-  // for a completion nobody will read. This MUST hang off the response, not
-  // the request: req's 'close' fires as soon as the (already fully-read) POST
-  // body stream is destroyed — within a few ms of the handler starting, long
-  // before the turn finishes streaming — so a req-close abort would kill every
-  // normal turn. res's 'close' fires only when the response itself ends:
-  // cleanly (writableEnded === true) or because the client disconnected first.
+  // for a completion nobody will read. This MUST hang off the response, not the
+  // request: req's 'close' fires as soon as the (already fully-read) POST body
+  // stream is destroyed — within a few ms of the handler starting, long before
+  // the turn finishes streaming — so a req-close abort would kill every normal
+  // turn. res's 'close' fires only when the response itself ends: cleanly
+  // (writableEnded === true) or because the client disconnected first.
+  const controller = new AbortController();
+  let settled = false;
   res.on('close', () => {
-    if (!settled && !res.writableEnded) stream.abort();
+    if (!settled && !res.writableEnded) controller.abort();
   });
 
   try {
-    const final = await stream.finalMessage();
-    settled = true;
-    // The server-side web-tool loop hit its iteration cap. Resuming would be a
-    // second API call; the one-call-per-turn invariant is worth more than the
-    // rare over-long research turn, so we let it end here and just log it. If
-    // this ever fires in practice, that's the signal to reconsider — not a bug.
-    if (final.stop_reason === 'pause_turn') {
-      console.warn('turn ended on pause_turn (web-tool loop cap) — not resuming; one-call invariant held');
+    for await (const chunk of provider.streamTurn(system, message, controller.signal)) {
+      if (chunk.kind === 'delta') {
+        send('delta', { text: chunk.text });
+      } else {
+        settled = true;
+        send('done', {
+          inputTokens: chunk.usage.inputTokens,
+          outputTokens: chunk.usage.outputTokens,
+          // Server-side web tool counts (0 when Sal didn't browse, and always 0
+          // on the local path — those are Anthropic tools).
+          webSearchRequests: chunk.usage.webSearchRequests ?? 0,
+          webFetchRequests: chunk.usage.webFetchRequests ?? 0,
+        });
+      }
     }
-    send('done', {
-      inputTokens: final.usage.input_tokens,
-      outputTokens: final.usage.output_tokens,
-      // Server-side web tool counts (0 when Sal didn't reach for the web).
-      webSearchRequests: final.usage.server_tool_use?.web_search_requests ?? 0,
-      webFetchRequests: final.usage.server_tool_use?.web_fetch_requests ?? 0,
-    });
-    res.end();
+    settled = true;
+    if (!res.writableEnded) res.end();
   } catch (err) {
     settled = true;
     // The stream is already open, so the error rides it as an `error` frame
     // rather than an HTTP status. Surface the upstream message for an
-    // Anthropic.APIError (so the client can tell a 401 from a 529); keep
-    // anything else generic.
-    const detail =
-      err instanceof Anthropic.APIError
-        ? err.message
-        : 'Internal error generating the turn response.';
-    if (!(err instanceof Anthropic.APIError)) console.error('turn error:', err);
+    // Anthropic.APIError (so the client can tell a 401 from a 529) or a local
+    // provider's fetch error; keep anything else generic.
+    let detail: string;
+    if (err instanceof Anthropic.APIError) {
+      detail = err.message;
+    } else if (err instanceof Error && resolution.id === 'openai') {
+      detail = err.message;
+    } else {
+      detail = 'Internal error generating the turn response.';
+      console.error('turn error:', err);
+    }
     if (!res.writableEnded) {
       send('error', { error: detail });
       res.end();
@@ -600,9 +656,14 @@ if (existsSync(resolve(clientDir, 'index.html'))) {
 }
 
 app.listen(PORT, () => {
-  console.log(`SGC server listening on :${PORT} (model: ${MODEL})`);
-  if (!anthropic) {
-    console.warn('  ANTHROPIC_API_KEY is not set — /api/turn will return a setup error.');
-    console.warn('  Copy .env.example to .env and add your key.');
+  const available = Object.keys(providers).join(', ') || 'none';
+  console.log(
+    `SGC server listening on :${PORT} (providers: ${available}; default: ${DEFAULT_PROVIDER ?? 'none'})`,
+  );
+  if (providers.anthropic) console.log(`  anthropic → ${MODEL}`);
+  if (providers.openai) console.log(`  openai (LOCAL) → ${OPENAI_BASE_URL} (${LLM_MODEL})`);
+  if (!DEFAULT_PROVIDER) {
+    console.warn('  No model provider configured — /api/turn will return a setup error.');
+    console.warn('  Set ANTHROPIC_API_KEY (or OPENAI_BASE_URL for a local model) in .env.');
   }
 });
