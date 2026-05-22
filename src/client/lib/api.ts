@@ -82,24 +82,33 @@ export interface TurnResult {
   elapsed: number;
 }
 
+/** Which model backs Sal for a turn. The client sends only this token; the
+ * server holds the key/URL and maps it to a provider. See server/providers.ts. */
+export type ProviderId = 'anthropic' | 'openai';
+
 /**
  * Run one turn against the server.
  *
  * `onDelta`, if given, is called every time more text arrives, with the full
  * raw text accumulated so far (not just the new chunk). The caller is free to
  * strip the trailing <turn-meta> block for display — see stripStreamingMeta.
+ *
+ * `provider`, if given, selects the backing model for this turn ('anthropic' |
+ * 'openai'); omitted, the server uses its boot default. Only the token crosses
+ * the wire — never a URL or key.
  */
 export async function runTurn(
   systemPrompt: string,
   userMessage: string,
   onDelta?: (rawSoFar: string) => void,
+  provider?: ProviderId,
 ): Promise<TurnResult> {
   const startTime = Date.now();
 
   const response = await fetch('/api/turn', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ system: systemPrompt, message: userMessage }),
+    body: JSON.stringify({ system: systemPrompt, message: userMessage, ...(provider ? { provider } : {}) }),
   });
 
   // A non-OK status means the server rejected the request BEFORE opening the

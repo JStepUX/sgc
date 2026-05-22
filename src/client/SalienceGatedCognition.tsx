@@ -10,7 +10,7 @@ import {
   parseTurnResponse,
   stripStreamingMeta,
 } from './lib/prompt';
-import { runTurn, extractUrls, fetchUrl } from './lib/api';
+import { runTurn, extractUrls, fetchUrl, type ProviderId } from './lib/api';
 import {
   createChat as apiCreateChat,
   deleteChat as apiDeleteChat,
@@ -83,6 +83,35 @@ interface TokenHistoryEntry {
   inputTokens: number;
 }
 
+// ============================================================
+// PROVIDER SWITCHER TYPES
+// Mirrors GET /api/health. The client only ever holds a provider TOKEN; the
+// server owns keys/URLs. A local model is just a different (still ephemeral)
+// Sal — switching mid-chat is harmless (no state carried).
+// ============================================================
+
+interface ProviderInfo {
+  available: boolean;
+  model: string;
+  label?: string;
+}
+
+interface HealthResponse {
+  ok: boolean;
+  default: ProviderId | null;
+  providers: Record<ProviderId, ProviderInfo>;
+}
+
+// User-facing label: 'openai' is the dialect it speaks, but it runs LOCALly.
+// This is the single mapping site (spec: api_choice.naming.mapping_location).
+const PROVIDER_LABEL: Record<ProviderId, string> = {
+  anthropic: 'ANTHROPIC',
+  openai: 'LOCAL',
+};
+
+const PROVIDER_LS_KEY = 'sgc.provider';
+const PROVIDER_ORDER: ProviderId[] = ['anthropic', 'openai'];
+
 // Confidence drives a warm-shifted border/text colour: sage when trusted,
 // brick when doubted, a quiet neutral in between.
 function confidenceTone(c: number): string {
@@ -133,10 +162,131 @@ const AuroraBackground = memo(function AuroraBackground({
 });
 
 // ============================================================
-// PHASE BAR — title, phase badge, run-mode metadata, begin-again.
+// PROVIDER CHIP — clickable badge that opens an anchored popover to switch the
+// model backing Sal. Replaces the old static PHASE 1.5 badge: the phase label
+// was low-value signage, the switcher earns the spot. Hand-rolled popover (no
+// new modal/Radix infra) — a positioned div with an outside-click + Escape
+// dismiss. Selecting commits to state + localStorage and applies to the NEXT
+// turn; unconfigured providers render disabled.
 // ============================================================
 
-const PhaseBar = memo(function PhaseBar({ processing, onReset }: { processing: boolean; onReset: () => void }) {
+const ProviderChip = memo(function ProviderChip({
+  provider,
+  health,
+  processing,
+  onSelect,
+}: {
+  provider: ProviderId;
+  health: HealthResponse | null;
+  processing: boolean;
+  onSelect: (p: ProviderId) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  // Dismiss on outside-click or Escape while open.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const choose = (p: ProviderId) => {
+    onSelect(p);
+    setOpen(false);
+  };
+
+  return (
+    <div className="relative" ref={wrapRef}>
+      <button
+        type="button"
+        // Mirrors "Begin again": disabled while a turn is processing so the
+        // backing model can't change mid-turn.
+        disabled={processing}
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="rounded-full border border-ember/35 bg-ember/[0.08] px-2.5 py-1 font-mono text-[11px] font-medium tracking-[0.08em] text-ember transition-colors hover:bg-ember/[0.14] disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {PROVIDER_LABEL[provider]}
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute left-0 top-[calc(100%+8px)] z-40 w-60 rounded-lg border border-hairline bg-ground/95 p-1.5 shadow-xl backdrop-blur-md"
+        >
+          <div className="px-2 pb-1.5 pt-1 font-mono text-[10px] tracking-[0.18em] uppercase text-fg-3">
+            Reasoning model
+          </div>
+          {PROVIDER_ORDER.map((p) => {
+            const info = health?.providers[p];
+            const available = info?.available ?? false;
+            const selected = p === provider;
+            return (
+              <button
+                key={p}
+                type="button"
+                role="menuitemradio"
+                aria-checked={selected}
+                disabled={!available}
+                onClick={() => choose(p)}
+                className={cn(
+                  'flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left transition-colors',
+                  available ? 'hover:bg-fg-1/[0.06]' : 'cursor-not-allowed opacity-40',
+                  selected && 'bg-ember/[0.1]',
+                )}
+              >
+                <span className="flex flex-col">
+                  <span className="font-mono text-[11px] tracking-[0.06em] text-fg-1">
+                    {PROVIDER_LABEL[p]}
+                  </span>
+                  <span className="font-mono text-[10px] text-fg-3">
+                    {info?.model ?? '—'}
+                    {!available && ' · not configured'}
+                  </span>
+                </span>
+                {selected && available && (
+                  <span className="size-1.5 shrink-0 rounded-full bg-ember shadow-[0_0_8px_var(--color-ember)]" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+});
+
+// ============================================================
+// PHASE BAR — title, provider switcher chip, run-mode metadata, begin-again.
+// ============================================================
+
+const PhaseBar = memo(function PhaseBar({
+  processing,
+  onReset,
+  provider,
+  health,
+  onSelectProvider,
+}: {
+  processing: boolean;
+  onReset: () => void;
+  provider: ProviderId;
+  health: HealthResponse | null;
+  onSelectProvider: (p: ProviderId) => void;
+}) {
+  // All three remain true on the local path (one request to one model; TF-IDF
+  // grep and the 2-turn buffer are client-side and provider-agnostic).
   const meta = ['1 API call/turn', 'TF-IDF Grep', '2-turn buffer'];
   return (
     <header className="sal-topbar relative z-30 flex shrink-0 flex-wrap items-center justify-between gap-y-2 border-b border-hairline px-7 pt-[18px] pb-4 backdrop-blur-[8px]">
@@ -148,9 +298,12 @@ const PhaseBar = memo(function PhaseBar({ processing, onReset }: { processing: b
         <span className="text-base font-semibold tracking-[-0.005em] text-fg-1">
           Salience-Gated Cognition
         </span>
-        <span className="rounded-full border border-ember/35 bg-ember/[0.08] px-2.5 py-1 font-mono text-[11px] font-medium tracking-[0.08em] text-ember">
-          PHASE 1.5
-        </span>
+        <ProviderChip
+          provider={provider}
+          health={health}
+          processing={processing}
+          onSelect={onSelectProvider}
+        />
       </div>
       <div className="flex items-center gap-[14px]">
         {processing && (
@@ -726,6 +879,19 @@ export default function SalienceGatedCognition() {
   // firing on mount with the DEFAULT_MEMORIES placeholder before the server
   // set has had a chance to load.
   const [hydrated, setHydrated] = useState(false);
+  // --- Provider switcher: which model backs Sal. Persisted to localStorage,
+  // reconciled with /api/health on mount (coerced to an available provider). The
+  // client only ever holds the TOKEN; the server owns keys/URLs. ---
+  const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [provider, setProvider] = useState<ProviderId>(() => {
+    try {
+      const stored = localStorage.getItem(PROVIDER_LS_KEY);
+      if (stored === 'anthropic' || stored === 'openai') return stored;
+    } catch {
+      /* localStorage unavailable (private mode) — fall through to default */
+    }
+    return 'anthropic';
+  });
   const chatEndRef = useRef<HTMLDivElement>(null);
   const historyButtonRef = useRef<HTMLButtonElement>(null);
   // Flipped true when the user or the model actually mutates `memories`.
@@ -823,6 +989,47 @@ export default function SalienceGatedCognition() {
       }
     })();
     return () => { cancelled = true; };
+  }, []);
+
+  // --- Provider health: fetch /api/health once on mount to learn which
+  // providers are configured + the boot default, then coerce the active
+  // provider to one that is actually available. If the stored/initial provider
+  // is unavailable (e.g. LOCAL selected on an Anthropic-only deploy), fall back
+  // to the server default, else the first available provider. Best-effort: if
+  // health fails the chip simply shows what we have and the server still
+  // resolves a default per turn. ---
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/health');
+        if (!res.ok) return;
+        const data = (await res.json()) as HealthResponse;
+        if (cancelled || !data?.providers) return;
+        setHealth(data);
+        setProvider((current) => {
+          if (data.providers[current]?.available) return current;
+          if (data.default && data.providers[data.default]?.available) return data.default;
+          const firstAvailable = PROVIDER_ORDER.find((p) => data.providers[p]?.available);
+          return firstAvailable ?? current;
+        });
+      } catch {
+        /* health unreachable — keep the localStorage/initial provider */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Commit a provider selection: update state + persist. Applies to the NEXT
+  // turn (processInput reads `provider` at call time). Guarded against picking
+  // an unavailable provider at the call site (chip disables them).
+  const handleSelectProvider = useCallback((p: ProviderId) => {
+    setProvider(p);
+    try {
+      localStorage.setItem(PROVIDER_LS_KEY, p);
+    } catch {
+      /* localStorage unavailable — selection still applies in-session */
+    }
   }, []);
 
   // --- Memory sync: persist the global set whenever it changes, debounced. ---
@@ -932,10 +1139,15 @@ export default function SalienceGatedCognition() {
 
       // ---- SINGLE MODEL CALL (streamed) ----
       const systemPrompt = buildPrompt(memories, localBuffer, grepResults.length > 0 ? grepResults : null, fetchedDocs, failedUrls);
-      const turnResult = await runTurn(systemPrompt, userInput, (rawSoFar) => {
-        // Render Sal's reply as it arrives; hide the trailing <turn-meta> block.
-        setStreamingText(stripStreamingMeta(rawSoFar));
-      });
+      const turnResult = await runTurn(
+        systemPrompt,
+        userInput,
+        (rawSoFar) => {
+          // Render Sal's reply as it arrives; hide the trailing <turn-meta> block.
+          setStreamingText(stripStreamingMeta(rawSoFar));
+        },
+        provider,
+      );
       const { displayText, metadata } = parseTurnResponse(turnResult.text);
 
       turnData.inputTokens = turnResult.inputTokens;
@@ -1143,7 +1355,13 @@ export default function SalienceGatedCognition() {
       <AuroraBackground gate={gate} active={typing || isProcessing} pulseKey={pulseKey} />
 
       <div className="relative z-10 flex h-full w-full flex-col">
-        <PhaseBar processing={isProcessing} onReset={handleReset} />
+        <PhaseBar
+          processing={isProcessing}
+          onReset={handleReset}
+          provider={provider}
+          health={health}
+          onSelectProvider={handleSelectProvider}
+        />
 
         <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
           {/* Thread */}
