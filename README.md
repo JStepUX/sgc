@@ -22,14 +22,16 @@ These feed **Sal**, an ephemeral reasoning instance that exists for exactly one
 turn and is then retired. Sal replies in natural language and emits updated
 confidence scores. One API call per turn, total.
 
-Sal can also reach the live web when a turn needs it: **web search** for recent
-or external facts, and a deterministic, SSRF-guarded **URL pre-fetch** that
-extracts a linked page's text (Readability) before the call so it's read in one
-pass. This is web/*knowledge* retrieval — a separate axis from the memory tiers
-above, which stay model-free — and it keeps the one-call-per-turn shape (the
-search loop runs server-side inside that single call). The "one API call" count
-is a guardrail, not the thesis; the thesis is Sal's per-turn ephemerality and
-the curated-tier context. See `CLAUDE.md` → Mission Brief.
+Sal has no live web access of its own. The one way a page reaches a turn is a
+deterministic, SSRF-guarded **URL pre-fetch**: when the person pastes a link,
+the server extracts its text (Readability) *before* the call and folds it into
+the prompt as a LINKED PAGE, read in one pass. No model, no search loop — the
+web-knowledge analogue of the cosine grep. (Anthropic's server-side
+`web_search`/`web_fetch` tools were tried and removed: they injected ~4–5k
+tokens of scaffolding into every turn's input whether or not Sal browsed, which
+wasn't worth it next to the free pre-fetch.) The "one API call" count is a
+guardrail, not the thesis; the thesis is Sal's per-turn ephemerality and the
+curated-tier context. See `CLAUDE.md` → Mission Brief.
 
 Sal's persona — the head of the per-turn system prompt — is editable **per
 chat**: "Begin again" opens a Confirm Persona step where you can rewrite it and

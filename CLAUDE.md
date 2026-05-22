@@ -56,10 +56,12 @@ growing transcript, no model carrying its own state). Two rules protect that:
 - **"One API call per turn" is a guardrail, not the law.** A cheap tripwire:
   historically a model creeping back into retrieval showed up as an extra call.
   So treat a *new* model call as a smell worth investigating, not a forbidden
-  act — work that adds a call within a single turn (a tool loop, external
-  web/knowledge retrieval) while keeping Sal ephemeral and memory retrieval
-  deterministic does **not** breach the thesis. Web/knowledge retrieval is a
-  separate axis from memory — see `AGENTS.md`.
+  act — work that adds a call within a single turn (e.g. a tool loop) while
+  keeping Sal ephemeral and memory retrieval deterministic does **not** breach
+  the thesis. (Web/knowledge retrieval is a separate axis from memory: server-
+  side `web_search`/`web_fetch` tools were tried and then removed for cost — Sal
+  now reaches the world only via the deterministic URL pre-fetch. See
+  `AGENTS.md`.)
 
 ### Project Structure
 

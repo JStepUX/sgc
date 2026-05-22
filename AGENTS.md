@@ -29,43 +29,40 @@ documented:
 
 ---
 
-## "No model-based retrieval" means MEMORY retrieval — web search/fetch is a different axis (web tools, 2026-05-20)
+## "No model-based retrieval" means MEMORY retrieval; Sal's only world access is the deterministic URL pre-fetch (web tools removed, 2026-05-21)
 
 The Phase 1.5 invariant "no model-based retrieval / no drift surface" is about
 how Sal recalls **the person** — chat history and memories. Phase 1 used a model
 as the grepper ("Grepory"); it was slow and unhelpful, so cosine TF-IDF replaced
 it (`lib/tfidf.ts`). That story is the whole point of the invariant: *memory*
 retrieval must be deterministic math, not a reasoning component. It was never
-about whether Sal can reach the outside world. So the server-side `web_search` /
-`web_fetch` tools added to `/api/turn` (`src/server/index.ts`) do **not** violate
-it — they're web/knowledge retrieval, an orthogonal axis. The cosine grep remains
-the sole memory mechanism. Don't "fix" the web tools by routing them through a
-model-retrieval objection that doesn't apply; and equally, don't let web access
-creep into the *memory* path — that line is still load-bearing. The prompt
-(`lib/prompt.ts`) tells Sal explicitly: web is for the world, memories are for the
-person.
+about whether Sal can reach the outside world — web/knowledge is an orthogonal
+axis from memory. Don't let web access creep into the *memory* path — that line
+is still load-bearing. The cosine grep remains the sole memory mechanism.
 
-These are Anthropic server-side tools: the search/fetch loop runs inside the one
-`messages.stream()` request, so "one API call per turn" still holds. But note
-(per CLAUDE.md → Mission Brief) that the call count is a **guardrail, not the
-law** — the thesis is Sal's per-turn ephemerality + curated-tier context, not the
-integer 1. A call added *within* a turn that keeps Sal ephemeral and leaves
-*memory* retrieval deterministic doesn't breach the thesis. The single caveat
-here is `stop_reason: 'pause_turn'` (server loop hit its iteration cap) — we log
-it and deliberately do **not** resume, because resuming costs a second call for
-no thesis benefit. See the comment at the stream/`finalMessage` site in
-`src/server/index.ts`.
+How Sal reaches the world: ONE way, the deterministic server-side **pre-fetch**
+(`POST /api/fetch-url`, Readability extraction — no model). When the person
+pastes a link, it pulls clean article text *before* the single model call and the
+browser folds it into the prompt as a `LINKED PAGE` block. One call, page counted
+once, no loop, no model. It is the web-knowledge analogue of
+cosine-replacing-Grepory: mechanical retrieval, no drift. Sal has **no live web
+access of its own** — it can't search or open a page; if it lacks something, the
+prompt tells it to ask the person to paste it (`lib/prompt.ts`).
 
-For the explicit-URL case ("read this page"), retrieval is even cleaner: a
-deterministic server-side **pre-fetch** (`POST /api/fetch-url`, Readability
-extraction — no model) pulls clean article text *before* the single model call,
-and the browser folds it into the prompt as a `LINKED PAGE` block. One call, page
-counted once, no loop, no model in the loop. `web_search` (and `web_fetch` as a
-discovery-read fallback) stay server-side for the case where Sal must decide what
-to read. The pre-fetch is the web-knowledge analogue of cosine-replacing-Grepory:
-mechanical retrieval, no drift.
+History worth knowing: Anthropic's server-side `web_search` / `web_fetch` tools
+once rode on `/api/turn` (their loop ran inside the one `messages.stream()`, so
+"one call per turn" held, with a `pause_turn` cap we logged but never resumed).
+They were **removed 2026-05-21**: those tools inject ~4–5k tokens of definitions
+and usage scaffolding into EVERY turn's `input_tokens` — a just-in-case cost paid
+whether or not Sal browsed (a turn-1 "capital of France?" question billed ~5.2k
+input). The free deterministic pre-fetch already covers "read this page," so the
+tools weren't worth it. A bonus: with them gone, the Anthropic input count ≈ the
+actual prompt again, so the Context-Savings tile's "Sent vs naive estimate"
+comparison is no longer skewed by invisible tool overhead. If you're tempted to
+re-add model web tools, weigh that per-turn token tax first — and it's a
+world-axis change, not a memory-path one.
 
-## Swapping Sal's model to a local OpenAI-compatible server is thesis-compatible; web tools are a provider-dependent axis, dark on LOCAL (local provider, 2026-05-21)
+## Swapping Sal's model to a local OpenAI-compatible server is thesis-compatible (local provider, 2026-05-21)
 
 The header provider chip can point Sal's single reasoning call at a local
 OpenAI-compatible server (KoboldCPP/Ollama, `OPENAI_BASE_URL`) instead of
@@ -80,21 +77,12 @@ the server (`src/server/providers.ts` + `index.ts`) owns those. Both providers
 emit the **same** `delta`/`done`/`error` SSE frames, so the browser parser
 (`lib/api.ts`) is provider-agnostic.
 
-Two things to know. (1) `web_search` / `web_fetch` are **Anthropic server-side
-tools** — they're a *different axis* from memory (see the entry above) and they
-go **dark on the local path** (`openaiProvider` doesn't offer them; the `done`
-frame carries 0 for both counts). That's an accepted trade-off, not a bug:
-deterministic retrieval (cosine grep + `/api/fetch-url` pre-fetch) still works on
-both paths, so Sal can still read a pasted URL locally. (2) KoboldCPP may report
-no token usage; the local `done` frame then carries 0 input/output tokens — the
-Context-Savings tile still renders (its baseline is computed client-side) but
-local *input*-token counts aren't authoritative. The default persona's
-web-access paragraph is technically false on LOCAL; it's harmless/unused, so it
-stays in `DEFAULT_PERSONA` — flagged here so a future agent isn't surprised the
-prompt mentions web access the local model can't use. (As of the per-chat
-persona work, 2026-05-21, `buildPrompt` *does* take an optional `persona`, so a
-custom persona on a local chat can drop that paragraph — but `DEFAULT_PERSONA`
-deliberately keeps it.)
+One thing to know: KoboldCPP may report no token usage; the local `done` frame
+then carries 0 input/output tokens — the Context-Savings tile still renders (its
+baseline is computed client-side) but local *input*-token counts aren't
+authoritative. (Neither provider attaches tools any more — see the entry above —
+so there's no longer a provider-dependent web axis to reconcile; both reach the
+world only through the deterministic `/api/fetch-url` pre-fetch.)
 
 ## Web fonts must load via `<link>` in `index.html`, not `@import` in `index.css` (Sal re-skin, 2026-05-19)
 
@@ -128,6 +116,14 @@ only see the UI but every turn fails, the server process probably isn't up, or
 Without it the server still starts (and prints a warning on boot), but it never
 constructs the Anthropic client, and `/api/turn` returns a 500 with a clear
 "ANTHROPIC_API_KEY is not set" message. `.env` is gitignored — never committed.
+
+One operational gotcha when an agent starts `npm run dev` as a background task:
+stopping that task kills the `concurrently` parent but can leave the Vite (`:5555`)
+and `tsx` (`:3000`) **children orphaned**, still holding their ports — so the next
+`npm run dev` dies with "Port 5555 is already in use" (and `-k` then takes the
+server down with it). Don't trust the task-stop to free the ports; verify and, if
+needed, kill by port before relaunching, e.g. (PowerShell):
+`Get-NetTCPConnection -LocalPort 5555,3000 -State Listen | %{ Stop-Process -Id $_.OwningProcess -Force }`.
 
 ## "Sal" is the identity; "turn" is the mechanism (naming pass, 2026-05-18)
 
