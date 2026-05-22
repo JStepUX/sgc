@@ -172,10 +172,8 @@ app.post('/api/turn', async (req, res) => {
   };
 
   // One reasoning call per turn — streamed. The provider yields text deltas and
-  // a final usage chunk; both map onto the same delta/done frames as before.
-  // (For the Anthropic provider the web_search / web_fetch server-side tool loop
-  // still runs INSIDE that single request — see providers.ts; web tools are dark
-  // on the local path.)
+  // a final usage chunk; both map onto the same delta/done frames as before. No
+  // tools on either provider — see providers.ts.
   //
   // If the browser hangs up mid-turn, abort the upstream call so we don't pay
   // for a completion nobody will read. This MUST hang off the response, not the
@@ -199,10 +197,6 @@ app.post('/api/turn', async (req, res) => {
         send('done', {
           inputTokens: chunk.usage.inputTokens,
           outputTokens: chunk.usage.outputTokens,
-          // Server-side web tool counts (0 when Sal didn't browse, and always 0
-          // on the local path — those are Anthropic tools).
-          webSearchRequests: chunk.usage.webSearchRequests ?? 0,
-          webFetchRequests: chunk.usage.webFetchRequests ?? 0,
         });
       }
     }
@@ -237,12 +231,12 @@ app.post('/api/turn', async (req, res) => {
 // turn. We fetch it and run Readability extraction — a pure algorithm, no model,
 // no drift — and hand back clean article text. The browser folds that into the
 // single /api/turn prompt as a LINKED PAGE block, so the page is read in ONE
-// model call and counted ONCE. This is far cheaper than the server-side
-// web_fetch tool, which dumps full page chrome into context and re-counts it
-// across the internal tool loop (the 94k-token turn that prompted this). It is
-// the web-knowledge analogue of the cosine grep: mechanical retrieval, no model
-// in the loop. web_search / web_fetch stay on /api/turn for the case where Sal
-// must DISCOVER what to read.
+// model call and counted ONCE. This is the ONLY way Sal reaches the outside
+// world: the server-side web_search / web_fetch tools were removed (they cost
+// ~4-5k tokens of scaffolding on every turn, browsing or not). It is the
+// web-knowledge analogue of the cosine grep: mechanical retrieval, no model in
+// the loop, no live search. Sal cannot discover or open a page on its own — the
+// person must paste a link (or the text).
 // ============================================================
 
 const FETCH_TIMEOUT_MS = 15_000;

@@ -5,8 +5,7 @@
 // retired. A *provider* is just where that one reasoning call is sent. Today
 // there are two:
 //
-//   anthropicProvider — Claude via @anthropic-ai/sdk, including the server-side
-//                        web_search / web_fetch tools (and pause_turn handling).
+//   anthropicProvider — Claude via @anthropic-ai/sdk.
 //   openaiProvider     — any OpenAI-compatible server (KoboldCPP, Ollama, …) via
 //                        a raw fetch() to {base}/chat/completions.
 //
@@ -31,11 +30,6 @@ export type TurnChunk =
       usage: {
         inputTokens: number;
         outputTokens: number;
-        // Anthropic server-side web-tool counts. 0 on the local path (those are
-        // Anthropic tools — dark on OpenAI-compatible servers). Optional so the
-        // openaiProvider needn't fabricate them.
-        webSearchRequests?: number;
-        webFetchRequests?: number;
       };
     };
 
@@ -101,11 +95,17 @@ export function resolveTurnProvider(
 // ============================================================
 // ANTHROPIC PROVIDER
 //
-// This wraps the existing messages.stream() loop verbatim — same model,
-// max_tokens, web_search / web_fetch tools, and pause_turn handling that lived
-// inline in index.ts before the provider split. No behaviour change: the only
-// difference is the result is yielded as TurnChunks instead of written directly
-// to the SSE response.
+// This wraps the existing messages.stream() loop — same model and max_tokens.
+// The result is yielded as TurnChunks instead of written directly to the SSE
+// response, so index.ts can map it onto delta/done frames.
+//
+// No tools are attached. Sal has no live web access: the only outside-world
+// input is the deterministic Readability pre-fetch of a pasted URL
+// (POST /api/fetch-url), folded into the prompt as a LINKED PAGE before this
+// call. Anthropic's server-side web_search / web_fetch tools were removed —
+// they injected ~4-5k tokens of tool scaffolding into EVERY turn's input (a
+// just-in-case cost paid whether or not Sal browsed), which wasn't worth it
+// next to the free, deterministic pre-fetch. See AGENTS.md.
 // ============================================================
 
 export function createAnthropicProvider(opts: {
@@ -116,34 +116,20 @@ export function createAnthropicProvider(opts: {
   const { client, model, maxTokens } = opts;
   return {
     async *streamTurn(system, message, signal) {
-      // One API call per turn — streamed. messages.stream() is still a single
-      // request to Anthropic; it just delivers the response incrementally.
+      // One API call per turn — streamed. messages.stream() is a single request
+      // to Anthropic; it just delivers the response incrementally. No tools, so
+      // no server-side tool loop: the stream ends on end_turn (or max_tokens),
+      // never pause_turn.
       //
-      // web_search / web_fetch are Anthropic SERVER-SIDE tools: their
-      // search/fetch loop runs INSIDE this one request, so the single-call
-      // invariant survives. This is web/knowledge retrieval — a different axis
-      // from the cosine-grep MEMORY retrieval, which stays pure math with no
-      // model in the loop. (See AGENTS.md: "no model-based retrieval" was
-      // always about memory.) The one edge: if the server-side loop hits its
-      // iteration cap the stream ends with stop_reason 'pause_turn' instead of
-      // 'end_turn'; we deliberately do NOT resume (resuming is a second call) —
-      // see the finalMessage handler below. Fetch is unrestricted (no
-      // allowed_domains) by design.
-      //
-      // No prompt caching: the system prompt is ~1-2k tokens (below Opus 4.7's
-      // 4096-token cache minimum) and is rebuilt every turn from the memory
-      // tiers — there is no stable prefix to cache. Adaptive thinking is left
-      // off (Opus 4.7 default) to keep the turn fast and the latency readout in
-      // the UI honest.
+      // No prompt caching: the system prompt is rebuilt every turn from the
+      // memory tiers, so there is no stable prefix worth caching. Adaptive
+      // thinking is left off (Opus 4.7 default) to keep the turn fast and the
+      // latency readout in the UI honest.
       const stream = client.messages.stream({
         model,
         max_tokens: maxTokens,
         system,
         messages: [{ role: 'user', content: message }],
-        tools: [
-          { type: 'web_search_20260209', name: 'web_search' },
-          { type: 'web_fetch_20260209', name: 'web_fetch' },
-        ],
       });
 
       // The error event is surfaced via the finalMessage() rejection below; this
@@ -162,7 +148,7 @@ export function createAnthropicProvider(opts: {
       let notify: (() => void) | null = null;
       let finished = false;
       let failure: unknown = null;
-      let usage = { inputTokens: 0, outputTokens: 0, webSearchRequests: 0, webFetchRequests: 0 };
+      let usage = { inputTokens: 0, outputTokens: 0 };
 
       stream.on('text', (delta: string) => {
         queue.push(delta);
@@ -172,21 +158,9 @@ export function createAnthropicProvider(opts: {
       const finalPromise = stream
         .finalMessage()
         .then((final) => {
-          // The server-side web-tool loop hit its iteration cap. Resuming would
-          // be a second API call; the one-call-per-turn invariant is worth more
-          // than the rare over-long research turn, so we let it end here and
-          // just log it. If this ever fires in practice, that's the signal to
-          // reconsider — not a bug.
-          if (final.stop_reason === 'pause_turn') {
-            console.warn(
-              'turn ended on pause_turn (web-tool loop cap) — not resuming; one-call invariant held',
-            );
-          }
           usage = {
             inputTokens: final.usage.input_tokens,
             outputTokens: final.usage.output_tokens,
-            webSearchRequests: final.usage.server_tool_use?.web_search_requests ?? 0,
-            webFetchRequests: final.usage.server_tool_use?.web_fetch_requests ?? 0,
           };
         })
         .catch((err) => {
@@ -231,9 +205,10 @@ export function createAnthropicProvider(opts: {
 // Raw fetch() to {base}/chat/completions with stream:true. No new npm dep — the
 // SSE parse loop below mirrors the client's parser in src/client/lib/api.ts.
 // KoboldCPP / Ollama / any OpenAI-compatible server share this one code path;
-// only OPENAI_BASE_URL differs. web_search / web_fetch are Anthropic-only and
-// thus dark here (accepted trade-off — deterministic retrieval still works on
-// both paths). Context length is configured in the local server, not here.
+// only OPENAI_BASE_URL differs. Like the Anthropic path, no tools — the
+// deterministic URL pre-fetch (/api/fetch-url) is the only outside-world input,
+// and it works identically on both providers. Context length is configured in
+// the local server, not here.
 // ============================================================
 
 // One parsed event off an OpenAI-style SSE stream. Exported for the SSE-parse
@@ -448,8 +423,6 @@ export function createOpenAIProvider(opts: {
         usage: {
           inputTokens: result.inputTokens,
           outputTokens: result.outputTokens,
-          webSearchRequests: 0,
-          webFetchRequests: 0,
         },
       };
     },
