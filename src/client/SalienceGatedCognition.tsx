@@ -2,6 +2,7 @@ import { memo, useState, useRef, useEffect, useCallback } from 'react';
 import { ArrowUp, Clock, Plus } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeQuotes from './lib/rehype-quotes';
 import type { Memory, ChatEntry, FetchedDoc } from './lib/types';
 import { cosineSearch } from './lib/tfidf';
 import {
@@ -651,6 +652,7 @@ const AssistantMessage = memo(function AssistantMessage({
       <div className="flex flex-col gap-3.5">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeQuotes]}
         components={{
           p: ({ node: _node, ...props }) => (
             <p {...props} className="m-0 whitespace-pre-wrap" />
