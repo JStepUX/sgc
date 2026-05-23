@@ -1,7 +1,7 @@
 // Behavioral tests for the time formatters. Pure functions over (ts, now),
 // so every test pins both for determinism.
 
-import { formatTimestamp, formatRelative } from './format-time';
+import { formatTimestamp, formatRelative, formatNowHeader } from './format-time';
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -94,5 +94,25 @@ describe('formatRelative', () => {
     // shift it without an intentional choice.
     const yesterdayLate = new Date(2026, 4, 22, 23, 0).getTime();
     expect(formatRelative(yesterdayLate, now)).toBe('15 hr ago');
+  });
+});
+
+describe('formatNowHeader', () => {
+  it('renders the full weekday, ISO date, and zero-padded 24h time', () => {
+    // Saturday, 2026-05-23, 14:30 local
+    const ts = new Date(2026, 4, 23, 14, 30).getTime();
+    expect(formatNowHeader(ts)).toBe('Saturday, 2026-05-23, 14:30 (local time)');
+  });
+
+  it('zero-pads single-digit months, days, hours, and minutes', () => {
+    // Sunday, 2026-01-04, 03:07 local
+    const ts = new Date(2026, 0, 4, 3, 7).getTime();
+    expect(formatNowHeader(ts)).toBe('Sunday, 2026-01-04, 03:07 (local time)');
+  });
+
+  it('uses 24h time so afternoon hours are unambiguous', () => {
+    // 23:59 local — no AM/PM ambiguity, no rollover surprise.
+    const ts = new Date(2026, 4, 23, 23, 59).getTime();
+    expect(formatNowHeader(ts)).toContain('23:59');
   });
 });

@@ -14,6 +14,15 @@ const MS_PER_HOUR = 60 * MS_PER_MIN;
 const MS_PER_DAY = 24 * MS_PER_HOUR;
 
 const WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+const WEEKDAY_LONG = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+] as const;
 
 function startOfDay(d: Date): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
@@ -43,6 +52,25 @@ export function formatTimestamp(ts: number, now: Date): string {
   return sameYear
     ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
     : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/**
+ * Absolute "now" stamp for the system-prompt header — weekday, ISO date, 24h
+ * time, "(local time)". Sal reads it once per turn and reasons about anchors
+ * like "this morning" / "tonight" / "next Tuesday" from there. 24h chosen
+ * because it's unambiguous and matches the engineering aesthetic of the rest
+ * of the project; weekday is included because it's cheap to compute and
+ * helpfully grounds time-of-week phrasings.
+ */
+export function formatNowHeader(ts: number): string {
+  const d = new Date(ts);
+  const weekday = WEEKDAY_LONG[d.getDay()];
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${weekday}, ${yyyy}-${mm}-${dd}, ${hh}:${min} (local time)`;
 }
 
 /**

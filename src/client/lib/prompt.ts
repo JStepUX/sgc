@@ -15,7 +15,7 @@
 
 import type { Memory, ChatEntry, FetchedDoc } from './types';
 import type { ScoredResult } from './time-score';
-import { formatRelative } from './format-time';
+import { formatRelative, formatNowHeader } from './format-time';
 import { estimateTokens } from './tokens';
 
 /** The metadata block Sal appends to every response. */
@@ -69,8 +69,12 @@ export function buildPrompt(
 
   let localBlock = '';
   if (localBuffer.length > 0) {
+    // Each buffer entry gets the same relative-time tag the grep block uses,
+    // so Sal has one consistent format for "when was this" across both
+    // history tiers (retrieved + recent). The "now" line in the header is the
+    // absolute anchor; these are relative to it.
     localBlock = `\nRECENT CONTEXT (last exchange):\n${localBuffer
-      .map((e) => `  ${e.role}: ${e.content}`)
+      .map((e) => `  [${formatRelative(e.createdAt, now)}] ${e.role}: ${e.content}`)
       .join('\n')}`;
   }
 
@@ -119,7 +123,17 @@ export function buildPrompt(
   const hasGrep = (grepResults?.length ?? 0) > 0;
   const hasLinked = (fetchedDocs?.length ?? 0) > 0;
 
+  // Absolute "now" anchor: stated in prose right after the persona so Sal can
+  // ground time-of-day, weekday, and "today / tomorrow / next week" reasoning
+  // without inventing a date. Safe to place in the system prompt because Sal
+  // is ephemeral — the prompt rebuilds each turn so this never goes stale.
+  // Together with the relative-time tags on the buffer and the grep block,
+  // Sal has one absolute anchor + consistent relative tags everywhere else.
+  const nowLine = `Right now it's ${formatNowHeader(now)}.`;
+
   return `${personaText}
+
+${nowLine}
 
 CONSTITUTIONAL MEMORIES:
 ${memBlock}

@@ -140,6 +140,29 @@ describe('buildPrompt', () => {
     expect(prompt).toContain('user: hello there');
   });
 
+  it('prefixes each local-buffer entry with a relative-time tag (same format as the grep block)', () => {
+    const now = new Date(2026, 4, 23, 14, 30).getTime();
+    const buffer: ChatEntry[] = [
+      { role: 'user', content: 'what about that', createdAt: now - 3 * 60 * 60 * 1000 },
+      { role: 'assistant', content: 'sure', createdAt: now - 3 * 60 * 60 * 1000 },
+    ];
+    const prompt = buildPrompt(memories, buffer, null, null, null, undefined, now);
+    // Both halves of the most recent exchange carry the same relative tag —
+    // matching how the grep block surfaces older retrieved turns.
+    expect(prompt).toContain('[3 hr ago] user: what about that');
+    expect(prompt).toContain('[3 hr ago] assistant: sure');
+  });
+
+  it('states the current date and time in a single line right after the persona', () => {
+    // The system-prompt "now" header: one absolute anchor that lets Sal reason
+    // about weekdays, time of day, and "today / tomorrow" without inventing a
+    // date. Safe in the system prompt because Sal is ephemeral and the prompt
+    // rebuilds each turn — no drift.
+    const now = new Date(2026, 4, 23, 14, 30).getTime();
+    const prompt = buildPrompt(memories, [], null, null, null, undefined, now);
+    expect(prompt).toContain("Right now it's Saturday, 2026-05-23, 14:30 (local time).");
+  });
+
   it('omits the LINKED PAGES section when no docs were fetched', () => {
     expect(buildPrompt(memories, [], null)).not.toContain('LINKED PAGES');
     expect(buildPrompt(memories, [], null, [])).not.toContain('LINKED PAGES');
