@@ -7,6 +7,7 @@ import {
   type ChatTurn,
   type TurnActiveState,
 } from '../lib/persistence';
+import { formatRelative } from '../lib/format-time';
 
 // ============================================================
 // CHAT MEMORY EDITOR — parcel a chat into its turns and gate each one's
@@ -350,6 +351,12 @@ function TurnCard({ turn, ordinal, selectMode, selected, onToggle, onSelect }: T
             )}
           >
             {isUser ? 'You' : 'Sal'}
+          </span>
+          {/* Quiet relative-time stamp — the time scorer's dimension made
+              visible alongside the T-NN tag. Muted to match the existing meta
+              row weight. */}
+          <span className="font-mono text-[9.5px] tracking-[0.04em] text-fg-4">
+            {formatRelative(turn.createdAt, Date.now())}
           </span>
         </div>
         {selectMode ? (

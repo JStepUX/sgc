@@ -3,6 +3,7 @@ import { Brain, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { ChatSummary, TurnActiveState } from '../lib/persistence';
+import { formatTimestamp } from '../lib/format-time';
 import { ChatMemoryEditor } from './ChatMemoryEditor';
 
 // ============================================================
@@ -55,26 +56,8 @@ function bucketFor(ts: number, now: Date): Bucket {
   return 'earlier';
 }
 
-const WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-function formatTimestamp(ts: number, now: Date): string {
-  const d = new Date(ts);
-  const today = startOfDay(now);
-  if (ts >= today) {
-    const h = d.getHours();
-    const m = d.getMinutes();
-    const meridiem = h >= 12 ? 'PM' : 'AM';
-    const h12 = ((h + 11) % 12) + 1;
-    return `${h12}:${m.toString().padStart(2, '0')} ${meridiem}`;
-  }
-  if (ts >= today - 24 * 60 * 60 * 1000) return 'Yesterday';
-  if (ts >= today - 6 * 24 * 60 * 60 * 1000) return WEEKDAY[d.getDay()];
-  // Older: short date, no year unless not-this-year.
-  const sameYear = d.getFullYear() === now.getFullYear();
-  return sameYear
-    ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-    : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-}
+// formatTimestamp now lives in lib/format-time so the prompt's grep block, the
+// chat-memory-editor cards, and this list share one implementation.
 
 export function ChatHistoryModal({
   open,

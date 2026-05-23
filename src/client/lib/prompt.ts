@@ -14,7 +14,8 @@
 // ============================================================
 
 import type { Memory, ChatEntry, FetchedDoc } from './types';
-import type { GrepResult } from './tfidf';
+import type { ScoredResult } from './time-score';
+import { formatRelative } from './format-time';
 import { estimateTokens } from './tokens';
 
 /** The metadata block Sal appends to every response. */
@@ -52,10 +53,11 @@ When the person shares a link, its text is usually pre-loaded for you below as a
 export function buildPrompt(
   memories: Memory[],
   localBuffer: ChatEntry[],
-  grepResults: GrepResult[] | null,
+  grepResults: ScoredResult[] | null,
   fetchedDocs?: FetchedDoc[] | null,
   failedUrls?: string[] | null,
   persona?: string,
+  now: number = Date.now(),
 ): string {
   // A blank/whitespace-only persona falls back to DEFAULT_PERSONA. A custom
   // persona that omits the default's guidance just informs Sal less — no
@@ -74,13 +76,17 @@ export function buildPrompt(
 
   let grepBlock = '';
   if (grepResults && grepResults.length > 0) {
+    // Each retrieved turn gets a relative-time prefix ("3 hr ago" / "yesterday"
+    // / "may 1") so Sal can reason about recency in natural language, alongside
+    // the topic match. This is the second deterministic dimension surfaced —
+    // the time-score module ranks by it; here we just make it visible.
     const fragments = grepResults
-      .map(
-        (r) =>
-          `  [Turn ${r.turnIndex}] User: ${r.userContent}\n  [Turn ${r.turnIndex}] Assistant: ${r.assistContent}`,
-      )
+      .map((r) => {
+        const when = formatRelative(r.createdAt, now);
+        return `  [Turn ${r.turnIndex} · ${when}] User: ${r.userContent}\n  [Turn ${r.turnIndex} · ${when}] Assistant: ${r.assistContent}`;
+      })
       .join('\n\n');
-    grepBlock = `\nRETRIEVED HISTORY (cosine similarity match):\n${fragments}`;
+    grepBlock = `\nRETRIEVED HISTORY (cosine similarity + recency, with when-said):\n${fragments}`;
   }
 
   let linkedBlock = '';
@@ -173,6 +179,7 @@ export function estimateNaiveContextTokens(
   fetchedDocs?: FetchedDoc[] | null,
   failedUrls?: string[] | null,
   persona?: string,
+  now: number = Date.now(),
 ): number {
   // Pass `fetchedDocs` (and the failed-URL note) through so any LINKED PAGE
   // content lands in BOTH this naive baseline and the real prompt. The page is
@@ -181,7 +188,10 @@ export function estimateNaiveContextTokens(
   // skewed by a one-off web fetch. `persona` is forwarded so the naive baseline
   // frames with the SAME persona as the real prompt (it likewise cancels in the
   // delta) — keeping the two in sync if a custom persona changes the head size.
-  const naiveSystem = buildPrompt(memories, fullChatLog, null, fetchedDocs, failedUrls, persona);
+  // `now` is forwarded so the relative-time prefixes in the grep block (when
+  // present) compute against the same reference instant; here grepResults is
+  // null so it's a no-op, but the parameter is kept in sync for symmetry.
+  const naiveSystem = buildPrompt(memories, fullChatLog, null, fetchedDocs, failedUrls, persona, now);
   return estimateTokens(naiveSystem) + estimateTokens(userInput);
 }
 

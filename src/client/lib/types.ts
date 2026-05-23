@@ -18,6 +18,19 @@ export interface ChatEntry {
    * curation, no model in the loop: it strengthens the Phase 1.5 thesis.
    */
   active?: boolean;
+  /**
+   * Epoch milliseconds at which this turn was created. Hydrated from
+   * `turns.created_at` for persisted entries; stamped at `Date.now()` for
+   * in-session pairs before they're saved. Required (not optional) so the
+   * compiler catches a missing stamp at every construction site — see
+   * SalienceGatedCognition.tsx hydration/load/append paths.
+   *
+   * Consumed by the time scorer (lib/time-score.ts) as the second deterministic
+   * dimension alongside the TF-IDF cosine grep, and by the prompt builder to
+   * surface relative-time tags ("3 hr ago") on retrieved turns so Sal can
+   * reason about recency in natural language.
+   */
+  createdAt: number;
 }
 
 /** A single confidence-score change applied to a memory on one turn. */

@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeQuotes from './lib/rehype-quotes';
 import type { Memory, ChatEntry, FetchedDoc } from './lib/types';
-import { cosineSearch } from './lib/tfidf';
+import { searchScored } from './lib/time-score';
 import {
   DEFAULT_PERSONA,
   buildPrompt,
@@ -994,6 +994,7 @@ export default function SalienceGatedCognition() {
             content: t.content,
             id: t.id,
             active: t.active,
+            createdAt: t.createdAt,
           }));
           setMessages(replay);
           setChatLog(replay);
@@ -1114,7 +1115,11 @@ export default function SalienceGatedCognition() {
     // `setInput('')` here.
     setComposerResetSignal((s) => s + 1);
     setIsProcessing(true);
-    setMessages((prev) => [...prev, { role: 'user' as const, content: userInput }]);
+    // Stamp the turn instant ONCE for the whole pair — matches saveTurnPair's
+    // semantics (db.ts: a single Date.now() is reused for both rows) so the
+    // user message + assistant reply share an instant in the cosine corpus.
+    const turnStartedAt = Date.now();
+    setMessages((prev) => [...prev, { role: 'user' as const, content: userInput, createdAt: turnStartedAt }]);
 
     // ---- URL PRE-FETCH (deterministic, no model) ----
     // If the person pasted link(s), pull clean article text now — before the
@@ -1149,8 +1154,10 @@ export default function SalienceGatedCognition() {
       // Counterfactual baseline: what the naive "send the whole history every
       // turn" pipeline would have sent. Computed BEFORE the new pair is
       // appended to chatLog, so `chatLog` here is everything prior to this
-      // turn — same baseline the local buffer and cosine grep see.
-      naiveTokens: estimateNaiveContextTokens(memories, chatLog, userInput, fetchedDocs, failedUrls, activePersona),
+      // turn — same baseline the local buffer and cosine grep see. `now` is
+      // the turn instant so any relative-time prefixes in the grep block (when
+      // present) compute against the same reference instant the real prompt does.
+      naiveTokens: estimateNaiveContextTokens(memories, chatLog, userInput, fetchedDocs, failedUrls, activePersona, turnStartedAt),
     };
 
     try {
@@ -1158,20 +1165,33 @@ export default function SalienceGatedCognition() {
       const localBuffer = chatLog.slice(-4);
       turnData.localBufferSize = localBuffer.length;
 
-      // ---- COSINE GREP: search older history ----
-      const grepResults = cosineSearch(userInput, chatLog, 4, 3, 0.08);
+      // ---- COSINE GREP + TIME SCORER: two-dimensional retrieval ----
+      // searchScored runs the TF-IDF cosine engine (concept) and the time scorer
+      // (recency / time-intent) and combines them multiplicatively. The cosine
+      // engine (lib/tfidf.ts) stays pure and untouched — this is a sibling
+      // orchestrator. Phase 1.5 invariant intact: no model in the retrieval path.
+      const grepResults = searchScored(userInput, chatLog, turnStartedAt, {
+        excludeLastN: 4,
+        topK: 3,
+        threshold: 0.08,
+      });
       if (grepResults.length > 0) {
         turnData.grepFired = true;
         turnData.grepMatches = grepResults.length;
         turnData.grepDetails = grepResults.map((r) => ({
           turnIndex: r.turnIndex,
-          score: r.score,
+          // Inspector tile reads `score` — surface the combined score so the
+          // visible ranking matches what was actually used to retrieve.
+          score: r.combinedScore,
           preview: r.userContent.slice(0, 80),
         }));
       }
 
       // ---- SINGLE MODEL CALL (streamed) ----
-      const systemPrompt = buildPrompt(memories, localBuffer, grepResults.length > 0 ? grepResults : null, fetchedDocs, failedUrls, activePersona);
+      // Pass the turn instant into buildPrompt so retrieved turns get a
+      // relative-time prefix ("3 hr ago" / "yesterday") computed against the
+      // same reference the time scorer used.
+      const systemPrompt = buildPrompt(memories, localBuffer, grepResults.length > 0 ? grepResults : null, fetchedDocs, failedUrls, activePersona, turnStartedAt);
       const turnResult = await runTurn(
         systemPrompt,
         userInput,
@@ -1190,7 +1210,7 @@ export default function SalienceGatedCognition() {
       // Promote the streamed reply to a finalized message. The transient
       // streaming bubble is cleared in `finally`, batched into this same
       // render — so the bubble swaps to a message with no flicker.
-      setMessages((prev) => [...prev, { role: 'assistant' as const, content: displayText }]);
+      setMessages((prev) => [...prev, { role: 'assistant' as const, content: displayText, createdAt: turnStartedAt }]);
 
       // ---- CONFIDENCE SCORING ----
       if (metadata?.confidence_scores) {
@@ -1232,8 +1252,8 @@ export default function SalienceGatedCognition() {
       // ---- APPEND TO PERSISTENT CHAT LOG ----
       setChatLog((prev) => [
         ...prev,
-        { role: 'user' as const, content: userInput },
-        { role: 'assistant' as const, content: displayText },
+        { role: 'user' as const, content: userInput, createdAt: turnStartedAt },
+        { role: 'assistant' as const, content: displayText, createdAt: turnStartedAt },
       ]);
 
       setTokenHistory((prev) => [...prev, { turn: newTurnNumber, inputTokens: turnData.inputTokens }]);
@@ -1259,7 +1279,7 @@ export default function SalienceGatedCognition() {
     } catch (err) {
       console.error('SGC Error:', err);
       const detail = err instanceof Error ? err.message : String(err);
-      setMessages((prev) => [...prev, { role: 'assistant' as const, content: `I lost my place. Try again? (${detail})` }]);
+      setMessages((prev) => [...prev, { role: 'assistant' as const, content: `I lost my place. Try again? (${detail})`, createdAt: Date.now() }]);
     } finally {
       setStreamingText(null);
       setIsProcessing(false);
@@ -1341,6 +1361,7 @@ export default function SalienceGatedCognition() {
         content: t.content,
         id: t.id,
         active: t.active,
+        createdAt: t.createdAt,
       }));
       setMessages(replay);
       setChatLog(replay);
@@ -1396,6 +1417,7 @@ export default function SalienceGatedCognition() {
             content: t.content,
             id: t.id,
             active: t.active,
+            createdAt: t.createdAt,
           })),
         );
       } catch (err) {

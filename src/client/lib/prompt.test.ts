@@ -13,6 +13,7 @@ import {
   stripStreamingMeta,
 } from './prompt';
 import type { Memory, ChatEntry, FetchedDoc } from './types';
+import type { ScoredResult } from './time-score';
 
 describe('parseTurnResponse', () => {
   it('extracts the trailing metadata block and the prose before it', () => {
@@ -133,7 +134,7 @@ describe('buildPrompt', () => {
   });
 
   it('includes the local buffer when present', () => {
-    const buffer: ChatEntry[] = [{ role: 'user', content: 'hello there' }];
+    const buffer: ChatEntry[] = [{ role: 'user', content: 'hello there', createdAt: 0 }];
     const prompt = buildPrompt(memories, buffer, null);
     expect(prompt).toContain('RECENT CONTEXT');
     expect(prompt).toContain('user: hello there');
@@ -227,6 +228,44 @@ describe('buildPrompt', () => {
     }
   });
 
+  // ---- RETRIEVED HISTORY: each turn prefixed with a relative-time tag ----
+  // The time scorer ranks; the prompt makes the time visible so Sal can read
+  // recency in natural language alongside concept content.
+  it('prefixes each retrieved turn with a relative-time tag', () => {
+    const now = new Date(2026, 4, 23, 14, 30).getTime();
+    const grep: ScoredResult[] = [
+      {
+        turnIndex: 7,
+        userContent: 'carbonara recipe please',
+        assistContent: 'eggs pancetta pasta',
+        conceptScore: 0.5,
+        timeScore: 0.9,
+        combinedScore: 0.45,
+        createdAt: now - 26 * 60 * 60 * 1000, // ~yesterday
+      },
+    ];
+    const prompt = buildPrompt(memories, [], grep, null, null, undefined, now);
+    expect(prompt).toContain('RETRIEVED HISTORY');
+    expect(prompt).toContain('[Turn 7 · yesterday]');
+    expect(prompt).toContain('carbonara recipe please');
+  });
+
+  it('renders a hours-ago tag for a recent retrieved turn', () => {
+    const now = new Date(2026, 4, 23, 14, 30).getTime();
+    const grep: ScoredResult[] = [
+      {
+        turnIndex: 3,
+        userContent: 'q',
+        assistContent: 'a',
+        conceptScore: 0.5,
+        timeScore: 1,
+        combinedScore: 0.5,
+        createdAt: now - 3 * 60 * 60 * 1000, // 3 hours back
+      },
+    ];
+    expect(buildPrompt(memories, [], grep, null, null, undefined, now)).toContain('[Turn 3 · 3 hr ago]');
+  });
+
   it('lists links that failed to pre-load and tells Sal to ask the person', () => {
     const prompt = buildPrompt(memories, [], null, null, ['https://broken.example/x']);
     expect(prompt).toContain('LINKS NOT PRE-LOADED');
@@ -257,8 +296,8 @@ describe('estimateNaiveContextTokens', () => {
   it('grows monotonically as chat history accumulates', () => {
     const empty = estimateNaiveContextTokens(memories, [], 'hi');
     const oneTurn: ChatEntry[] = [
-      { role: 'user', content: 'first user message' },
-      { role: 'assistant', content: 'first reply, somewhat longer to make the diff visible' },
+      { role: 'user', content: 'first user message', createdAt: 0 },
+      { role: 'assistant', content: 'first reply, somewhat longer to make the diff visible', createdAt: 0 },
     ];
     const small = estimateNaiveContextTokens(memories, oneTurn, 'hi');
     const big = estimateNaiveContextTokens(

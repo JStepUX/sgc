@@ -104,16 +104,19 @@ describe('applyIDF', () => {
 
 describe('cosineSearch', () => {
   // Four turns. With the default excludeLastN=4 (the local buffer's 2 turns),
-  // only turns 1 and 2 are searchable.
+  // only turns 1 and 2 are searchable. createdAt is required by the type but
+  // not consumed by cosineSearch — pin it to a constant so the fixture stays
+  // about content, not time.
+  const T0 = new Date(2026, 0, 1).getTime();
   const log: ChatEntry[] = [
-    { role: 'user', content: 'explain quantum entanglement between particles' },
-    { role: 'assistant', content: 'entangled particles share a quantum state' },
-    { role: 'user', content: 'give me a carbonara pasta recipe' },
-    { role: 'assistant', content: 'carbonara uses eggs pancetta and pasta' },
-    { role: 'user', content: 'what is the weather tomorrow' },
-    { role: 'assistant', content: 'rain is forecast tomorrow afternoon' },
-    { role: 'user', content: 'hello there' },
-    { role: 'assistant', content: 'hi how can i help' },
+    { role: 'user', content: 'explain quantum entanglement between particles', createdAt: T0 },
+    { role: 'assistant', content: 'entangled particles share a quantum state', createdAt: T0 },
+    { role: 'user', content: 'give me a carbonara pasta recipe', createdAt: T0 },
+    { role: 'assistant', content: 'carbonara uses eggs pancetta and pasta', createdAt: T0 },
+    { role: 'user', content: 'what is the weather tomorrow', createdAt: T0 },
+    { role: 'assistant', content: 'rain is forecast tomorrow afternoon', createdAt: T0 },
+    { role: 'user', content: 'hello there', createdAt: T0 },
+    { role: 'assistant', content: 'hi how can i help', createdAt: T0 },
   ];
 
   it('returns nothing when the log is shorter than the excluded window', () => {
