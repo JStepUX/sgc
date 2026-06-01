@@ -27,6 +27,11 @@ and handed to one ephemeral reasoning instance:
    turns *out* of this corpus in the **chat memory editor** (a turn switched off
    dims and stops being retrievable) — deterministic curation of the memory tier,
    still no model in the loop. It strengthens the thesis rather than touching it.
+   The same editor also supports **manual memories** ("brain surgery"): the user
+   inserts a full user+assistant turn that lands as the *oldest* turn in the
+   chat, flagged **timeless** — greppable like any other turn, but immune to the
+   recency scorer (its time score is pinned to 1.0). Still pure curation, no
+   model: timeless cards have no gate toggle, only a delete control.
 
 These feed **Sal**, an ephemeral reasoning instance that exists for exactly one
 turn, then is retired — it has no memory of prior turns. Sal responds in natural

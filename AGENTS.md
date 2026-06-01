@@ -28,3 +28,15 @@ documented:
   cross-cutting, environmental, or a one-shot heads-up with no natural home.
 
 ---
+
+## A just-added manual memory doesn't show in the live thread until reload (brain surgery, 2026-06-01)
+
+Adding a manual ("timeless") memory to the *currently-loaded* chat updates
+`chatLog` (the grep corpus) but NOT `messages` (the visible thread) — so the
+inserted turn is retrievable immediately but only *appears* in the thread on the
+next load of that chat (where it shows as the oldest messages). This is
+intentional, not a bug: the editor mutation path (`resyncLiveChatLog` in
+`SalienceGatedCognition.tsx`) rebuilds only `chatLog`, deliberately leaving the
+ongoing visual conversation untouched so a memory isn't retroactively injected
+mid-scroll. SGC keeps `messages` (display) and `chatLog` (retrieval) as separate
+state; don't assume mutating one mirrors the other.
