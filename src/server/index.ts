@@ -30,7 +30,6 @@ import {
   createChat as dbCreateChat,
   deleteChat as dbDeleteChat,
   deleteManualTurnPair as dbDeleteManualTurnPair,
-  getMemories as dbGetMemories,
   listChats as dbListChats,
   loadChat as dbLoadChat,
   prependManualTurnPair as dbPrependManualTurnPair,
@@ -678,16 +677,11 @@ app.put('/api/chats/:id/turn-active', (req, res) => {
   }
 });
 
-app.get('/api/memories', (_req, res) => {
-  try {
-    res.json(dbGetMemories());
-  } catch (err) {
-    console.error('getMemories failed:', err);
-    res.status(500).json({ error: 'Failed to load memories.' });
-  }
-});
+// Memories are per-chat now: there is no global GET — a chat's memories ride
+// along in its /api/chats/:id (loadChat) payload. PUT below scopes by chatId.
 
 interface SaveMemoriesBody {
+  chatId?: unknown;
   memories?: unknown;
 }
 
@@ -714,6 +708,11 @@ function parseMemoryInput(x: unknown): SaveMemoryInput | null {
 
 app.put('/api/memories', (req, res) => {
   const body = (req.body ?? {}) as SaveMemoriesBody;
+  if (typeof body.chatId !== 'string') {
+    res.status(400).json({ error: 'chatId must be a string.' });
+    return;
+  }
+  const chatId = body.chatId;
   if (!Array.isArray(body.memories)) {
     res.status(400).json({ error: 'memories must be an array.' });
     return;
@@ -730,9 +729,18 @@ app.put('/api/memories', (req, res) => {
     parsed.push(m);
   }
   try {
-    dbSaveMemories({ memories: parsed });
+    dbSaveMemories({ chatId, memories: parsed });
     res.json({ ok: true });
   } catch (err) {
+    const msg = err instanceof Error ? err.message : 'unknown';
+    if (msg.startsWith('chat not found')) {
+      res.status(404).json({ error: 'Chat not found.' });
+      return;
+    }
+    if (msg.startsWith('memory chat mismatch')) {
+      res.status(409).json({ error: 'A memory id in the payload is owned by another chat.' });
+      return;
+    }
     console.error('saveMemories failed:', err);
     res.status(500).json({ error: 'Failed to save memories.' });
   }

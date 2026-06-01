@@ -63,9 +63,14 @@ export function buildPrompt(
   // persona that omits the default's guidance just informs Sal less — no
   // special handling. The architectural tail below appends either way.
   const personaText = persona?.trim() ? persona : DEFAULT_PERSONA;
-  const memBlock = memories
-    .map((m, i) => `  [M${i + 1}] (confidence: ${m.confidence}%) ${m.text}`)
-    .join('\n');
+  // With no memories (a fresh chat — the set is per-chat and starts empty), say
+  // so plainly rather than rendering an empty section under the "you carry
+  // constitutional memories" framing, which would read as a contradiction.
+  const memBlock = memories.length > 0
+    ? memories
+        .map((m, i) => `  [M${i + 1}] (confidence: ${m.confidence}%) ${m.text}`)
+        .join('\n')
+    : '  (none yet — nothing has been curated for this conversation)';
 
   let localBlock = '';
   if (localBuffer.length > 0) {

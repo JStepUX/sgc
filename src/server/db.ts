@@ -2,8 +2,10 @@
 //
 // Storage lives in ./data/sgc.db (gitignored). Schema is created on first
 // open. Chats + turns are scoped to a chat (cascade on delete); memories are
-// GLOBAL across chats — they evolve over the user's lifetime in the system, a
-// chat doesn't own its memory state.
+// too — each chat owns its own constitutional set (chat_id FK, cascade on
+// delete), so different conversations can hold completely different memories
+// and a new chat starts empty. (Memories were GLOBAL before; see the migration
+// below for the one-time re-scope.)
 //
 // This module owns the DB connection, the schema, and a set of pure helpers
 // callers (the Express routes in index.ts) compose into endpoints. It does no
@@ -42,14 +44,21 @@ db.exec(`
     active INTEGER NOT NULL DEFAULT 1
   );
   CREATE INDEX IF NOT EXISTS idx_turns_chat ON turns(chat_id, ordinal);
+`);
 
+// Memories + their confidence sparkline. Scoped per chat via chat_id (cascade
+// on chat delete). Held in a const so the fresh-create path and the legacy
+// re-scope migration below share one DDL source of truth.
+const MEMORIES_SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS memories (
     id TEXT PRIMARY KEY,
+    chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
     text TEXT NOT NULL,
     confidence INTEGER NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   );
+  CREATE INDEX IF NOT EXISTS idx_memories_chat ON memories(chat_id);
 
   CREATE TABLE IF NOT EXISTS memory_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,7 +68,23 @@ db.exec(`
     turn_global INTEGER NOT NULL,
     created_at INTEGER NOT NULL
   );
-`);
+`;
+
+// Migration: memories were once GLOBAL (no chat_id) and are now scoped per
+// chat. A legacy table has no chat_id column, and its rows belong to no chat —
+// there's no honest per-chat home for them — so this is a deliberate ONE-TIME
+// DROP of the old memories + their history. It MUST run before the schema DDL
+// below (whose chat_id index would otherwise error against the legacy table);
+// the DDL then rebuilds the table cleanly. Child table first so the parent has
+// no dangling references when it goes. (Confirmed acceptable: the local DB is a
+// research-prototype store and the old global set is discarded by design.)
+{
+  const memCols = db.prepare(`PRAGMA table_info(memories)`).all() as { name: string }[];
+  if (memCols.length > 0 && !memCols.some((c) => c.name === 'chat_id')) {
+    db.exec(`DROP TABLE IF EXISTS memory_history; DROP TABLE IF EXISTS memories;`);
+  }
+}
+db.exec(MEMORIES_SCHEMA_SQL);
 
 // Migration: DBs created before the chat memory editor predate turns.active.
 // CREATE TABLE IF NOT EXISTS won't add a column to an existing table, so add it
@@ -132,6 +157,10 @@ export interface ChatDetail {
   persona: string | null;
   /** Display-only assistant mask. null/'' → "Sal". Never sent to the model. */
   mask: string | null;
+  /** This chat's constitutional memories (id/text/confidence). */
+  memories: MemoryRow[];
+  /** Flat confidence-history rows for this chat's memories (reassembled client-side). */
+  history: MemoryHistoryRow[];
 }
 
 export interface MemoryRow {
@@ -269,6 +298,10 @@ export function loadChat(id: string): ChatDetail | null {
       break;
     }
   }
+  // Bundle this chat's memories + history into the detail so a single load
+  // hydrates the constitutional tier alongside turns/persona (no separate
+  // round-trip). getMemories is scoped to chat_id.
+  const mem = getMemories(id);
   return {
     id: header.id,
     title: header.title,
@@ -276,6 +309,8 @@ export function loadChat(id: string): ChatDetail | null {
     latestInspector,
     persona: header.persona,
     mask: header.mask,
+    memories: mem.memories,
+    history: mem.history,
   };
 }
 
@@ -442,11 +477,13 @@ export function setTurnsActive(chatId: string, states: TurnActiveState[]): void 
 const listMemoriesStmt = db.prepare(`
   SELECT id, text, confidence
   FROM memories
+  WHERE chat_id = ?
   ORDER BY created_at ASC
 `);
 const listMemoryHistoryStmt = db.prepare(`
   SELECT memory_id, delta, new_score, turn_global, created_at
   FROM memory_history
+  WHERE memory_id IN (SELECT id FROM memories WHERE chat_id = ?)
   ORDER BY id ASC
 `);
 
@@ -459,13 +496,13 @@ interface MemoryHistoryDbRow {
   created_at: number;
 }
 
-export function getMemories(): { memories: MemoryRow[]; history: MemoryHistoryRow[] } {
-  const memories = (listMemoriesStmt.all() as MemoryDbRow[]).map((r) => ({
+export function getMemories(chatId: string): { memories: MemoryRow[]; history: MemoryHistoryRow[] } {
+  const memories = (listMemoriesStmt.all(chatId) as MemoryDbRow[]).map((r) => ({
     id: r.id,
     text: r.text,
     confidence: r.confidence,
   }));
-  const history = (listMemoryHistoryStmt.all() as MemoryHistoryDbRow[]).map((r) => ({
+  const history = (listMemoryHistoryStmt.all(chatId) as MemoryHistoryDbRow[]).map((r) => ({
     memoryId: r.memory_id,
     delta: r.delta,
     newScore: r.new_score,
@@ -475,11 +512,16 @@ export function getMemories(): { memories: MemoryRow[]; history: MemoryHistoryRo
   return { memories, history };
 }
 
-const listMemoryIdsStmt = db.prepare(`SELECT id FROM memories`);
+const listMemoryIdsStmt = db.prepare(`SELECT id FROM memories WHERE chat_id = ?`);
 const deleteMemoryStmt = db.prepare(`DELETE FROM memories WHERE id = ?`);
+// Which chat owns a given memory id, if any. `id` is a globally-unique UUID and
+// the upsert keys on it alone, so an id must belong to exactly one chat for
+// life — this lets saveMemories reject a cross-chat id reuse loudly instead of
+// silently rebinding/corrupting the owning chat's row.
+const memoryOwnerStmt = db.prepare(`SELECT chat_id FROM memories WHERE id = ?`);
 const upsertMemoryStmt = db.prepare(`
-  INSERT INTO memories (id, text, confidence, created_at, updated_at)
-  VALUES (?, ?, ?, ?, ?)
+  INSERT INTO memories (id, chat_id, text, confidence, created_at, updated_at)
+  VALUES (?, ?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
     text = excluded.text,
     confidence = excluded.confidence,
@@ -501,6 +543,7 @@ export interface SaveMemoryInput {
 }
 
 export interface SaveMemoriesInput {
+  chatId: string;
   memories: SaveMemoryInput[];
 }
 
@@ -508,21 +551,40 @@ export interface SaveMemoriesInput {
 // already holds the canonical Memory.history[] sparkline state — including
 // rows it just hydrated from us — so it round-trips faithfully. We upsert the
 // memory rows (preserving created_at on existing ones) and replace the history
-// slice per memory_id. Memories absent from the payload are deleted, which
-// cascades their history. Critically, we do NOT bulk-DELETE memories first:
-// the previous semantics nuked every memory_history row via cascade and then
-// only repopulated what the client sent in an optional appendHistory — which
-// the client never sent — so each save erased the entire sparkline.
+// slice per memory_id. Reconciliation is scoped to input.chatId: memories that
+// belong to THIS chat but are absent from the payload are deleted (cascading
+// their history) — another chat's memories are never touched. Critically, we
+// do NOT bulk-DELETE memories first: the previous semantics nuked every
+// memory_history row via cascade and then only repopulated what the client sent
+// in an optional appendHistory — which the client never sent — so each save
+// erased the entire sparkline.
 export function saveMemories(input: SaveMemoriesInput): void {
   const now = Date.now();
   const incomingIds = new Set(input.memories.map((m) => m.id));
   const txn = db.transaction(() => {
-    const existing = listMemoryIdsStmt.all() as { id: string }[];
+    // The chat must exist: the upsert's FK would catch a non-empty payload, but
+    // an empty one (clearing a chat's memories) would otherwise no-op silently
+    // for a deleted chat. Check up front so both cases surface as "chat not
+    // found" (→ 404), mirroring saveTurnPair/prependManualTurnPair.
+    if (!getChatStmt.get(input.chatId)) {
+      throw new Error(`chat not found: ${input.chatId}`);
+    }
+    // Reject an id already owned by a DIFFERENT chat. Can't happen via the UI
+    // (UUIDs, never copied), but the upsert keys on id alone and leaves chat_id
+    // untouched on conflict — so without this a stray cross-chat id would
+    // silently mutate the owner's row and drop the memory for this chat.
+    for (const m of input.memories) {
+      const owner = memoryOwnerStmt.get(m.id) as { chat_id: string } | undefined;
+      if (owner && owner.chat_id !== input.chatId) {
+        throw new Error(`memory chat mismatch: ${m.id} is owned by another chat`);
+      }
+    }
+    const existing = listMemoryIdsStmt.all(input.chatId) as { id: string }[];
     for (const row of existing) {
       if (!incomingIds.has(row.id)) deleteMemoryStmt.run(row.id);
     }
     for (const m of input.memories) {
-      upsertMemoryStmt.run(m.id, m.text, m.confidence, now, now);
+      upsertMemoryStmt.run(m.id, input.chatId, m.text, m.confidence, now, now);
       deleteHistoryForMemoryStmt.run(m.id);
       for (const h of m.history) {
         insertMemoryHistoryStmt.run(m.id, h.delta, h.newScore, h.turnGlobal, now);

@@ -127,6 +127,16 @@ describe('buildPrompt', () => {
     expect(prompt).toContain('[M1] (confidence: 50%) User likes brevity.');
   });
 
+  it('renders a placeholder (not a blank section) when there are no memories', () => {
+    // Per-chat memories start empty for a fresh chat — the block must say so
+    // rather than leaving the "you carry constitutional memories" framing
+    // pointing at nothing.
+    const prompt = buildPrompt([], [], null);
+    expect(prompt).toContain('CONSTITUTIONAL MEMORIES:');
+    expect(prompt).toContain('(none yet');
+    expect(prompt).not.toContain('[M1]');
+  });
+
   it('omits the recent-context and retrieved-history sections when empty', () => {
     const prompt = buildPrompt(memories, [], null);
     expect(prompt).not.toContain('RECENT CONTEXT');
