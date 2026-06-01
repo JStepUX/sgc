@@ -228,6 +228,52 @@ describe('searchScored', () => {
     expect(results[0].conceptScore).toBeGreaterThanOrEqual(0.08);
   });
 
+  it('negates recency for a timeless turn: timeScore is forced to 1.0', () => {
+    // A very old topical pair flagged timeless. Without the flag the recency
+    // decay would crush its time score (~0.014 at 60 days); timeless pins it to
+    // 1.0 so it ranks on concept alone — a manually-curated fact isn't stale.
+    const veryOld = nowMs - 60 * DAY;
+    const tl: ChatEntry[] = [
+      { role: 'user', content: 'how do I make carbonara pasta sauce with eggs and pancetta', createdAt: veryOld, timeless: true },
+      { role: 'assistant', content: 'carbonara needs eggs pancetta pasta starchy water', createdAt: veryOld, timeless: true },
+      { role: 'user', content: 'unrelated topic about clouds and weather patterns', createdAt: veryOld + HOUR },
+      { role: 'assistant', content: 'clouds form from condensation of water vapor', createdAt: veryOld + HOUR },
+      // local buffer (excluded by excludeLastN=4)
+      { role: 'user', content: 'buffer one', createdAt: nowMs - 2 * HOUR },
+      { role: 'assistant', content: 'buffer one reply', createdAt: nowMs - 2 * HOUR },
+      { role: 'user', content: 'buffer two', createdAt: nowMs - HOUR },
+      { role: 'assistant', content: 'buffer two reply', createdAt: nowMs - HOUR },
+    ];
+    const results = searchScored('carbonara pasta sauce with eggs pancetta', tl, nowMs);
+    expect(results.length).toBeGreaterThan(0);
+    const hit = results.find((r) => r.turnIndex === 1);
+    expect(hit).toBeDefined();
+    expect(hit!.timeless).toBe(true);
+    expect(hit!.timeScore).toBe(1);
+    // Combined collapses to the concept score — recency contributes nothing.
+    expect(hit!.combinedScore).toBeCloseTo(hit!.conceptScore, 8);
+  });
+
+  it('a timeless turn ignores time intent in the query', () => {
+    // Even with an explicit "yesterday" anchor, a 60-day-old timeless turn keeps
+    // timeScore = 1 (intent doesn't pull it down) — it's not anchored in time.
+    const veryOld = nowMs - 60 * DAY;
+    const tl: ChatEntry[] = [
+      { role: 'user', content: 'remember my passport number conversation', createdAt: veryOld, timeless: true },
+      { role: 'assistant', content: 'passport number stored as a standing fact', createdAt: veryOld, timeless: true },
+      { role: 'user', content: 'filler about gardening tomatoes', createdAt: veryOld + HOUR },
+      { role: 'assistant', content: 'tomatoes need sun and water', createdAt: veryOld + HOUR },
+      { role: 'user', content: 'buffer one', createdAt: nowMs - 2 * HOUR },
+      { role: 'assistant', content: 'buffer one reply', createdAt: nowMs - 2 * HOUR },
+      { role: 'user', content: 'buffer two', createdAt: nowMs - HOUR },
+      { role: 'assistant', content: 'buffer two reply', createdAt: nowMs - HOUR },
+    ];
+    const results = searchScored('what was my passport number from yesterday', tl, nowMs);
+    const hit = results.find((r) => r.turnIndex === 1);
+    expect(hit).toBeDefined();
+    expect(hit!.timeScore).toBe(1);
+  });
+
   it('honors gated turns (active=false) via the underlying cosineSearch', () => {
     // Gate off pair 3 (yesterday's pasta) — both halves. The pasta query should
     // now only find pair 1 (the long-ago version).

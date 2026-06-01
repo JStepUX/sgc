@@ -86,7 +86,10 @@ export function buildPrompt(
     // the time-score module ranks by it; here we just make it visible.
     const fragments = grepResults
       .map((r) => {
-        const when = formatRelative(r.createdAt, now);
+        // Manually-inserted memories aren't anchored to when they were said —
+        // tag them "timeless" rather than a relative time so Sal treats them as
+        // standing facts, not something recent or stale.
+        const when = r.timeless ? 'timeless' : formatRelative(r.createdAt, now);
         return `  [Turn ${r.turnIndex} · ${when}] User: ${r.userContent}\n  [Turn ${r.turnIndex} · ${when}] Assistant: ${r.assistContent}`;
       })
       .join('\n\n');

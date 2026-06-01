@@ -82,6 +82,9 @@ export interface ScoredResult {
   /** Epoch ms — forwarded from the matched ChatEntry so prompt.ts can render
    * a relative-time prefix without a second lookup. */
   createdAt: number;
+  /** Manually-inserted memory (recency negated — timeScore forced to 1.0).
+   * Forwarded so prompt.ts can tag it "timeless" instead of a relative time. */
+  timeless: boolean;
 }
 
 // ============================================================
@@ -203,7 +206,12 @@ export function searchScored(
       const userIdx = (c.turnIndex - 1) * 2;
       const entry = chatLog[userIdx];
       const createdAt = entry?.createdAt ?? now; // fallback only on malformed input
-      const t = timeScore(createdAt, intent, now);
+      // A timeless (manually-inserted) memory negates recency: its time score is
+      // pinned to 1.0 regardless of age or any time intent in the query, so it
+      // ranks on concept alone. The cosine cliff still applies — concept 0 → no
+      // retrieval — so a timeless flag can't surface an off-topic memory.
+      const timeless = entry?.timeless === true;
+      const t = timeless ? 1 : timeScore(createdAt, intent, now);
       const combined = combineScores(c.score, t);
       return {
         turnIndex: c.turnIndex,
@@ -213,6 +221,7 @@ export function searchScored(
         timeScore: t,
         combinedScore: combined,
         createdAt,
+        timeless,
       };
     })
     .filter((r) => r.combinedScore >= threshold || r.conceptScore >= CONCEPT_RESCUE_THRESHOLD)

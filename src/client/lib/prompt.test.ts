@@ -265,12 +265,33 @@ describe('buildPrompt', () => {
         timeScore: 0.9,
         combinedScore: 0.45,
         createdAt: now - 26 * 60 * 60 * 1000, // ~yesterday
+        timeless: false,
       },
     ];
     const prompt = buildPrompt(memories, [], grep, null, null, undefined, now);
     expect(prompt).toContain('RETRIEVED HISTORY');
     expect(prompt).toContain('[Turn 7 · yesterday]');
     expect(prompt).toContain('carbonara recipe please');
+  });
+
+  it('tags a timeless (manual) retrieved turn "timeless" instead of a relative time', () => {
+    const now = new Date(2026, 4, 23, 14, 30).getTime();
+    const grep: ScoredResult[] = [
+      {
+        turnIndex: 1,
+        userContent: 'I am allergic to shellfish',
+        assistContent: 'noted, no shellfish',
+        conceptScore: 0.6,
+        timeScore: 1,
+        combinedScore: 0.6,
+        // Stamped recently, but the timeless flag must win over the clock.
+        createdAt: now - 2 * 60 * 60 * 1000,
+        timeless: true,
+      },
+    ];
+    const prompt = buildPrompt(memories, [], grep, null, null, undefined, now);
+    expect(prompt).toContain('[Turn 1 · timeless]');
+    expect(prompt).not.toContain('2 hr ago');
   });
 
   it('renders a hours-ago tag for a recent retrieved turn', () => {
@@ -284,6 +305,7 @@ describe('buildPrompt', () => {
         timeScore: 1,
         combinedScore: 0.5,
         createdAt: now - 3 * 60 * 60 * 1000, // 3 hours back
+        timeless: false,
       },
     ];
     expect(buildPrompt(memories, [], grep, null, null, undefined, now)).toContain('[Turn 3 · 3 hr ago]');
