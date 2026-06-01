@@ -70,6 +70,13 @@ db.exec(`
   if (!turnCols.some((c) => c.name === 'active')) {
     db.exec(`ALTER TABLE turns ADD COLUMN active INTEGER NOT NULL DEFAULT 1`);
   }
+  // Migration: manually-inserted "brain surgery" memories carry timeless=1, which
+  // the client's time scorer reads to negate recency. Default 0 means every
+  // streamed turn is ordinary (recency applies as before). Additive, same
+  // opt-in-never-silent pattern as active above.
+  if (!turnCols.some((c) => c.name === 'timeless')) {
+    db.exec(`ALTER TABLE turns ADD COLUMN timeless INTEGER NOT NULL DEFAULT 0`);
+  }
 }
 
 // Migration: per-chat persona + assistant mask. Additive, same pattern as
@@ -112,6 +119,8 @@ export interface ChatTurn {
   inspectorJson: string | null;
   /** Whether this turn participates in cosine-grep retrieval (chat memory editor gate). */
   active: boolean;
+  /** Manually-inserted memory whose recency the client's time scorer negates. */
+  timeless: boolean;
 }
 
 export interface ChatDetail {
@@ -215,7 +224,7 @@ export function listChats(): ChatSummary[] {
 
 const getChatStmt = db.prepare(`SELECT id, title, persona, mask FROM chats WHERE id = ?`);
 const getChatTurnsStmt = db.prepare(`
-  SELECT id, ordinal, role, content, created_at, inspector_json, active
+  SELECT id, ordinal, role, content, created_at, inspector_json, active, timeless
   FROM turns
   WHERE chat_id = ?
   ORDER BY ordinal ASC
@@ -230,6 +239,7 @@ interface TurnRow {
   created_at: number;
   inspector_json: string | null;
   active: number;
+  timeless: number;
 }
 
 export function loadChat(id: string): ChatDetail | null {
@@ -244,6 +254,7 @@ export function loadChat(id: string): ChatDetail | null {
     createdAt: r.created_at,
     inspectorJson: r.inspector_json,
     active: r.active !== 0,
+    timeless: r.timeless !== 0,
   }));
   // The latest assistant turn carries the inspector blob worth restoring into
   // the right-rail diagnostics — older turns' blobs aren't displayed.
@@ -318,8 +329,89 @@ export function saveTurnPair(chatId: string, input: SaveTurnInput): void {
   txn();
 }
 
+// Insert a timeless turn at an explicit ordinal. Separate from insertTurnStmt
+// because manual memories set timeless=1 (always active) and need to land at a
+// caller-chosen ordinal rather than the running max.
+const insertTimelessTurnStmt = db.prepare(`
+  INSERT INTO turns (chat_id, ordinal, role, content, created_at, inspector_json, active, timeless)
+  VALUES (?, ?, ?, ?, ?, NULL, 1, 1)
+`);
+const minOrdinalStmt = db.prepare(`
+  SELECT MIN(ordinal) AS min_ord FROM turns WHERE chat_id = ?
+`);
+
+export interface ManualTurnInput {
+  user: { content: string };
+  assistant: { content: string };
+}
+
+// Insert a manual "brain surgery" memory as the OLDEST turn-pair in a chat:
+// two timeless rows (user then assistant) placed below the current minimum
+// ordinal. Ordinals may go negative — they exist only to sort, and loadChat's
+// ORDER BY ordinal keeps the user/assistant alternation the cosine engine
+// relies on. Each new memory becomes the new oldest, pushing prior ones up.
+//
+// Does NOT bump updated_at: a manual memory is curation of an existing chat (it
+// is, by construction, the *oldest* content), not new activity — surfacing the
+// chat to the top of the history list would misrepresent it. Same reasoning as
+// setTurnsActive. The only exception is title derivation on a still-empty chat,
+// mirroring saveTurnPair so the first content seen names the chat.
+export function prependManualTurnPair(chatId: string, input: ManualTurnInput): void {
+  const exists = getChatStmt.get(chatId) as ChatHeaderRow | undefined;
+  if (!exists) throw new Error(`chat not found: ${chatId}`);
+  const txn = db.transaction(() => {
+    const before = (turnCountForChatStmt.get(chatId) as { n: number }).n;
+    const min = (minOrdinalStmt.get(chatId) as { min_ord: number | null }).min_ord;
+    // Below the current floor (or 1,2 on an empty chat). Assistant sits one
+    // above the user so the pair reads user→assistant in ordinal order.
+    const userOrdinal = (min ?? 3) - 2;
+    const assistantOrdinal = userOrdinal + 1;
+    const now = Date.now();
+    insertTimelessTurnStmt.run(chatId, userOrdinal, 'user', input.user.content, now);
+    insertTimelessTurnStmt.run(chatId, assistantOrdinal, 'assistant', input.assistant.content, now);
+    if (before === 0) {
+      setTitleStmt.run(deriveTitle(input.user.content), chatId);
+    }
+  });
+  txn();
+}
+
+const getTurnStmt = db.prepare(
+  `SELECT ordinal, role, timeless FROM turns WHERE id = ? AND chat_id = ?`,
+);
+const deleteTurnByOrdinalStmt = db.prepare(
+  `DELETE FROM turns WHERE chat_id = ? AND ordinal = ?`,
+);
+
+// Delete a manual memory pair given either half's turn id. Both rows go so the
+// user/assistant alternation the cosine engine assumes stays intact — deleting
+// a single half would desync every later pair's index mapping in searchScored.
+// Restricted to timeless turns: this route must never remove a real streamed
+// turn (the editor only ever calls it from a manual entry's delete control).
+// Returns false when the turn doesn't exist or isn't timeless.
+export function deleteManualTurnPair(chatId: string, turnId: number): boolean {
+  const row = getTurnStmt.get(turnId, chatId) as
+    | { ordinal: number; role: 'user' | 'assistant'; timeless: number }
+    | undefined;
+  if (!row || row.timeless === 0) return false;
+  // The partner sits at the adjacent ordinal: assistant is user+1.
+  const partnerOrdinal = row.role === 'user' ? row.ordinal + 1 : row.ordinal - 1;
+  const txn = db.transaction(() => {
+    deleteTurnByOrdinalStmt.run(chatId, row.ordinal);
+    deleteTurnByOrdinalStmt.run(chatId, partnerOrdinal);
+  });
+  txn();
+  return true;
+}
+
+// `AND timeless = 0` enforces the "manual memories are always retrievable"
+// invariant at the mutation itself, not just in the UI. A timeless (manually-
+// inserted) turn has no gate toggle and is excluded from mass actions, but an
+// API caller or a future code path could still hand its id here; the guard
+// makes that a silent no-op rather than letting a curated memory be gated off.
+// (Core value: build the check, don't trust the self-report.)
 const setTurnActiveStmt = db.prepare(
-  `UPDATE turns SET active = ? WHERE id = ? AND chat_id = ?`,
+  `UPDATE turns SET active = ? WHERE id = ? AND chat_id = ? AND timeless = 0`,
 );
 
 export interface TurnActiveState {

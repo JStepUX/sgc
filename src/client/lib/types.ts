@@ -31,6 +31,17 @@ export interface ChatEntry {
    * reason about recency in natural language.
    */
   createdAt: number;
+  /**
+   * Manually-inserted memory ("brain surgery"). When true, the time scorer
+   * NEGATES recency — the turn's time score is forced to 1.0 regardless of age
+   * or any time intent in the query, so it ranks on concept alone (a curated
+   * fact isn't tied to when it was said). Manual entries are inserted as the
+   * OLDEST turns in a chat and are always retrievable (no per-turn gate); the
+   * chat memory editor renders them with a delete control instead of a toggle.
+   * `undefined`/`false` = an ordinary streamed turn. Still pure curation, no
+   * model in the loop — the Phase 1.5 thesis holds.
+   */
+  timeless?: boolean;
 }
 
 /** A single confidence-score change applied to a memory on one turn. */

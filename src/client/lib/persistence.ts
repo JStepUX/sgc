@@ -31,6 +31,8 @@ export interface ChatTurn {
   inspectorJson: string | null;
   /** Whether this turn participates in cosine-grep retrieval (chat memory editor gate). */
   active: boolean;
+  /** Manually-inserted memory whose recency the time scorer negates (always active). */
+  timeless: boolean;
 }
 
 export interface ChatDetail {
@@ -123,6 +125,33 @@ export function saveTurn(chatId: string, args: SaveTurnArgs): Promise<{ ok: true
   return jsonFetch<{ ok: true }>(
     `/api/chats/${encodeURIComponent(chatId)}/turns`,
     { method: 'POST', body: JSON.stringify(args) },
+  );
+}
+
+export interface AddManualTurnArgs {
+  user: { content: string };
+  assistant: { content: string };
+}
+
+// Insert a manual "brain surgery" memory — a full user+assistant pair that lands
+// as the oldest turns in the chat, flagged timeless server-side. No model call;
+// deterministic curation of the memory tier (see /api/chats/:id/manual-turns).
+export function addManualTurn(
+  chatId: string,
+  args: AddManualTurnArgs,
+): Promise<{ ok: true }> {
+  return jsonFetch<{ ok: true }>(
+    `/api/chats/${encodeURIComponent(chatId)}/manual-turns`,
+    { method: 'POST', body: JSON.stringify(args) },
+  );
+}
+
+// Delete a manual memory pair by either half's turn id. The server removes both
+// rows and refuses non-timeless turns.
+export function deleteManualTurn(chatId: string, turnId: number): Promise<{ ok: true }> {
+  return jsonFetch<{ ok: true }>(
+    `/api/chats/${encodeURIComponent(chatId)}/turns/${turnId}`,
+    { method: 'DELETE' },
   );
 }
 

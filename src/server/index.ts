@@ -29,12 +29,15 @@ import {
 import {
   createChat as dbCreateChat,
   deleteChat as dbDeleteChat,
+  deleteManualTurnPair as dbDeleteManualTurnPair,
   getMemories as dbGetMemories,
   listChats as dbListChats,
   loadChat as dbLoadChat,
+  prependManualTurnPair as dbPrependManualTurnPair,
   saveMemories as dbSaveMemories,
   saveTurnPair as dbSaveTurnPair,
   setTurnsActive as dbSetTurnsActive,
+  type ManualTurnInput,
   type SaveMemoryInput,
   type SaveTurnInput,
   type TurnActiveState,
@@ -563,6 +566,74 @@ app.post('/api/chats/:id/turns', (req, res) => {
     }
     console.error('saveTurn failed:', err);
     res.status(500).json({ error: 'Failed to save turn.' });
+  }
+});
+
+// Insert a manual "brain surgery" memory: a full user+assistant pair that lands
+// as the OLDEST turns in the chat, flagged timeless (the client's time scorer
+// negates recency for it). NOT a model route — it's deterministic curation of
+// the memory tier, same class as turn-active. Both fields are required and
+// capped; empty content would add a turn the cosine engine can't index.
+const MAX_MANUAL_TURN_CHARS = 20_000;
+
+interface AddManualTurnBody {
+  user?: { content?: unknown };
+  assistant?: { content?: unknown };
+}
+
+app.post('/api/chats/:id/manual-turns', (req, res) => {
+  const body = (req.body ?? {}) as AddManualTurnBody;
+  const userContent = body.user?.content;
+  const assistantContent = body.assistant?.content;
+  if (typeof userContent !== 'string' || typeof assistantContent !== 'string') {
+    res.status(400).json({ error: 'Body requires {user:{content}, assistant:{content}} as strings.' });
+    return;
+  }
+  if (!userContent.trim() || !assistantContent.trim()) {
+    res.status(400).json({ error: 'Both user and assistant content must be non-empty.' });
+    return;
+  }
+  if (userContent.length > MAX_MANUAL_TURN_CHARS || assistantContent.length > MAX_MANUAL_TURN_CHARS) {
+    res.status(400).json({ error: `Each field must be ${MAX_MANUAL_TURN_CHARS} characters or fewer.` });
+    return;
+  }
+  const input: ManualTurnInput = {
+    user: { content: userContent },
+    assistant: { content: assistantContent },
+  };
+  try {
+    dbPrependManualTurnPair(req.params.id, input);
+    res.json({ ok: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'unknown';
+    if (msg.startsWith('chat not found')) {
+      res.status(404).json({ error: 'Chat not found.' });
+      return;
+    }
+    console.error('addManualTurn failed:', err);
+    res.status(500).json({ error: 'Failed to add memory.' });
+  }
+});
+
+// Delete a manual memory pair by either half's turn id. The DB helper removes
+// both rows and refuses any non-timeless turn, so this can never delete a real
+// streamed turn even if handed an arbitrary id.
+app.delete('/api/chats/:id/turns/:turnId', (req, res) => {
+  const turnId = Number(req.params.turnId);
+  if (!Number.isInteger(turnId)) {
+    res.status(400).json({ error: 'turnId must be an integer.' });
+    return;
+  }
+  try {
+    const ok = dbDeleteManualTurnPair(req.params.id, turnId);
+    if (!ok) {
+      res.status(404).json({ error: 'No deletable memory turn with that id in this chat.' });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('deleteManualTurn failed:', err);
+    res.status(500).json({ error: 'Failed to delete memory.' });
   }
 });
 
