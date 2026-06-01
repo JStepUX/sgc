@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Brain, X } from 'lucide-react';
+import { Brain, Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { ChatSummary, TurnActiveState } from '../lib/persistence';
@@ -26,6 +26,12 @@ interface ChatHistoryModalProps {
    * cosine grep then honors the gate without a reload).
    */
   onActiveTurnsChanged: (chatId: string, states: TurnActiveState[]) => void;
+  /**
+   * Fired after a manual memory is added or deleted in the editor. Forwarded to
+   * the parent so the live chat's in-memory log rebuilds (membership changed, so
+   * the next cosine grep sees the new/removed turn pair).
+   */
+  onTurnsMutated: (chatId: string) => void;
   /** Focus is restored to this element when the modal closes. */
   returnFocusRef: React.RefObject<HTMLButtonElement | null>;
 }
@@ -68,12 +74,17 @@ export function ChatHistoryModal({
   onDelete,
   onBeginAgain,
   onActiveTurnsChanged,
+  onTurnsMutated,
   returnFocusRef,
 }: ChatHistoryModalProps) {
   const [query, setQuery] = useState('');
   // Which chat's turns are being edited. null = the plain history list; set =
   // editor mode (modal widens, the list collapses into a left rail).
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
+  // The "Add Memory" form (in the editor) lives here so the trigger button can
+  // sit beside the close X (parent-owned chrome) while the editor owns the form
+  // body + submit. Closed whenever we leave the editor or switch edited chats.
+  const [addMemoryOpen, setAddMemoryOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
@@ -88,20 +99,27 @@ export function ChatHistoryModal({
     }
   }, [open]);
 
+  // Close the Add Memory form whenever we enter, leave, or switch the edited
+  // chat — a stale half-typed memory shouldn't survive a chat swap.
+  useEffect(() => {
+    setAddMemoryOpen(false);
+  }, [editingChatId]);
+
   // Escape → close. Focus trap: Tab/Shift+Tab cycle within the dialog.
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        // Escape steps out of the editor first, then closes the modal.
-        if (editingChatId) setEditingChatId(null);
+        // Escape unwinds one layer at a time: Add Memory form → editor → modal.
+        if (addMemoryOpen) setAddMemoryOpen(false);
+        else if (editingChatId) setEditingChatId(null);
         else onClose();
         return;
       }
       if (e.key === 'Tab' && dialogRef.current) {
         const focusables = dialogRef.current.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), [href], input, [tabindex]:not([tabindex="-1"])',
+          'button:not([disabled]), [href], input, textarea, select, [tabindex]:not([tabindex="-1"])',
         );
         if (focusables.length === 0) return;
         const first = focusables[0];
@@ -118,7 +136,7 @@ export function ChatHistoryModal({
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [open, onClose, editingChatId]);
+  }, [open, onClose, editingChatId, addMemoryOpen]);
 
   // Restore focus to the clock button when closing.
   useEffect(() => {
@@ -261,18 +279,35 @@ export function ChatHistoryModal({
               key={editingChatId}
               chatId={editingChatId!}
               title={editingTitle}
+              addOpen={addMemoryOpen}
+              onAddOpenChange={setAddMemoryOpen}
               onBack={() => setEditingChatId(null)}
               onActiveTurnsChanged={onActiveTurnsChanged}
+              onTurnsMutated={onTurnsMutated}
             />
 
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close chat history"
-              className="absolute right-5 top-5 z-10 flex size-[30px] shrink-0 items-center justify-center rounded-full border border-hairline-strong bg-surface-thin text-fg-2 transition-colors hover:border-ember hover:bg-ember hover:text-bone"
-            >
-              <X className="size-[15px]" />
-            </button>
+            {/* Top-right chrome: Add Memory, then the close X. Both float over
+                the editor panel (parent-owned), so the button can sit just left
+                of the X exactly as designed. */}
+            <div className="absolute right-5 top-5 z-10 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setAddMemoryOpen(true)}
+                aria-label="Add a memory to this chat"
+                className="flex h-[30px] items-center gap-1.5 rounded-full border border-hairline-strong bg-surface-thin pl-2.5 pr-3.5 font-mono text-[11px] tracking-[0.04em] text-fg-2 transition-colors hover:border-ember hover:text-ember"
+              >
+                <Plus className="size-[14px]" />
+                Add memory
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close chat history"
+                className="flex size-[30px] shrink-0 items-center justify-center rounded-full border border-hairline-strong bg-surface-thin text-fg-2 transition-colors hover:border-ember hover:bg-ember hover:text-bone"
+              >
+                <X className="size-[15px]" />
+              </button>
+            </div>
           </div>
         ) : (
           // ---- LIST MODE: the recency-grouped history ----

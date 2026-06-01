@@ -996,6 +996,7 @@ export default function SalienceGatedCognition() {
             id: t.id,
             active: t.active,
             createdAt: t.createdAt,
+            timeless: t.timeless,
           }));
           setMessages(replay);
           setChatLog(replay);
@@ -1365,6 +1366,7 @@ export default function SalienceGatedCognition() {
         id: t.id,
         active: t.active,
         createdAt: t.createdAt,
+        timeless: t.timeless,
       }));
       setMessages(replay);
       setChatLog(replay);
@@ -1401,16 +1403,16 @@ export default function SalienceGatedCognition() {
     setHistoryOpen(false);
   }, []);
 
-  // The chat memory editor gated some turns. If they belong to the chat that's
-  // currently loaded in the thread, the in-memory log (which the next cosine
-  // grep reads via cosineSearch) must reflect the new gates. We re-pull the
-  // live chat rather than patch by id: in-session turns are appended to chatLog
-  // without a DB id, so an id-match would miss them. The content is unchanged,
-  // so the visible thread is unaffected — only chatLog's `active` flags + ids
-  // refresh. Other chats are persisted server-side and pick the gate up on
-  // their next load, so there's nothing to do for them.
-  const handleActiveTurnsChanged = useCallback(
-    async (editedChatId: string, _states: TurnActiveState[]) => {
+  // Re-pull the edited chat and rebuild chatLog from it. Used by every memory-
+  // editor mutation that the live grep must see immediately — gating turns,
+  // adding a manual memory, deleting one. We reload rather than patch by id:
+  // in-session turns are appended to chatLog without a DB id (so an id-match
+  // would miss them) and a manual add/delete shifts the turn set wholesale.
+  // Content of streamed turns is unchanged, so the visible thread is unaffected
+  // — only chatLog's flags/ids/membership refresh. Other chats are persisted
+  // and pick the change up on their next load, so there's nothing to do for them.
+  const resyncLiveChatLog = useCallback(
+    async (editedChatId: string) => {
       if (editedChatId !== chatId) return;
       try {
         const detail = await apiLoadChat(editedChatId);
@@ -1421,6 +1423,7 @@ export default function SalienceGatedCognition() {
             id: t.id,
             active: t.active,
             createdAt: t.createdAt,
+            timeless: t.timeless,
           })),
         );
       } catch (err) {
@@ -1428,6 +1431,34 @@ export default function SalienceGatedCognition() {
       }
     },
     [chatId],
+  );
+
+  // Gating fires with the turns that flipped; a manual add/delete fires with no
+  // states. Both just need the live chatLog rebuilt, so they share one resync.
+  const handleActiveTurnsChanged = useCallback(
+    (editedChatId: string, _states: TurnActiveState[]) => {
+      void resyncLiveChatLog(editedChatId);
+    },
+    [resyncLiveChatLog],
+  );
+
+  // A manual memory was added or deleted. Beyond the live grep resync, the
+  // history summaries (`chats`) can go stale: adding the first turn to an
+  // empty chat derives its title + snippet, and every add/delete shifts the
+  // turn count. The summary list/rail render from `chats`, so re-pull it. This
+  // works for ANY edited chat, not just the active one (resync handles only the
+  // active chat's grep log). updatedAt is intentionally NOT bumped server-side,
+  // so the refreshed list keeps its order — no surprise reshuffle mid-edit.
+  const handleTurnsMutated = useCallback(
+    async (editedChatId: string) => {
+      await resyncLiveChatLog(editedChatId);
+      try {
+        setChats(await apiListChats());
+      } catch (err) {
+        console.warn('chat summary refresh after memory mutation failed:', err);
+      }
+    },
+    [resyncLiveChatLog],
   );
 
   // Delete a chat. If it was the active one, swap to the next most-recent or
@@ -1539,6 +1570,7 @@ export default function SalienceGatedCognition() {
         onDelete={handleDeleteChat}
         onBeginAgain={openPersonaModal}
         onActiveTurnsChanged={handleActiveTurnsChanged}
+        onTurnsMutated={handleTurnsMutated}
         returnFocusRef={historyButtonRef}
       />
 

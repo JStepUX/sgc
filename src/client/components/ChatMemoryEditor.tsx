@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Search } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, Search, Trash2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
+  addManualTurn as apiAddManualTurn,
+  deleteManualTurn as apiDeleteManualTurn,
   loadChat as apiLoadChat,
   setTurnsActive as apiSetTurnsActive,
   type ChatTurn,
@@ -25,6 +27,11 @@ interface ChatMemoryEditorProps {
   chatId: string;
   /** Title from the rail, shown immediately while turns load. */
   title: string;
+  /** Whether the Add Memory form is open (owned by the parent so its trigger
+   * button can sit beside the close X in the modal chrome). */
+  addOpen: boolean;
+  /** Request the Add Memory form be opened/closed. */
+  onAddOpenChange: (open: boolean) => void;
   onBack: () => void;
   /**
    * Fired after each gate change with the turns that flipped. The parent uses
@@ -32,6 +39,12 @@ interface ChatMemoryEditorProps {
    * grep honors the gate without a reload.
    */
   onActiveTurnsChanged: (chatId: string, states: TurnActiveState[]) => void;
+  /**
+   * Fired after a manual memory is added or deleted. The parent rebuilds the
+   * live chat's in-memory log (the turn set changed, not just a flag) so the
+   * next cosine grep sees it.
+   */
+  onTurnsMutated: (chatId: string) => void;
 }
 
 const STAT_LABEL = 'font-mono text-[10px] tracking-[0.18em] uppercase text-fg-3';
@@ -45,8 +58,11 @@ function applyFlips(list: ChatTurn[], changes: TurnActiveState[]): ChatTurn[] {
 export function ChatMemoryEditor({
   chatId,
   title,
+  addOpen,
+  onAddOpenChange,
   onBack,
   onActiveTurnsChanged,
+  onTurnsMutated,
 }: ChatMemoryEditorProps) {
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -78,6 +94,45 @@ export function ChatMemoryEditor({
     })();
     return () => { cancelled = true; };
   }, [chatId, title]);
+
+  // Re-pull this chat's turns after a mutation (add/delete) WITHOUT resetting
+  // the transient UI the load effect clears — the user stays where they were.
+  const refreshTurns = useCallback(async () => {
+    try {
+      const detail = await apiLoadChat(chatId);
+      setTurns(detail.turns);
+    } catch (err) {
+      console.warn('chat memory editor refresh failed:', err);
+    }
+  }, [chatId]);
+
+  // Add a manual memory: a full user+assistant pair the server inserts as the
+  // oldest, timeless turns. Reload, close the form, and tell the parent so the
+  // live grep corpus picks it up. Throws on failure so the form surfaces it.
+  const handleAddMemory = useCallback(
+    async (user: string, assistant: string) => {
+      await apiAddManualTurn(chatId, { user: { content: user }, assistant: { content: assistant } });
+      await refreshTurns();
+      onAddOpenChange(false);
+      onTurnsMutated(chatId);
+    },
+    [chatId, refreshTurns, onAddOpenChange, onTurnsMutated],
+  );
+
+  // Delete a manual memory (both halves of the pair, server-side). Only the
+  // delete control on a timeless card calls this.
+  const handleDeleteMemory = useCallback(
+    async (turn: ChatTurn) => {
+      try {
+        await apiDeleteManualTurn(chatId, turn.id);
+        await refreshTurns();
+        onTurnsMutated(chatId);
+      } catch (err) {
+        console.warn('delete memory failed:', err);
+      }
+    },
+    [chatId, refreshTurns, onTurnsMutated],
+  );
 
   const total = turns.length;
   const activeCount = useMemo(() => turns.filter((t) => t.active).length, [turns]);
@@ -121,9 +176,12 @@ export function ChatMemoryEditor({
 
   // Set every turn (or every currently-active/inactive turn) to `active`, sending
   // only the turns that actually change so the revert path stays precise.
+  // Timeless (manual) turns are never gated — they have no toggle — so they're
+  // excluded from mass actions; flipping their active flag would silently break
+  // the "always retrievable" contract their card UI promises.
   const setAll = useCallback(
     (active: boolean) =>
-      persist(turns.filter((t) => t.active !== active).map((t) => ({ id: t.id, active }))),
+      persist(turns.filter((t) => !t.timeless && t.active !== active).map((t) => ({ id: t.id, active }))),
     [persist, turns],
   );
 
@@ -131,7 +189,7 @@ export function ChatMemoryEditor({
     (active: boolean) =>
       persist(
         turns
-          .filter((t) => selected.has(t.id) && t.active !== active)
+          .filter((t) => !t.timeless && selected.has(t.id) && t.active !== active)
           .map((t) => ({ id: t.id, active })),
       ),
     [persist, turns, selected],
@@ -166,7 +224,8 @@ export function ChatMemoryEditor({
   return (
     // min-w-0 so this flex child can shrink below its content's intrinsic width
     // (the grid + stats strip) instead of overflowing the dialog on narrow screens.
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+    // `relative` anchors the Add Memory overlay to the editor panel.
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       {/* Header — back + title */}
       <div className="flex items-center gap-3 border-b border-hairline px-7 pt-6 pb-5">
         <button
@@ -227,7 +286,7 @@ export function ChatMemoryEditor({
             <span className="mr-1 font-mono text-[11px] tracking-[0.04em] text-fg-3">
               {selected.size} selected
             </span>
-            <ToolButton onClick={() => setSelected(new Set(turns.map((t) => t.id)))}>All</ToolButton>
+            <ToolButton onClick={() => setSelected(new Set(turns.filter((t) => !t.timeless).map((t) => t.id)))}>All</ToolButton>
             <ToolButton onClick={() => setSelected(new Set())}>None</ToolButton>
             <span className="mx-0.5 h-4 w-px bg-hairline-strong" aria-hidden="true" />
             <ToolButton onClick={() => applyToSelected(true)} disabled={selected.size === 0}>On</ToolButton>
@@ -267,12 +326,154 @@ export function ChatMemoryEditor({
                 selected={selected.has(turn.id)}
                 onToggle={() => toggleOne(turn)}
                 onSelect={() => toggleSelection(turn.id)}
+                onDelete={() => handleDeleteMemory(turn)}
               />
             ))}
           </div>
         )}
       </div>
+
+      {/* Add Memory overlay — surgical insertion of a timeless turn-pair. */}
+      {addOpen && (
+        <AddMemoryForm onSubmit={handleAddMemory} onCancel={() => onAddOpenChange(false)} />
+      )}
     </div>
+  );
+}
+
+// ============================================================
+// ADD MEMORY FORM — a modal sheet over the editor. Captures a full turn (a
+// user line + an assistant line); on submit the pair is inserted as the chat's
+// oldest, timeless turns. Owns its own draft + submit/error state so a failed
+// write keeps the typed text on screen.
+// ============================================================
+
+function AddMemoryForm({
+  onSubmit,
+  onCancel,
+}: {
+  onSubmit: (user: string, assistant: string) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [user, setUser] = useState('');
+  const [assistant, setAssistant] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const canSubmit = user.trim().length > 0 && assistant.trim().length > 0 && !submitting;
+
+  const submit = useCallback(async () => {
+    if (!canSubmit) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await onSubmit(user, assistant);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add memory.');
+      setSubmitting(false);
+    }
+    // On success the parent unmounts this form (addOpen → false); no need to
+    // reset submitting — the component is gone.
+  }, [canSubmit, onSubmit, user, assistant]);
+
+  // Contain focus within the sheet. The modal's dialog-level trap cycles across
+  // every focusable in the dialog — including the Add-memory / X chrome behind
+  // this overlay — so without this a Tab from a textarea would land on a control
+  // the user can't even see. We wrap first↔last within the sheet and stop the
+  // event so the dialog trap doesn't also act on it (its document listener sits
+  // above React's root, so stopPropagation on the synthetic event reaches it).
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const onKeyDownTrap = useCallback((e: React.KeyboardEvent) => {
+    if (e.key !== 'Tab' || !sheetRef.current) return;
+    const f = sheetRef.current.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input, textarea, select, [href], [tabindex]:not([tabindex="-1"])',
+    );
+    if (f.length === 0) return;
+    e.stopPropagation();
+    const first = f[0];
+    const last = f[f.length - 1];
+    const active = document.activeElement;
+    if (e.shiftKey && active === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }, []);
+
+  return (
+    <div
+      className="absolute inset-0 z-20 flex items-start justify-center overflow-y-auto bg-ground/70 p-6 backdrop-blur-[6px]"
+      onKeyDown={onKeyDownTrap}
+    >
+      <div ref={sheetRef} className="mt-2 w-full max-w-[560px] rounded-2xl border border-hairline-strong bg-surface shadow-glass">
+        <div className="flex items-start justify-between gap-3 border-b border-hairline px-6 pt-5 pb-4">
+          <div>
+            <div className={STAT_LABEL}>Add memory · timeless</div>
+            <h3 className="mt-1 font-serif text-[20px] italic leading-tight text-fg-1">
+              Insert a turn
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label="Cancel adding a memory"
+            className="flex size-7 shrink-0 items-center justify-center rounded-full border border-hairline-strong bg-surface-thin text-fg-3 transition-colors hover:border-ember hover:text-ember"
+          >
+            <X className="size-[13px]" />
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-4 px-6 py-5">
+          <p className="text-[12.5px] leading-relaxed text-fg-3">
+            This becomes the oldest turn in the chat and is flagged
+            {' '}<span className="text-ember-soft">timeless</span> — retrievable by the
+            cosine grep like any other turn, but immune to recency scoring.
+          </p>
+          <Field label="You said">
+            <textarea
+              autoFocus
+              value={user}
+              onChange={(e) => setUser(e.target.value)}
+              rows={3}
+              placeholder="The user half of the turn."
+              className="w-full resize-y rounded-[12px] border border-hairline-strong bg-surface-thin px-3.5 py-2.5 font-serif text-[15px] italic leading-relaxed text-fg-1 outline-none placeholder:not-italic placeholder:font-sans placeholder:text-fg-4 focus:border-ember/55"
+            />
+          </Field>
+          <Field label="Sal replied">
+            <textarea
+              value={assistant}
+              onChange={(e) => setAssistant(e.target.value)}
+              rows={4}
+              placeholder="The assistant half of the turn."
+              className="w-full resize-y rounded-[12px] border border-hairline-strong bg-surface-thin px-3.5 py-2.5 text-[13.5px] leading-relaxed text-fg-1 outline-none placeholder:text-fg-4 focus:border-ember/55"
+            />
+          </Field>
+          {error && (
+            <div className="rounded-[10px] border border-danger/40 bg-danger/[0.08] px-3.5 py-2.5 text-[12.5px] text-danger">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-hairline px-6 py-4">
+          <ToolButton onClick={onCancel}>Cancel</ToolButton>
+          <ToolButton onClick={submit} disabled={!canSubmit} accent>
+            {submitting ? 'Adding…' : 'Add memory'}
+          </ToolButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="flex flex-col gap-1.5">
+      <span className={STAT_LABEL}>{label}</span>
+      {children}
+    </label>
   );
 }
 
@@ -319,25 +520,33 @@ interface TurnCardProps {
   selected: boolean;
   onToggle: () => void;
   onSelect: () => void;
+  onDelete: () => void;
 }
 
-function TurnCard({ turn, ordinal, selectMode, selected, onToggle, onSelect }: TurnCardProps) {
+function TurnCard({ turn, ordinal, selectMode, selected, onToggle, onSelect, onDelete }: TurnCardProps) {
   const isUser = turn.role === 'user';
   const tag = `T-${String(ordinal).padStart(2, '0')}`;
+  const timeless = turn.timeless;
+  // Manual (timeless) cards opt out of gating entirely: no toggle, no select,
+  // always retrievable. They get a delete control + a gradient fill instead.
+  const selectable = selectMode && !timeless;
 
   return (
     <div
       className={cn(
-        'group flex h-[176px] flex-col rounded-2xl border bg-surface-thin p-3.5 backdrop-blur-[6px] transition-all duration-200',
-        turn.active ? 'border-hairline-strong' : 'border-hairline opacity-35',
-        selectMode && 'cursor-pointer',
-        selectMode && selected
+        'group flex h-[176px] flex-col rounded-2xl border p-3.5 backdrop-blur-[6px] transition-all duration-200',
+        timeless
+          // Subtle ember gradient fill marks a hand-inserted, timeless memory.
+          ? 'border-ember/30 bg-linear-to-br from-ember/[0.12] via-ember/[0.04] to-transparent'
+          : cn('bg-surface-thin', turn.active ? 'border-hairline-strong' : 'border-hairline opacity-35'),
+        selectable && 'cursor-pointer',
+        selectable && selected
           ? 'border-ember shadow-[inset_0_0_0_1px_var(--color-ember),0_0_18px_-6px_var(--color-ember)]'
-          : selectMode && 'hover:border-ember/50',
+          : selectable && 'hover:border-ember/50',
       )}
-      onClick={selectMode ? onSelect : undefined}
-      role={selectMode ? 'button' : undefined}
-      aria-pressed={selectMode ? selected : undefined}
+      onClick={selectable ? onSelect : undefined}
+      role={selectable ? 'button' : undefined}
+      aria-pressed={selectable ? selected : undefined}
     >
       <div className="mb-2.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
@@ -352,14 +561,22 @@ function TurnCard({ turn, ordinal, selectMode, selected, onToggle, onSelect }: T
           >
             {isUser ? 'You' : 'Sal'}
           </span>
-          {/* Quiet relative-time stamp — the time scorer's dimension made
-              visible alongside the T-NN tag. Muted to match the existing meta
-              row weight. */}
-          <span className="font-mono text-[9.5px] tracking-[0.04em] text-fg-4">
-            {formatRelative(turn.createdAt, Date.now())}
-          </span>
+          {/* Quiet meta: "timeless" for manual entries (recency negated), else
+              the relative-time stamp — the time scorer's dimension made visible
+              alongside the T-NN tag. */}
+          {timeless ? (
+            <span className="font-mono text-[9.5px] tracking-[0.1em] uppercase text-ember-soft">
+              timeless
+            </span>
+          ) : (
+            <span className="font-mono text-[9.5px] tracking-[0.04em] text-fg-4">
+              {formatRelative(turn.createdAt, Date.now())}
+            </span>
+          )}
         </div>
-        {selectMode ? (
+        {timeless ? (
+          <TurnDelete onClick={onDelete} />
+        ) : selectMode ? (
           <span
             className={cn(
               'flex size-[18px] items-center justify-center rounded-full border text-[10px]',
@@ -382,6 +599,27 @@ function TurnCard({ turn, ordinal, selectMode, selected, onToggle, onSelect }: T
         {turn.content}
       </div>
     </div>
+  );
+}
+
+// ============================================================
+// TURN DELETE — the per-card trash control shown on timeless (manual) cards in
+// place of the gate toggle. Removes both halves of the inserted pair.
+// ============================================================
+
+function TurnDelete({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      aria-label="Delete this memory"
+      className="flex size-[22px] shrink-0 items-center justify-center rounded-full border border-hairline-strong bg-surface-thin/60 text-fg-3 transition-colors hover:border-danger hover:text-danger"
+    >
+      <Trash2 className="size-[12px]" />
+    </button>
   );
 }
 
