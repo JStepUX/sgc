@@ -9,6 +9,7 @@
 // ============================================================
 
 import type { ChatEntry } from './types';
+import { LOCAL_BUFFER_SIZE } from './constants';
 
 /** A term-frequency (or TF-IDF) vector: term → weight. */
 export type TFVector = Record<string, number>;
@@ -119,7 +120,7 @@ export function applyIDF(tf: TFVector, idf: IDFMap): TFVector {
 export function cosineSearch(
   query: string,
   chatLog: ChatEntry[],
-  excludeLastN = 4,
+  excludeLastN = LOCAL_BUFFER_SIZE,
   topK = 3,
   threshold = 0.08,
 ): GrepResult[] {

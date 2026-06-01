@@ -16,6 +16,7 @@
 
 import * as chrono from 'chrono-node';
 import type { ChatEntry } from './types';
+import { LOCAL_BUFFER_SIZE } from './constants';
 import { cosineSearch } from './tfidf';
 
 // ---- Tunable defaults (named so tuning happens at a single site) ----
@@ -176,7 +177,7 @@ export function searchScored(
   now: number,
   opts?: { excludeLastN?: number; topK?: number; threshold?: number },
 ): ScoredResult[] {
-  const excludeLastN = opts?.excludeLastN ?? 4;
+  const excludeLastN = opts?.excludeLastN ?? LOCAL_BUFFER_SIZE;
   const topK = opts?.topK ?? 3;
   const threshold = opts?.threshold ?? DEFAULT_FINAL_THRESHOLD;
 

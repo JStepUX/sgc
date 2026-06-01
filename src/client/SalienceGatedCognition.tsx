@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeQuotes from './lib/rehype-quotes';
 import type { Memory, ChatEntry, FetchedDoc } from './lib/types';
+import { LOCAL_BUFFER_SIZE } from './lib/constants';
 import { searchScored } from './lib/time-score';
 import {
   DEFAULT_PERSONA,
@@ -1162,7 +1163,7 @@ export default function SalienceGatedCognition() {
 
     try {
       // ---- LOCAL BUFFER: last 2 turns (4 entries: user+assistant pairs) ----
-      const localBuffer = chatLog.slice(-4);
+      const localBuffer = chatLog.slice(-LOCAL_BUFFER_SIZE);
       turnData.localBufferSize = localBuffer.length;
 
       // ---- COSINE GREP + TIME SCORER: two-dimensional retrieval ----
@@ -1171,7 +1172,9 @@ export default function SalienceGatedCognition() {
       // engine (lib/tfidf.ts) stays pure and untouched — this is a sibling
       // orchestrator. Phase 1.5 invariant intact: no model in the retrieval path.
       const grepResults = searchScored(userInput, chatLog, turnStartedAt, {
-        excludeLastN: 4,
+        // Exclude exactly the buffer window so the two tiers never overlap —
+        // same constant the buffer slice above uses (see lib/constants.ts).
+        excludeLastN: LOCAL_BUFFER_SIZE,
         topK: 3,
         threshold: 0.08,
       });
