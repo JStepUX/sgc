@@ -17,7 +17,9 @@ and handed to one ephemeral reasoning instance:
 
 1. **Constitutional Memories** — a small, curated set of durable facts about the
    user. Each carries a 0–100 confidence score. The user edits them in the UI;
-   the model re-scores them every turn (max ±5 per turn, clamped 0–100).
+   the model re-scores them every turn (max ±5 per turn, clamped 0–100). They are
+   **scoped per chat** — each conversation owns its own set, a new chat starts
+   empty (no seeded defaults), and deleting a chat cascades its memories away.
 2. **Local Buffer** — the last 2 turns (4 messages) passed verbatim. Immediate
    context, no retrieval.
 3. **Cosine Grep ("Grepory")** — TF-IDF + cosine similarity search over *older*
