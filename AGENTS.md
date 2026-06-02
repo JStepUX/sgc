@@ -40,3 +40,13 @@ intentional, not a bug: the editor mutation path (`resyncLiveChatLog` in
 ongoing visual conversation untouched so a memory isn't retroactively injected
 mid-scroll. SGC keeps `messages` (display) and `chatLog` (retrieval) as separate
 state; don't assume mutating one mirrors the other.
+
+## `npm audit` reports a pre-existing "critical" — don't `audit fix --force` it (mermaid add, 2026-06-02)
+
+After `npm install`, `npm audit` shows ~4 moderate + 1 critical. They all live in
+the **dev toolchain** (`vitest` → `vite` → `esbuild`, the Vitest-UI advisory
+chain), not in any runtime dependency, and they predate recent feature work.
+`npm audit fix --force` "resolves" them by bumping `vitest` a major version (a
+breaking change) — don't run it. Adding `mermaid` (2026-06-02) pulled ~110
+transitive packages but introduced none of these. If a fresh `npm install` shows
+the same count, it's this, not something you broke.
