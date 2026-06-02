@@ -219,6 +219,9 @@ describe('buildPrompt', () => {
     '</turn-meta>',
     'confidence_scores',
     'must be the very last thing in your response',
+    // Diagram capability is an environment fact, not a persona trait — it must
+    // survive a custom persona swap, same as the <turn-meta> contract.
+    'flowchart TD',
   ];
 
   it('uses DEFAULT_PERSONA as the head when no persona is passed', () => {

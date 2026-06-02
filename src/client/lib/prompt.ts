@@ -150,8 +150,10 @@ ${grepBlock}
 ${linkedBlock}
 ${failedBlock}
 
+When a diagram would clarify structure or flow, emit a mermaid fenced code block (default flowchart TD) — it renders natively for the person.
+
 YOUR TASK:
-1. Respond to the user's input naturally and helpfully, informed by the memories${hasBuffer ? ', recent context' : ''}${hasGrep ? ', and retrieved history' : ''}${hasLinked ? ', plus the linked pages provided' : ''}.
+1. Respond to the user's input, informed by the memories${hasBuffer ? ', recent context' : ''}${hasGrep ? ', and retrieved history' : ''}${hasLinked ? ', plus the linked pages provided' : ''}.
 2. After your response, output a JSON metadata block.
 
 CONFIDENCE SCORING:
