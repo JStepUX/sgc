@@ -1,8 +1,9 @@
-import { memo, useState, useRef, useEffect, useCallback } from 'react';
+import { memo, useState, useRef, useEffect, useCallback, isValidElement } from 'react';
 import { ArrowUp, Clock, Plus } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeQuotes from './lib/rehype-quotes';
+import { MermaidBlock } from './components/MermaidBlock';
 import type { Memory, ChatEntry, FetchedDoc } from './lib/types';
 import { LOCAL_BUFFER_SIZE } from './lib/constants';
 import { searchScored } from './lib/time-score';
@@ -673,6 +674,13 @@ const AssistantMessage = memo(function AssistantMessage({
           ),
           em: ({ node: _node, ...props }) => <em {...props} className="italic" />,
           code: ({ node: _node, className: cls, children, ...props }) => {
+            // Finalized turns render a ```mermaid block as a diagram. While the
+            // turn is still streaming the source is incomplete (mermaid would
+            // throw), so we let it fall through to the normal code-block path
+            // and only swap to the diagram once the turn closes.
+            if (!streaming && /language-mermaid/.test(cls || '')) {
+              return <MermaidBlock code={String(children).replace(/\n$/, '')} />;
+            }
             const isBlock =
               /language-/.test(cls || '') || String(children).includes('\n');
             if (isBlock) {
@@ -694,12 +702,24 @@ const AssistantMessage = memo(function AssistantMessage({
               </code>
             );
           },
-          pre: ({ node: _node, ...props }) => (
-            <pre
-              {...props}
-              className="m-0 overflow-x-auto rounded-md border border-hairline-strong bg-surface-strong p-3"
-            />
-          ),
+          pre: ({ node: _node, children, ...props }) => {
+            // A finalized mermaid block becomes a diagram with its own
+            // container — strip the code-box chrome so it isn't double-framed.
+            const childClass = isValidElement(children)
+              ? ((children.props as { className?: string }).className ?? '')
+              : '';
+            if (!streaming && /language-mermaid/.test(childClass)) {
+              return <>{children}</>;
+            }
+            return (
+              <pre
+                {...props}
+                className="m-0 overflow-x-auto rounded-md border border-hairline-strong bg-surface-strong p-3"
+              >
+                {children}
+              </pre>
+            );
+          },
           blockquote: ({ node: _node, ...props }) => (
             <blockquote
               {...props}
