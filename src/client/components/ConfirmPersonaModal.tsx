@@ -11,8 +11,8 @@ import { Button } from '@/components/ui/button';
 // INVARIANT: the mask is DISPLAY-ONLY. This modal hands it back via onConfirm
 // for the UI label; it must never reach the prompt or the model. The persona,
 // by contrast, becomes the head of the per-turn system prompt — but the
-// architectural tail (TASK / CONFIDENCE SCORING / <turn-meta>) always appends
-// downstream in buildPrompt, so a persona can't drop the metadata contract.
+// architectural tail (TASK / TURN SUMMARY / <turn-summary>) always appends
+// downstream in buildPrompt, so a persona can't drop the summary contract.
 // ============================================================
 
 interface ConfirmPersonaModalProps {

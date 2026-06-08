@@ -690,20 +690,9 @@ function parseMemoryInput(x: unknown): SaveMemoryInput | null {
   const r = x as Record<string, unknown>;
   if (typeof r.id !== 'string') return null;
   if (typeof r.text !== 'string') return null;
-  if (typeof r.confidence !== 'number') return null;
-  if (!Array.isArray(r.history)) return null;
-  const history: SaveMemoryInput['history'] = [];
-  for (const h of r.history) {
-    if (!h || typeof h !== 'object') return null;
-    const hr = h as Record<string, unknown>;
-    if (
-      typeof hr.delta !== 'number'
-      || typeof hr.newScore !== 'number'
-      || typeof hr.turnGlobal !== 'number'
-    ) return null;
-    history.push({ delta: hr.delta, newScore: hr.newScore, turnGlobal: hr.turnGlobal });
-  }
-  return { id: r.id, text: r.text, confidence: r.confidence, history };
+  // Constitutional memories are plain durable facts now — no confidence/history
+  // (the per-turn grading was retired for the <turn-summary> channel).
+  return { id: r.id, text: r.text };
 }
 
 app.put('/api/memories', (req, res) => {
@@ -722,7 +711,7 @@ app.put('/api/memories', (req, res) => {
     const m = parseMemoryInput(raw);
     if (!m) {
       res.status(400).json({
-        error: 'each memory must be {id, text, confidence, history: [{delta, newScore, turnGlobal}]}.',
+        error: 'each memory must be {id, text}.',
       });
       return;
     }

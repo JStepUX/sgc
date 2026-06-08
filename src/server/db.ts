@@ -46,41 +46,36 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_turns_chat ON turns(chat_id, ordinal);
 `);
 
-// Memories + their confidence sparkline. Scoped per chat via chat_id (cascade
-// on chat delete). Held in a const so the fresh-create path and the legacy
-// re-scope migration below share one DDL source of truth.
+// Constitutional memories — plain durable facts, scoped per chat via chat_id
+// (cascade on chat delete). No confidence/history: the per-turn grading was
+// retired for the <turn-summary> channel. Held in a const so the fresh-create
+// path and the legacy migration below share one DDL source of truth.
 const MEMORIES_SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS memories (
     id TEXT PRIMARY KEY,
     chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
     text TEXT NOT NULL,
-    confidence INTEGER NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_memories_chat ON memories(chat_id);
-
-  CREATE TABLE IF NOT EXISTS memory_history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
-    delta INTEGER NOT NULL,
-    new_score INTEGER NOT NULL,
-    turn_global INTEGER NOT NULL,
-    created_at INTEGER NOT NULL
-  );
 `;
 
-// Migration: memories were once GLOBAL (no chat_id) and are now scoped per
-// chat. A legacy table has no chat_id column, and its rows belong to no chat —
-// there's no honest per-chat home for them — so this is a deliberate ONE-TIME
-// DROP of the old memories + their history. It MUST run before the schema DDL
-// below (whose chat_id index would otherwise error against the legacy table);
-// the DDL then rebuilds the table cleanly. Child table first so the parent has
-// no dangling references when it goes. (Confirmed acceptable: the local DB is a
-// research-prototype store and the old global set is discarded by design.)
+// Migration: a deliberate ONE-TIME DROP of any legacy `memories` shape, run
+// before the schema DDL so the DDL rebuilds the table cleanly. Two obsolete
+// shapes have no honest forward mapping:
+//   - GLOBAL memories (no chat_id) — rows that belong to no chat.
+//   - CONFIDENCE-GRADED memories (a `confidence` column + a memory_history
+//     table) — grading was retired for the <turn-summary> channel, so the
+//     scores and their sparkline history are discarded by design.
+// Child table first so the parent has no dangling references when it goes.
+// (Confirmed acceptable: the local DB is a research-prototype store; the
+// discarded data is intentional — same rationale as the original re-scope drop.)
 {
   const memCols = db.prepare(`PRAGMA table_info(memories)`).all() as { name: string }[];
-  if (memCols.length > 0 && !memCols.some((c) => c.name === 'chat_id')) {
+  const legacyGlobal = memCols.length > 0 && !memCols.some((c) => c.name === 'chat_id');
+  const legacyGraded = memCols.some((c) => c.name === 'confidence');
+  if (legacyGlobal || legacyGraded) {
     db.exec(`DROP TABLE IF EXISTS memory_history; DROP TABLE IF EXISTS memories;`);
   }
 }
@@ -157,24 +152,13 @@ export interface ChatDetail {
   persona: string | null;
   /** Display-only assistant mask. null/'' → "Sal". Never sent to the model. */
   mask: string | null;
-  /** This chat's constitutional memories (id/text/confidence). */
+  /** This chat's constitutional memories — plain durable facts (id/text). */
   memories: MemoryRow[];
-  /** Flat confidence-history rows for this chat's memories (reassembled client-side). */
-  history: MemoryHistoryRow[];
 }
 
 export interface MemoryRow {
   id: string;
   text: string;
-  confidence: number;
-}
-
-export interface MemoryHistoryRow {
-  memoryId: string;
-  delta: number;
-  newScore: number;
-  turnGlobal: number;
-  createdAt: number;
 }
 
 // ============================================================
@@ -298,9 +282,9 @@ export function loadChat(id: string): ChatDetail | null {
       break;
     }
   }
-  // Bundle this chat's memories + history into the detail so a single load
-  // hydrates the constitutional tier alongside turns/persona (no separate
-  // round-trip). getMemories is scoped to chat_id.
+  // Bundle this chat's memories into the detail so a single load hydrates the
+  // constitutional tier alongside turns/persona (no separate round-trip).
+  // getMemories is scoped to chat_id.
   const mem = getMemories(id);
   return {
     id: header.id,
@@ -310,7 +294,6 @@ export function loadChat(id: string): ChatDetail | null {
     persona: header.persona,
     mask: header.mask,
     memories: mem.memories,
-    history: mem.history,
   };
 }
 
@@ -475,41 +458,20 @@ export function setTurnsActive(chatId: string, states: TurnActiveState[]): void 
 // ============================================================
 
 const listMemoriesStmt = db.prepare(`
-  SELECT id, text, confidence
+  SELECT id, text
   FROM memories
   WHERE chat_id = ?
   ORDER BY created_at ASC
 `);
-const listMemoryHistoryStmt = db.prepare(`
-  SELECT memory_id, delta, new_score, turn_global, created_at
-  FROM memory_history
-  WHERE memory_id IN (SELECT id FROM memories WHERE chat_id = ?)
-  ORDER BY id ASC
-`);
 
-interface MemoryDbRow { id: string; text: string; confidence: number }
-interface MemoryHistoryDbRow {
-  memory_id: string;
-  delta: number;
-  new_score: number;
-  turn_global: number;
-  created_at: number;
-}
+interface MemoryDbRow { id: string; text: string }
 
-export function getMemories(chatId: string): { memories: MemoryRow[]; history: MemoryHistoryRow[] } {
+export function getMemories(chatId: string): { memories: MemoryRow[] } {
   const memories = (listMemoriesStmt.all(chatId) as MemoryDbRow[]).map((r) => ({
     id: r.id,
     text: r.text,
-    confidence: r.confidence,
   }));
-  const history = (listMemoryHistoryStmt.all(chatId) as MemoryHistoryDbRow[]).map((r) => ({
-    memoryId: r.memory_id,
-    delta: r.delta,
-    newScore: r.new_score,
-    turnGlobal: r.turn_global,
-    createdAt: r.created_at,
-  }));
-  return { memories, history };
+  return { memories };
 }
 
 const listMemoryIdsStmt = db.prepare(`SELECT id FROM memories WHERE chat_id = ?`);
@@ -520,26 +482,16 @@ const deleteMemoryStmt = db.prepare(`DELETE FROM memories WHERE id = ?`);
 // silently rebinding/corrupting the owning chat's row.
 const memoryOwnerStmt = db.prepare(`SELECT chat_id FROM memories WHERE id = ?`);
 const upsertMemoryStmt = db.prepare(`
-  INSERT INTO memories (id, chat_id, text, confidence, created_at, updated_at)
-  VALUES (?, ?, ?, ?, ?, ?)
+  INSERT INTO memories (id, chat_id, text, created_at, updated_at)
+  VALUES (?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
     text = excluded.text,
-    confidence = excluded.confidence,
     updated_at = excluded.updated_at
-`);
-const deleteHistoryForMemoryStmt = db.prepare(
-  `DELETE FROM memory_history WHERE memory_id = ?`,
-);
-const insertMemoryHistoryStmt = db.prepare(`
-  INSERT INTO memory_history (memory_id, delta, new_score, turn_global, created_at)
-  VALUES (?, ?, ?, ?, ?)
 `);
 
 export interface SaveMemoryInput {
   id: string;
   text: string;
-  confidence: number;
-  history: Array<{ delta: number; newScore: number; turnGlobal: number }>;
 }
 
 export interface SaveMemoriesInput {
@@ -547,17 +499,9 @@ export interface SaveMemoriesInput {
   memories: SaveMemoryInput[];
 }
 
-// Each memory carries its own (full, authoritative) history slice. The client
-// already holds the canonical Memory.history[] sparkline state — including
-// rows it just hydrated from us — so it round-trips faithfully. We upsert the
-// memory rows (preserving created_at on existing ones) and replace the history
-// slice per memory_id. Reconciliation is scoped to input.chatId: memories that
-// belong to THIS chat but are absent from the payload are deleted (cascading
-// their history) — another chat's memories are never touched. Critically, we
-// do NOT bulk-DELETE memories first: the previous semantics nuked every
-// memory_history row via cascade and then only repopulated what the client sent
-// in an optional appendHistory — which the client never sent — so each save
-// erased the entire sparkline.
+// Upsert this chat's memories (preserving created_at on existing rows) and
+// delete any of THIS chat's memories absent from the payload — another chat's
+// memories are never touched. Reconciliation is scoped to input.chatId.
 export function saveMemories(input: SaveMemoriesInput): void {
   const now = Date.now();
   const incomingIds = new Set(input.memories.map((m) => m.id));
@@ -584,11 +528,7 @@ export function saveMemories(input: SaveMemoriesInput): void {
       if (!incomingIds.has(row.id)) deleteMemoryStmt.run(row.id);
     }
     for (const m of input.memories) {
-      upsertMemoryStmt.run(m.id, input.chatId, m.text, m.confidence, now, now);
-      deleteHistoryForMemoryStmt.run(m.id);
-      for (const h of m.history) {
-        insertMemoryHistoryStmt.run(m.id, h.delta, h.newScore, h.turnGlobal, now);
-      }
+      upsertMemoryStmt.run(m.id, input.chatId, m.text, now, now);
     }
   });
   txn();

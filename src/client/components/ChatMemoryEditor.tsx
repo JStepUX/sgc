@@ -152,8 +152,7 @@ export function ChatMemoryEditor({
   //
   // Side effects stay OUT of the setTurns updater on purpose: StrictMode
   // double-invokes updaters in dev, which would otherwise fire the write twice.
-  // The updater is pure. (Same trap the confidence-scoring path in
-  // SalienceGatedCognition.tsx documents.)
+  // The updater is pure; the PUT runs after it, below.
   const persist = useCallback(
     (changes: TurnActiveState[]) => {
       if (changes.length === 0) return;

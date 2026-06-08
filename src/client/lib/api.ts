@@ -89,7 +89,7 @@ export type ProviderId = 'anthropic' | 'openai';
  *
  * `onDelta`, if given, is called every time more text arrives, with the full
  * raw text accumulated so far (not just the new chunk). The caller is free to
- * strip the trailing <turn-meta> block for display — see stripStreamingMeta.
+ * strip the trailing <turn-summary> block for display — see stripStreamingMeta.
  *
  * `provider`, if given, selects the backing model for this turn ('anthropic' |
  * 'openai'); omitted, the server uses its boot default. Only the token crosses

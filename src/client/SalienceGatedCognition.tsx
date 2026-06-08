@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeQuotes from './lib/rehype-quotes';
 import { MermaidBlock } from './components/MermaidBlock';
-import type { Memory, ChatEntry, FetchedDoc } from './lib/types';
+import type { Memory, ChatEntry, FetchedDoc, TurnSummary } from './lib/types';
 import { LOCAL_BUFFER_SIZE } from './lib/constants';
 import { searchScored } from './lib/time-score';
 import {
@@ -52,11 +52,6 @@ interface GrepDetail {
   preview: string;
 }
 
-interface ConfidenceDelta {
-  delta: number;
-  newScore: number;
-}
-
 interface TurnData {
   turnNumber: number;
   inputTokens: number;
@@ -66,7 +61,12 @@ interface TurnData {
   grepFired: boolean;
   grepMatches: number;
   grepDetails: GrepDetail[] | null;
-  confidenceDeltas: ConfidenceDelta[] | null;
+  /**
+   * Sal's per-turn summary (persistent / volatile / established_patterns),
+   * parsed from the `<turn-summary>` block. Persisted in this turn's
+   * inspector_json so it survives reload and rehydrates onto the message.
+   */
+  summary: TurnSummary | null;
   /**
    * Estimated tokens the naive "send everything every turn" baseline would
    * have used (persona + memories + full chat history + user input). The
@@ -79,6 +79,21 @@ interface TurnData {
 interface TokenHistoryEntry {
   turn: number;
   inputTokens: number;
+}
+
+/**
+ * Pull a turn's summary back out of its persisted inspector_json blob (the
+ * TurnData stored on save) so a reloaded assistant turn can rehydrate its dimmed
+ * summary line. Tolerant: a null blob, a parse failure, or an old turn saved
+ * before summaries existed all yield undefined (nothing renders).
+ */
+function summaryFromInspector(inspectorJson: string | null): TurnSummary | undefined {
+  if (!inspectorJson) return undefined;
+  try {
+    return (JSON.parse(inspectorJson) as Partial<TurnData>).summary ?? undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 // ============================================================
@@ -109,14 +124,6 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
 
 const PROVIDER_LS_KEY = 'sgc.provider';
 const PROVIDER_ORDER: ProviderId[] = ['anthropic', 'openai'];
-
-// Confidence drives a warm-shifted border/text colour: sage when trusted,
-// brick when doubted, a quiet neutral in between.
-function confidenceTone(c: number): string {
-  if (c > 70) return 'var(--color-success)';
-  if (c < 30) return 'var(--color-danger)';
-  return 'var(--color-fg-1)';
-}
 
 // Shared label style for the context rail's section headers.
 const RAIL_LABEL = 'font-mono text-[11px] tracking-[0.18em] uppercase text-fg-3 mb-1';
@@ -357,55 +364,27 @@ const MemoryPanel = memo(function MemoryPanel({ memories, onUpdate, onAdd, onRem
       <div className={RAIL_LABEL}>Constitutional Memories</div>
 
       <div className="flex flex-col gap-2.5">
-        {memories.map((mem, i) => {
-          const tone = confidenceTone(mem.confidence);
-          const toned = mem.confidence > 70 || mem.confidence < 30;
-          return (
-            <Card
-              key={mem.id}
-              className="gap-0 rounded-[14px] border px-[14px] pt-[14px] pb-3 shadow-none transition-colors"
-              style={{ borderColor: toned ? `color-mix(in srgb, ${tone} 45%, transparent)` : undefined }}
-            >
-              <div className="mb-2 flex items-baseline justify-between font-mono text-[10.5px] tracking-[0.08em] text-fg-3">
-                <span className="text-fg-2">M{i + 1}</span>
-                <div className="flex items-center gap-2">
-                  <span className="font-medium" style={{ color: tone }}>{mem.confidence}%</span>
-                  <button
-                    className="cursor-pointer px-0.5 text-sm leading-none text-fg-4 transition-colors hover:text-danger"
-                    onClick={() => onRemove(mem.id)}
-                    aria-label="Remove memory"
-                  >×</button>
-                </div>
-              </div>
-              <div
-                className="mb-3 min-h-[18px] cursor-text rounded-[3px] text-[13px] leading-[1.5] text-fg-1 outline-none focus:ring-2 focus:ring-ember/40"
-                contentEditable
-                suppressContentEditableWarning
-                onBlur={(e) => onUpdate(mem.id, e.currentTarget.textContent ?? '')}
-              >{mem.text}</div>
-              <div className="relative h-[3px] overflow-hidden rounded-sm bg-hairline-strong">
-                <span
-                  className="absolute left-0 top-0 h-full rounded-sm bg-linear-to-r from-ember-soft to-ember transition-[width] duration-500"
-                  style={{ width: `${mem.confidence}%` }}
-                />
-              </div>
-              {mem.history.length > 0 && (
-                <div className="mt-2 flex items-center gap-0.5">
-                  {mem.history.slice(-20).map((h, j) => (
-                    <span
-                      key={j}
-                      className="h-3 w-[3px] rounded-[1px]"
-                      style={{
-                        background: h.delta > 0 ? 'var(--color-success)' : h.delta < 0 ? 'var(--color-danger)' : 'var(--color-hairline-strong)',
-                        opacity: h.delta === 0 ? 0.35 : 0.75,
-                      }}
-                    />
-                  ))}
-                </div>
-              )}
-            </Card>
-          );
-        })}
+        {memories.map((mem, i) => (
+          <Card
+            key={mem.id}
+            className="gap-0 rounded-[14px] border px-[14px] pt-[14px] pb-3 shadow-none transition-colors"
+          >
+            <div className="mb-2 flex items-baseline justify-between font-mono text-[10.5px] tracking-[0.08em] text-fg-3">
+              <span className="text-fg-2">M{i + 1}</span>
+              <button
+                className="cursor-pointer px-0.5 text-sm leading-none text-fg-4 transition-colors hover:text-danger"
+                onClick={() => onRemove(mem.id)}
+                aria-label="Remove memory"
+              >×</button>
+            </div>
+            <div
+              className="min-h-[18px] cursor-text rounded-[3px] text-[13px] leading-[1.5] text-fg-1 outline-none focus:ring-2 focus:ring-ember/40"
+              contentEditable
+              suppressContentEditableWarning
+              onBlur={(e) => onUpdate(mem.id, e.currentTarget.textContent ?? '')}
+            >{mem.text}</div>
+          </Card>
+        ))}
       </div>
 
       <div className="mt-1 flex gap-1.5">
@@ -555,23 +534,40 @@ const TurnInspector = memo(function TurnInspector({ turnData }: { turnData: Turn
         );
       })()}
 
-      {turnData.confidenceDeltas && (
-        <Card className="gap-0 rounded-xl border px-[14px] py-3 shadow-none">
-          <div className={RAIL_SUB}>Confidence Deltas</div>
-          {turnData.confidenceDeltas.map((d, i) => (
-            <div key={i} className="mt-1 flex items-center justify-between text-[11px]">
-              <span className="font-mono text-fg-2">M{i + 1}</span>
-              <span
-                className="font-mono"
-                style={{
-                  color: d.delta > 0 ? 'var(--color-success)' : d.delta < 0 ? 'var(--color-danger)' : 'var(--color-fg-3)',
-                  fontWeight: d.delta !== 0 ? 600 : 400,
-                }}
-              >{d.delta > 0 ? '+' : ''}{d.delta} → {d.newScore}%</span>
-            </div>
-          ))}
-        </Card>
-      )}
+      {turnData.summary &&
+        (turnData.summary.persistent.length > 0 ||
+          turnData.summary.volatile.length > 0 ||
+          turnData.summary.established_patterns.length > 0) && (
+          <Card className="gap-0 rounded-xl border px-[14px] py-3 shadow-none">
+            {/* The structured view of Sal's per-turn summary. The inspector is
+                the diagnostics surface, so labelled lists are fine here — the
+                in-message render stays a flat dimmed line. Empty sections are
+                omitted so the card only shows what this turn actually observed. */}
+            <div className={RAIL_SUB}>Turn Summary</div>
+            {(
+              [
+                ['persistent', turnData.summary.persistent],
+                ['volatile', turnData.summary.volatile],
+                ['patterns', turnData.summary.established_patterns],
+              ] as const
+            ).map(([label, items]) =>
+              items.length > 0 ? (
+                <div key={label} className="mt-2">
+                  <div className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-fg-4">
+                    {label}
+                  </div>
+                  <ul className="mt-0.5 space-y-0.5">
+                    {items.map((it, i) => (
+                      <li key={i} className="text-[11px] leading-[1.4] text-fg-2">
+                        {it}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null,
+            )}
+          </Card>
+        )}
     </section>
   );
 });
@@ -619,6 +615,19 @@ const TokenChart = memo(function TokenChart({ tokenHistory }: { tokenHistory: To
 // MESSAGE BLOCKS — Sal's reply, the user's centred pills.
 // ============================================================
 
+// Flatten a turn summary into one natural-language line ("a, b, and c"). All
+// three sections are concatenated in order — the in-message render deliberately
+// drops the section labels (those live in the inspector's structured card) to
+// stay a single ultra-subtle line that respects the reading column's vertical
+// space. Returns '' when the turn observed nothing, so nothing renders.
+function flattenSummary(s: TurnSummary): string {
+  const items = [...s.persistent, ...s.volatile, ...s.established_patterns];
+  if (items.length === 0) return '';
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+}
+
 // Memoized so finalized messages don't re-run ReactMarkdown on every parent
 // re-render (typing, pulse-key bumps, streaming token arrival). Only the
 // in-flight streaming bubble re-renders as its `text` grows.
@@ -626,14 +635,19 @@ const AssistantMessage = memo(function AssistantMessage({
   text,
   streaming = false,
   label,
+  summary,
 }: {
   text: string;
   streaming?: boolean;
   /** Display-only author label for this turn. Falls back to "Sal" when empty.
    * NEVER sourced from / sent to the model — this is the per-chat mask. */
   label?: string;
+  /** Sal's per-turn summary, rendered as a dimmed one-line appendage beneath the
+   * reply. Absent while streaming and on turns that observed nothing. */
+  summary?: TurnSummary;
 }) {
   const name = label && label.trim() ? label : 'Sal';
+  const summaryLine = summary ? flattenSummary(summary) : '';
   return (
     <div
       className={cn(
@@ -743,6 +757,14 @@ const AssistantMessage = memo(function AssistantMessage({
         {text}
       </ReactMarkdown>
       </div>
+      {summaryLine && (
+        // Ultra-subtle, always-on debug line: Sal's per-turn summary flattened
+        // to one dimmed row. Recessive by design — present for inspection, not
+        // chrome the reader has to engage with each turn.
+        <div className="text-[11px] font-normal leading-[1.45] text-fg-4/70">
+          {summaryLine}
+        </div>
+      )}
     </div>
   );
 });
@@ -900,7 +922,7 @@ export default function SalienceGatedCognition() {
   const [chatLog, setChatLog] = useState<ChatEntry[]>([]);
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  // Sal's reply as it streams in, with the trailing <turn-meta> block stripped.
+  // Sal's reply as it streams in, with the trailing <turn-summary> block stripped.
   // null = no turn streaming (show the dot-pulse loader instead).
   const [streamingText, setStreamingText] = useState<string | null>(null);
   const [latestTurn, setLatestTurn] = useState<TurnData | null>(null);
@@ -1019,6 +1041,7 @@ export default function SalienceGatedCognition() {
             active: t.active,
             createdAt: t.createdAt,
             timeless: t.timeless,
+            summary: summaryFromInspector(t.inspectorJson),
           }));
           setMessages(replay);
           setChatLog(replay);
@@ -1134,7 +1157,7 @@ export default function SalienceGatedCognition() {
 
   const handleMemoryAdd = useCallback((text: string) => {
     memoriesDirtyRef.current = true;
-    setMemories((prev) => [...prev, { id: crypto.randomUUID(), text, confidence: 50, history: [] }]);
+    setMemories((prev) => [...prev, { id: crypto.randomUUID(), text }]);
   }, []);
 
   const handleMemoryRemove = useCallback((id: string) => {
@@ -1196,7 +1219,7 @@ export default function SalienceGatedCognition() {
       grepFired: false,
       grepMatches: 0,
       grepDetails: null,
-      confidenceDeltas: null,
+      summary: null,
       // Counterfactual baseline: what the naive "send the whole history every
       // turn" pipeline would have sent. Computed BEFORE the new pair is
       // appended to chatLog, so `chatLog` here is everything prior to this
@@ -1244,58 +1267,29 @@ export default function SalienceGatedCognition() {
         systemPrompt,
         userInput,
         (rawSoFar) => {
-          // Render Sal's reply as it arrives; hide the trailing <turn-meta> block.
+          // Render Sal's reply as it arrives; hide the trailing <turn-summary> block.
           setStreamingText(stripStreamingMeta(rawSoFar));
         },
         provider,
       );
-      const { displayText, metadata } = parseTurnResponse(turnResult.text);
+      const { displayText, summary } = parseTurnResponse(turnResult.text);
 
       turnData.inputTokens = turnResult.inputTokens;
       turnData.outputTokens = turnResult.outputTokens;
       turnData.totalLatency = turnResult.elapsed;
+      // Sal's fresh per-turn observation. Stored on turnData (→ inspector_json,
+      // so it persists + rehydrates) and carried on the message below so it
+      // renders as a dimmed one-line appendage beneath this reply. It is NOT
+      // fed back into any later prompt — a snapshot of this turn only.
+      turnData.summary = summary;
 
-      // Promote the streamed reply to a finalized message. The transient
-      // streaming bubble is cleared in `finally`, batched into this same
-      // render — so the bubble swaps to a message with no flicker.
-      setMessages((prev) => [...prev, { role: 'assistant' as const, content: displayText, createdAt: turnStartedAt }]);
-
-      // ---- CONFIDENCE SCORING ----
-      if (metadata?.confidence_scores) {
-        const scores = metadata.confidence_scores;
-
-        // Resolve each memory's new score up front, as a plain computation.
-        // This must NOT happen inside the setMemories updater: StrictMode
-        // double-invokes updaters in dev, so pushing deltas from within one
-        // produced twice the entries (the diagnostics panel showed M1..M6 for
-        // 3 memories). `memories` is a safe source here — confidence is only
-        // ever changed by this block, so the closure value cannot be stale.
-        const deltas: ConfidenceDelta[] = memories.map((mem, i) => {
-          const raw = scores[`M${i + 1}`];
-          const newScore = raw != null ? Math.max(0, Math.min(100, raw)) : mem.confidence;
-          return { delta: newScore - mem.confidence, newScore };
-        });
-        turnData.confidenceDeltas = deltas;
-
-        // The state update stays a functional updater — so a memory edited
-        // mid-turn (present in `prev`) is preserved — but is now pure: it
-        // only maps `prev` and returns, with no external side effect.
-        memoriesDirtyRef.current = true;
-        setMemories((prev) =>
-          prev.map((mem, i) =>
-            deltas[i]
-              ? {
-                  ...mem,
-                  confidence: deltas[i].newScore,
-                  history: [
-                    ...mem.history,
-                    { delta: deltas[i].delta, score: deltas[i].newScore, turn: newTurnNumber },
-                  ],
-                }
-              : mem,
-          ),
-        );
-      }
+      // Promote the streamed reply to a finalized message, carrying its summary.
+      // The transient streaming bubble is cleared in `finally`, batched into this
+      // same render — so the bubble swaps to a message with no flicker.
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant' as const, content: displayText, createdAt: turnStartedAt, summary: summary ?? undefined },
+      ]);
 
       // ---- APPEND TO PERSISTENT CHAT LOG ----
       setChatLog((prev) => [
@@ -1421,6 +1415,7 @@ export default function SalienceGatedCognition() {
         active: t.active,
         createdAt: t.createdAt,
         timeless: t.timeless,
+        summary: summaryFromInspector(t.inspectorJson),
       }));
       setMessages(replay);
       setChatLog(replay);
@@ -1569,7 +1564,7 @@ export default function SalienceGatedCognition() {
                 {messages.map((msg, i) =>
                   msg.role === 'user'
                     ? <UserPill key={i} text={msg.content} />
-                    : <AssistantMessage key={i} text={msg.content} label={activeMask} />,
+                    : <AssistantMessage key={i} text={msg.content} label={activeMask} summary={msg.summary} />,
                 )}
 
                 {streamingText !== null && (

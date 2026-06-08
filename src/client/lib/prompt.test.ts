@@ -1,9 +1,9 @@
 // Tests for the prompt builder and — critically — the turn-response parser.
-// parseTurnResponse must anchor on the LAST <turn-meta> block: Sal's answer can
-// legitimately mention the tag, and parsing that mention as metadata silently
-// corrupts the visible response. stripStreamingMeta is the mid-stream sibling:
-// it must hide the metadata block (and partial opening tags split across SSE
-// chunks) so the block never flickers into the chat bubble.
+// parseTurnResponse must anchor on the LAST <turn-summary> block: Sal's answer
+// can legitimately mention the tag, and parsing that mention as the summary
+// silently corrupts the visible response. stripStreamingMeta is the mid-stream
+// sibling: it must hide the summary block (and partial opening tags split across
+// SSE chunks) so the block never flickers into the chat bubble.
 
 import {
   DEFAULT_PERSONA,
@@ -16,81 +16,135 @@ import type { Memory, ChatEntry, FetchedDoc } from './types';
 import type { ScoredResult } from './time-score';
 
 describe('parseTurnResponse', () => {
-  it('extracts the trailing metadata block and the prose before it', () => {
-    const raw = 'Here is my answer.\n\n<turn-meta>\n{"confidence_scores":{"M1":55}}\n</turn-meta>';
-    const { displayText, metadata } = parseTurnResponse(raw);
+  it('extracts the trailing summary block and the prose before it', () => {
+    const raw =
+      'Here is my answer.\n\n<turn-summary>\n{"persistent":["likes brevity"],"volatile":[],"established_patterns":[]}\n</turn-summary>';
+    const { displayText, summary } = parseTurnResponse(raw);
     expect(displayText).toBe('Here is my answer.');
-    expect(metadata?.confidence_scores.M1).toBe(55);
+    expect(summary?.persistent).toEqual(['likes brevity']);
+    expect(summary?.volatile).toEqual([]);
+    expect(summary?.established_patterns).toEqual([]);
   });
 
-  it('uses the LAST turn-meta block when the answer mentions the tag earlier (P1 regression)', () => {
-    // Sal explains the metadata protocol in prose — mentioning the tag — THEN
-    // appends its real block. The explanation must survive; metadata is last.
+  it('uses the LAST turn-summary block when the answer mentions the tag earlier (P1 regression)', () => {
+    // Sal explains the summary protocol in prose — mentioning the tag — THEN
+    // appends its real block. The explanation must survive; the summary is last.
     const raw = [
-      'You asked how scoring works: I emit a <turn-meta> block at the end.',
-      'That block carries the confidence scores.',
+      'You asked how this works: I emit a <turn-summary> block at the end.',
+      'That block carries my per-turn observations.',
       '',
-      '<turn-meta>',
-      '{"confidence_scores":{"M1":50,"M2":48}}',
-      '</turn-meta>',
+      '<turn-summary>',
+      '{"persistent":["uses TS"],"volatile":["debugging CI"],"established_patterns":["asks for tests"]}',
+      '</turn-summary>',
     ].join('\n');
-    const { displayText, metadata } = parseTurnResponse(raw);
-    expect(displayText).toContain('how scoring works');
-    expect(displayText).toContain('carries the confidence scores');
-    expect(metadata?.confidence_scores).toEqual({ M1: 50, M2: 48 });
+    const { displayText, summary } = parseTurnResponse(raw);
+    expect(displayText).toContain('how this works');
+    expect(displayText).toContain('per-turn observations');
+    expect(summary).toEqual({
+      persistent: ['uses TS'],
+      volatile: ['debugging CI'],
+      established_patterns: ['asks for tests'],
+    });
   });
 
-  it('returns no metadata when there is no turn-meta block', () => {
-    const raw = 'Just a plain answer, no metadata anywhere.';
-    const { displayText, metadata } = parseTurnResponse(raw);
+  it('returns no summary when there is no turn-summary block', () => {
+    const raw = 'Just a plain answer, no summary anywhere.';
+    const { displayText, summary } = parseTurnResponse(raw);
     expect(displayText).toBe(raw);
-    expect(metadata).toBeNull();
+    expect(summary).toBeNull();
   });
 
-  it('does not treat a trailing non-metadata turn-meta block as metadata', () => {
-    // The block ends the response but carries no confidence_scores — it must
-    // not be swallowed or mistaken for metadata.
-    const raw = 'Here is the shape:\n<turn-meta>\n{"timeout": 30}\n</turn-meta>';
-    const { displayText, metadata } = parseTurnResponse(raw);
-    expect(metadata).toBeNull();
+  it('coerces missing or non-array lists to [] while still returning a summary', () => {
+    // The block has at least one known key, so it's a summary — but `volatile`
+    // is missing and `established_patterns` is the wrong type. Both default to []
+    // rather than failing the whole parse or leaking undefined into the render.
+    const raw =
+      'Answer.\n<turn-summary>\n{"persistent":["a"],"established_patterns":"oops"}\n</turn-summary>';
+    const { summary } = parseTurnResponse(raw);
+    expect(summary).toEqual({ persistent: ['a'], volatile: [], established_patterns: [] });
+  });
+
+  it('drops non-string and blank list entries', () => {
+    const raw =
+      'Answer.\n<turn-summary>\n{"persistent":["keep",42,"  "," trimmed "]}\n</turn-summary>';
+    const { summary } = parseTurnResponse(raw);
+    expect(summary?.persistent).toEqual(['keep', 'trimmed']);
+  });
+
+  it('parses correctly when a summary string contains the literal OPENING tag (P2 regression)', () => {
+    // A free-form value mentions "<turn-summary>". A naive lastIndexOf on the
+    // opening tag would anchor INSIDE the JSON string and fail the parse, leaving
+    // the raw block visible in the finalized message. The earliest-valid scan
+    // must find the real opener instead.
+    const raw =
+      'Sure thing.\n\n<turn-summary>\n{"persistent":["asked about <turn-summary> tags"],"volatile":[],"established_patterns":[]}\n</turn-summary>';
+    const { displayText, summary } = parseTurnResponse(raw);
+    expect(displayText).toBe('Sure thing.');
+    expect(summary?.persistent).toEqual(['asked about <turn-summary> tags']);
+  });
+
+  it('parses correctly when a summary string contains the literal CLOSING tag (P2 regression)', () => {
+    // The symmetric hazard: a value mentions "</turn-summary>". Anchoring the
+    // close on the LAST occurrence (not the first after the open) keeps the inner
+    // literal from truncating the block.
+    const raw =
+      'Done.\n\n<turn-summary>\n{"persistent":["mentioned </turn-summary> once"],"volatile":[],"established_patterns":[]}\n</turn-summary>';
+    const { displayText, summary } = parseTurnResponse(raw);
+    expect(displayText).toBe('Done.');
+    expect(summary?.persistent).toEqual(['mentioned </turn-summary> once']);
+  });
+
+  it('does not treat a trailing JSON block with none of the known keys as a summary', () => {
+    // The block ends the response but carries no summary keys — it must not be
+    // swallowed or mistaken for the summary.
+    const raw = 'Here is the shape:\n<turn-summary>\n{"timeout": 30}\n</turn-summary>';
+    const { displayText, summary } = parseTurnResponse(raw);
+    expect(summary).toBeNull();
     expect(displayText).toBe(raw);
   });
 
-  it('returns no metadata when the trailing block is malformed JSON', () => {
-    const raw = 'Answer.\n<turn-meta>\n{not valid json,,,}\n</turn-meta>';
-    const { displayText, metadata } = parseTurnResponse(raw);
-    expect(metadata).toBeNull();
+  it('returns no summary when the trailing block is malformed JSON', () => {
+    const raw = 'Answer.\n<turn-summary>\n{not valid json,,,}\n</turn-summary>';
+    const { displayText, summary } = parseTurnResponse(raw);
+    expect(summary).toBeNull();
     expect(displayText).toBe(raw);
   });
 
-  it('returns no metadata when the opening tag is never closed', () => {
-    const raw = 'Answer.\n<turn-meta>\n{"confidence_scores":{"M1":50}}';
-    const { displayText, metadata } = parseTurnResponse(raw);
-    expect(metadata).toBeNull();
+  it('returns no summary when the opening tag is never closed', () => {
+    const raw = 'Answer.\n<turn-summary>\n{"persistent":["x"]}';
+    const { displayText, summary } = parseTurnResponse(raw);
+    expect(summary).toBeNull();
     expect(displayText).toBe(raw);
+  });
+
+  it('returns no summary when text follows the closing tag (not a clean trailing block)', () => {
+    const raw =
+      'Answer.\n<turn-summary>\n{"persistent":["x"]}\n</turn-summary>\nand then more prose.';
+    const { summary } = parseTurnResponse(raw);
+    expect(summary).toBeNull();
   });
 });
 
 describe('stripStreamingMeta', () => {
-  it('returns the text unchanged when no metadata tag is present', () => {
+  it('returns the text unchanged when no summary tag is present', () => {
     expect(stripStreamingMeta('A partial answer so far')).toBe('A partial answer so far');
   });
 
   it('drops everything from the opening tag onward', () => {
-    const raw = 'The finished prose.\n\n<turn-meta>\n{"confidence_scores":{"M1":50}}';
+    const raw = 'The finished prose.\n\n<turn-summary>\n{"persistent":["x"]}';
     expect(stripStreamingMeta(raw)).toBe('The finished prose.');
   });
 
   it('holds back a partial opening tag split across SSE chunks', () => {
     // The opening tag arrives one character at a time; none of it should leak.
     const prose = 'My answer.';
-    for (const partial of ['<', '<tu', '<turn-', '<turn-meta']) {
+    for (const partial of ['<', '<tu', '<turn-', '<turn-summary']) {
       expect(stripStreamingMeta(prose + partial)).toBe(prose);
     }
   });
 
   it('keeps an interior < and releases a trailing one once the next chunk lands', () => {
-    // A lone trailing '<' looks like the start of <turn-meta>, so it is held
+    // A lone trailing '<' looks like the start of <turn-summary>, so it is held
     // back for the frame it arrives in...
     expect(stripStreamingMeta('Compare a <')).toBe('Compare a ');
     // ...then released once the next chunk proves it was just prose.
@@ -98,33 +152,32 @@ describe('stripStreamingMeta', () => {
   });
 
   it('keeps a prose mention of the tag visible, hiding only the JSON-bearing block', () => {
-    // Sal explains the metadata protocol in prose — a bare mention of the tag,
+    // Sal explains the summary protocol in prose — a bare mention of the tag,
     // followed by words rather than `{`. It must NOT truncate the bubble.
-    const proseMention = 'I emit a <turn-meta> block at the end of every turn.';
+    const proseMention = 'I emit a <turn-summary> block at the end of every turn.';
     expect(stripStreamingMeta(proseMention)).toBe(proseMention);
 
     // Once the real block streams in, that — and only that — is hidden, even
     // though an earlier mention of the tag appears first in the text.
-    const withBlock = proseMention + '\n\n<turn-meta>\n{"confidence_scores":{"M1":50}}';
+    const withBlock = proseMention + '\n\n<turn-summary>\n{"persistent":["x"]}';
     expect(stripStreamingMeta(withBlock)).toBe(proseMention);
   });
 
   it('hides the real block the instant its opening tag arrives, before the JSON', () => {
     // The block has just opened — only whitespace has streamed after the tag.
-    // It is hidden proactively so the literal <turn-meta> tag never flashes.
-    expect(stripStreamingMeta('Done.\n\n<turn-meta>')).toBe('Done.');
-    expect(stripStreamingMeta('Done.\n\n<turn-meta>\n')).toBe('Done.');
+    // It is hidden proactively so the literal <turn-summary> tag never flashes.
+    expect(stripStreamingMeta('Done.\n\n<turn-summary>')).toBe('Done.');
+    expect(stripStreamingMeta('Done.\n\n<turn-summary>\n')).toBe('Done.');
   });
 });
 
 describe('buildPrompt', () => {
-  const memories: Memory[] = [
-    { id: 'a', text: 'User likes brevity.', confidence: 50, history: [] },
-  ];
+  const memories: Memory[] = [{ id: 'a', text: 'User likes brevity.' }];
 
-  it('includes every memory with its confidence score', () => {
+  it('includes every memory by its label, with no confidence score', () => {
     const prompt = buildPrompt(memories, [], null);
-    expect(prompt).toContain('[M1] (confidence: 50%) User likes brevity.');
+    expect(prompt).toContain('[M1] User likes brevity.');
+    expect(prompt).not.toContain('confidence');
   });
 
   it('renders a placeholder (not a blank section) when there are no memories', () => {
@@ -207,20 +260,22 @@ describe('buildPrompt', () => {
   });
 
   // ---- PERSONA (per-chat system prompt) ----
-  // LOAD-BEARING invariant: the architectural tail (TASK / CONFIDENCE SCORING /
-  // the <turn-meta> contract) must append for EVERY persona — default, custom,
-  // or blank. A persona that could drop the <turn-meta> contract would silently
-  // kill confidence scoring (parseTurnResponse would find nothing). These tests
-  // are the check that guards that, not a self-report.
+  // LOAD-BEARING invariant: the architectural tail (TASK / TURN SUMMARY / the
+  // <turn-summary> contract) must append for EVERY persona — default, custom,
+  // or blank. A persona that could drop the <turn-summary> contract would
+  // silently kill the per-turn summary (parseTurnResponse would find nothing).
+  // These tests are the check that guards that, not a self-report.
   const TAIL_MARKERS = [
     'YOUR TASK:',
-    'CONFIDENCE SCORING:',
-    '<turn-meta>',
-    '</turn-meta>',
-    'confidence_scores',
+    'TURN SUMMARY:',
+    '<turn-summary>',
+    '</turn-summary>',
+    'persistent',
+    'volatile',
+    'established_patterns',
     'must be the very last thing in your response',
     // Diagram capability is an environment fact, not a persona trait — it must
-    // survive a custom persona swap, same as the <turn-meta> contract.
+    // survive a custom persona swap, same as the <turn-summary> contract.
     'flowchart TD',
   ];
 
@@ -235,8 +290,8 @@ describe('buildPrompt', () => {
   });
 
   it('appends the full architectural tail for a CUSTOM persona', () => {
-    // A persona that says nothing about metadata still gets the <turn-meta>
-    // contract — it cannot opt out of confidence scoring.
+    // A persona that says nothing about the summary still gets the
+    // <turn-summary> contract — it cannot opt out.
     const custom = 'You are PERCIVAL, a terse medieval scribe. You do not editorialise.';
     const prompt = buildPrompt(memories, [], null, null, null, custom);
     expect(prompt.startsWith(custom)).toBe(true);
@@ -244,16 +299,17 @@ describe('buildPrompt', () => {
     for (const marker of TAIL_MARKERS) expect(prompt).toContain(marker);
   });
 
-  it('round-trips: a custom persona prompt still yields parseable metadata downstream', () => {
+  it('round-trips: a custom persona prompt still yields a parseable summary downstream', () => {
     // The whole point of the tail: a turn built from a custom persona, when the
-    // model honors the <turn-meta> contract, parses cleanly. Simulate the model
-    // emitting the contracted block and confirm parseTurnResponse recovers it.
+    // model honors the <turn-summary> contract, parses cleanly. Simulate the
+    // model emitting the contracted block and confirm parseTurnResponse recovers it.
     const custom = 'You are PERCIVAL.';
     const prompt = buildPrompt(memories, [], null, null, null, custom);
-    expect(prompt).toContain('<turn-meta>');
-    const modelReply = 'A terse reply.\n\n<turn-meta>\n{"confidence_scores":{"M1":50}}\n</turn-meta>';
-    const { metadata } = parseTurnResponse(modelReply);
-    expect(metadata?.confidence_scores.M1).toBe(50);
+    expect(prompt).toContain('<turn-summary>');
+    const modelReply =
+      'A terse reply.\n\n<turn-summary>\n{"persistent":["scribes tersely"],"volatile":[],"established_patterns":[]}\n</turn-summary>';
+    const { summary } = parseTurnResponse(modelReply);
+    expect(summary?.persistent).toEqual(['scribes tersely']);
   });
 
   it('falls back to DEFAULT_PERSONA for a blank or whitespace-only persona', () => {
@@ -341,9 +397,7 @@ describe('estimateNaiveContextTokens', () => {
   // The inspector's "context savings" tile relies on this baseline. It's an
   // estimate, not a tokenizer — what matters is the shape: positive, grows
   // with history, includes the user input, monotonic in chat-log size.
-  const memories: Memory[] = [
-    { id: 'a', text: 'User prefers direct communication.', confidence: 50, history: [] },
-  ];
+  const memories: Memory[] = [{ id: 'a', text: 'User prefers direct communication.' }];
 
   it('returns a positive estimate even with empty history and empty input', () => {
     // The persona prompt alone is non-trivial — the baseline should reflect it.

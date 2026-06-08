@@ -6,7 +6,7 @@
 // the UI uses to load history on mount, save turns after they finish
 // streaming, and sync each chat's own (per-chat) memory set.
 
-import type { Memory, MemoryHistoryEntry } from './types';
+import type { Memory } from './types';
 
 // ============================================================
 // SHAPES ON THE WIRE
@@ -35,16 +35,8 @@ export interface ChatTurn {
   timeless: boolean;
 }
 
-export interface MemoryHistoryRow {
-  memoryId: string;
-  delta: number;
-  newScore: number;
-  turnGlobal: number;
-  createdAt: number;
-}
-
-/** Raw /api/chats/:id payload. Memories arrive flat (rows + history) and are
- *  reassembled into domain `Memory[]` by {@link loadChat}. */
+/** Raw /api/chats/:id payload. Memories arrive as plain {id, text} rows — they
+ *  are already the domain `Memory` shape (no scoring, no history). */
 interface ChatDetailWire {
   id: string;
   title: string;
@@ -52,8 +44,7 @@ interface ChatDetailWire {
   latestInspector: unknown | null;
   persona: string | null;
   mask: string | null;
-  memories: { id: string; text: string; confidence: number }[];
-  history: MemoryHistoryRow[];
+  memories: { id: string; text: string }[];
 }
 
 export interface ChatDetail {
@@ -66,7 +57,7 @@ export interface ChatDetail {
   persona: string | null;
   /** Display-only assistant mask. null/'' → "Sal". Never sent to the model. */
   mask: string | null;
-  /** This chat's constitutional memories, reassembled with their sparkline history. */
+  /** This chat's constitutional memories — plain durable facts (id/text). */
   memories: Memory[];
 }
 
@@ -75,15 +66,10 @@ export interface SaveTurnArgs {
   assistant: { content: string; inspectorJson: string | null };
 }
 
-/** Wire shape for PUT /api/memories: chat-scoped; each memory carries its full history slice. */
+/** Wire shape for PUT /api/memories: chat-scoped; each memory is a plain {id, text}. */
 export interface SaveMemoriesArgs {
   chatId: string;
-  memories: {
-    id: string;
-    text: string;
-    confidence: number;
-    history: { delta: number; newScore: number; turnGlobal: number }[];
-  }[];
+  memories: { id: string; text: string }[];
 }
 
 // ============================================================
@@ -125,7 +111,7 @@ export async function loadChat(id: string): Promise<ChatDetail> {
     latestInspector: wire.latestInspector,
     persona: wire.persona,
     mask: wire.mask,
-    memories: reassembleMemories(wire.memories, wire.history),
+    memories: wire.memories,
   };
 }
 
@@ -202,45 +188,13 @@ export function setTurnsActive(
 // MEMORIES
 // ============================================================
 
-// Reassemble flat memory rows + history into the domain Memory[] (the shape
-// with a per-memory `history` sparkline) used everywhere in the UI. Shared by
-// loadChat — memories are per-chat and arrive in the chat's load payload.
-function reassembleMemories(
-  memories: { id: string; text: string; confidence: number }[],
-  history: MemoryHistoryRow[],
-): Memory[] {
-  const byMem = new Map<string, MemoryHistoryEntry[]>();
-  for (const h of history) {
-    const list = byMem.get(h.memoryId) ?? [];
-    list.push({ delta: h.delta, score: h.newScore, turn: h.turnGlobal });
-    byMem.set(h.memoryId, list);
-  }
-  return memories.map((m) => ({
-    id: m.id,
-    text: m.text,
-    confidence: m.confidence,
-    history: byMem.get(m.id) ?? [],
-  }));
-}
-
-// Persist one chat's memory set. Accepts the chatId + full domain Memory[] and
-// maps to the wire shape inline. The per-memory `history` slice is the
-// authoritative sparkline state — the client holds it, the server stores it
-// verbatim, scoped to chatId. (See server's `saveMemories`: upsert memories for
-// this chat, replace history per memory_id, delete this chat's absent ones.)
+// Persist one chat's memory set — the full domain Memory[] for this chat, mapped
+// to the {id, text} wire shape. The server upserts these and deletes any of this
+// chat's memories absent from the payload (scoped to chatId).
 export function saveMemories(chatId: string, memories: Memory[]): Promise<{ ok: true }> {
   const args: SaveMemoriesArgs = {
     chatId,
-    memories: memories.map((m) => ({
-      id: m.id,
-      text: m.text,
-      confidence: m.confidence,
-      history: m.history.map((h) => ({
-        delta: h.delta,
-        newScore: h.score,
-        turnGlobal: h.turn,
-      })),
-    })),
+    memories: memories.map((m) => ({ id: m.id, text: m.text })),
   };
   return jsonFetch<{ ok: true }>('/api/memories', {
     method: 'PUT',

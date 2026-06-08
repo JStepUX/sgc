@@ -1,5 +1,22 @@
 // Shared domain types for the SGC memory architecture.
 
+/**
+ * The turn summary Sal appends to every response — a fresh, per-turn structured
+ * observation, never fed back into the next prompt and never accumulated:
+ *  - persistent: things true until explicitly changed
+ *  - volatile: things that shifted this turn
+ *  - established_patterns: behavioral rules that have been demonstrated
+ *
+ * Parsed out of Sal's `<turn-summary>` block (see lib/prompt.ts) and rendered
+ * as a dimmed one-line appendage beneath the reply. Observation only — it does
+ * NOT touch retrieval or the next prompt.
+ */
+export interface TurnSummary {
+  persistent: string[];
+  volatile: string[];
+  established_patterns: string[];
+}
+
 /** One message in the conversation log. */
 export interface ChatEntry {
   role: 'user' | 'assistant';
@@ -42,25 +59,25 @@ export interface ChatEntry {
    * model in the loop — the Phase 1.5 thesis holds.
    */
   timeless?: boolean;
-}
-
-/** A single confidence-score change applied to a memory on one turn. */
-export interface MemoryHistoryEntry {
-  delta: number;
-  score: number;
-  turn: number;
+  /**
+   * The turn summary Sal emitted alongside this (assistant) message, rendered as
+   * a dimmed one-line appendage beneath the reply. Display-only: absent on user
+   * rows, ignored by the cosine grep / local buffer / prompt builder. Persisted
+   * inside the turn's `inspector_json` blob and rehydrated on load.
+   */
+  summary?: TurnSummary;
 }
 
 /**
- * A constitutional memory — a curated, durable fact about the user. Its
- * `confidence` (0-100) is re-scored by the model every turn; `history` is the
- * append-only trail of those changes, rendered as a sparkline in the UI.
+ * A constitutional memory — a curated, durable fact about the user. Plain text
+ * the user adds / edits / deletes in the MemoryPanel. No model scoring: the
+ * former per-turn confidence grading was retired in favour of the per-turn
+ * `<turn-summary>` channel (see lib/prompt.ts). Curation of this tier stays
+ * entirely with the user — no model in its loop.
  */
 export interface Memory {
   id: string;
   text: string;
-  confidence: number;
-  history: MemoryHistoryEntry[];
 }
 
 /**
