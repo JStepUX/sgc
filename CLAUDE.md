@@ -16,10 +16,11 @@ Every turn, three memory tiers are assembled (client-side) into a single prompt
 and handed to one ephemeral reasoning instance:
 
 1. **Constitutional Memories** — a small, curated set of durable facts about the
-   user. Each carries a 0–100 confidence score. The user edits them in the UI;
-   the model re-scores them every turn (max ±5 per turn, clamped 0–100). They are
-   **scoped per chat** — each conversation owns its own set, a new chat starts
-   empty (no seeded defaults), and deleting a chat cascades its memories away.
+   user. Plain text the user edits/adds/deletes in the UI; **the model does not
+   score or grade them** (the former 0–100 per-turn confidence grading was
+   retired — see the turn-summary note below). They are **scoped per chat** —
+   each conversation owns its own set, a new chat starts empty (no seeded
+   defaults), and deleting a chat cascades its memories away.
 2. **Local Buffer** — the last 2 turns (4 messages) passed verbatim. Immediate
    context, no retrieval.
 3. **Cosine Grep ("Grepory")** — TF-IDF + cosine similarity search over *older*
@@ -37,8 +38,13 @@ and handed to one ephemeral reasoning instance:
 
 These feed **Sal**, an ephemeral reasoning instance that exists for exactly one
 turn, then is retired — it has no memory of prior turns. Sal responds in natural
-language, then emits a `<turn-meta>` block with updated confidence scores. In the
-base loop that's **one API call per turn**, total — streamed to the browser as
+language, then emits a `<turn-summary>` block: a fresh per-turn observation in
+three lists — `persistent` (true until explicitly changed), `volatile` (shifted
+this turn), `established_patterns` (behavioral rules demonstrated). It is **a
+display/observation surface, not memory** — it runs fresh each turn, is never fed
+back into the next prompt, and never accumulates. The UI renders it flattened to
+one dimmed line beneath the reply (and structured in the inspector). In the base
+loop that's **one API call per turn**, total — streamed to the browser as
 Server-Sent Events; the TF-IDF retrieval costs 0 ms and 0 tokens. (That
 single-call count is a guardrail, not the thesis — see Mission Brief.)
 

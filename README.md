@@ -14,13 +14,15 @@ reasoning instance:
 
 | Tier | What it is | Cost |
 |------|-----------|------|
-| **Constitutional Memories** | Curated, durable facts about the user, each with a 0–100 confidence score the model re-scores each turn | in-prompt |
+| **Constitutional Memories** | Curated, durable facts about the user — plain text the user edits; not model-scored | in-prompt |
 | **Local Buffer** | The last 2 turns, verbatim | in-prompt |
 | **Cosine Grep ("Grepory")** | TF-IDF + cosine similarity over older history — pure math, no model; individual turns can be gated out of retrieval in the chat memory editor | 0 ms, 0 tokens |
 
 These feed **Sal**, an ephemeral reasoning instance that exists for exactly one
-turn and is then retired. Sal replies in natural language and emits updated
-confidence scores. One API call per turn, total.
+turn and is then retired. Sal replies in natural language and emits a per-turn
+`<turn-summary>` (persistent / volatile / established_patterns) — a fresh
+observation surface, not memory: it runs fresh each turn and is never fed back.
+One API call per turn, total.
 
 Sal has no live web access of its own. The one way a page reaches a turn is a
 deterministic, SSRF-guarded **URL pre-fetch**: when the person pastes a link,
