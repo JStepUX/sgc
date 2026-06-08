@@ -5,7 +5,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeQuotes from './lib/rehype-quotes';
 import { MermaidBlock } from './components/MermaidBlock';
 import type { Memory, ChatEntry, FetchedDoc, TurnSummary } from './lib/types';
-import { LOCAL_BUFFER_SIZE } from './lib/constants';
+import { LOCAL_BUFFER_SIZE, SUMMARY_BUFFER_SIZE } from './lib/constants';
 import { searchScored } from './lib/time-score';
 import {
   DEFAULT_PERSONA,
@@ -1234,6 +1234,15 @@ export default function SalienceGatedCognition() {
       const localBuffer = chatLog.slice(-LOCAL_BUFFER_SIZE);
       turnData.localBufferSize = localBuffer.length;
 
+      // ---- SUMMARY BUFFER: the SUMMARY_BUFFER_SIZE entries JUST BEHIND the
+      // verbatim buffer, carried forward distilled (each turn's <turn-summary>
+      // in place of its raw text). Sliced so it ends exactly where the local
+      // buffer begins — no overlap, so it extends the awareness horizon rather
+      // than duplicating RECENT CONTEXT. buildPrompt filters these to the
+      // assistant entries that actually carry a non-empty summary.
+      const bufStart = Math.max(0, chatLog.length - LOCAL_BUFFER_SIZE);
+      const summaryWindow = chatLog.slice(Math.max(0, bufStart - SUMMARY_BUFFER_SIZE), bufStart);
+
       // ---- COSINE GREP + TIME SCORER: two-dimensional retrieval ----
       // searchScored runs the TF-IDF cosine engine (concept) and the time scorer
       // (recency / time-intent) and combines them multiplicatively. The cosine
@@ -1262,7 +1271,11 @@ export default function SalienceGatedCognition() {
       // Pass the turn instant into buildPrompt so retrieved turns get a
       // relative-time prefix ("3 hr ago" / "yesterday") computed against the
       // same reference the time scorer used.
-      const systemPrompt = buildPrompt(memories, localBuffer, grepResults.length > 0 ? grepResults : null, fetchedDocs, failedUrls, activePersona, turnStartedAt);
+      // The distilled summary window is passed as the final arg — the turns just
+      // behind the verbatim buffer, carried forward as their summaries. NOT passed
+      // to estimateNaiveContextTokens below: it's an SGC augmentation the naive
+      // "send everything" baseline wouldn't have, so it doesn't cancel there.
+      const systemPrompt = buildPrompt(memories, localBuffer, grepResults.length > 0 ? grepResults : null, fetchedDocs, failedUrls, activePersona, turnStartedAt, summaryWindow);
       const turnResult = await runTurn(
         systemPrompt,
         userInput,
@@ -1292,10 +1305,13 @@ export default function SalienceGatedCognition() {
       ]);
 
       // ---- APPEND TO PERSISTENT CHAT LOG ----
+      // The assistant entry carries its summary so a LATER turn's summary window
+      // can slice it from chatLog in-session (matching the reload path, where
+      // summaryFromInspector rehydrates it). The user entry has none.
       setChatLog((prev) => [
         ...prev,
         { role: 'user' as const, content: userInput, createdAt: turnStartedAt },
-        { role: 'assistant' as const, content: displayText, createdAt: turnStartedAt },
+        { role: 'assistant' as const, content: displayText, createdAt: turnStartedAt, summary: summary ?? undefined },
       ]);
 
       setTokenHistory((prev) => [...prev, { turn: newTurnNumber, inputTokens: turnData.inputTokens }]);

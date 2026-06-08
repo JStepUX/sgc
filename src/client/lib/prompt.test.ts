@@ -196,6 +196,57 @@ describe('buildPrompt', () => {
     expect(prompt).not.toContain('RETRIEVED HISTORY');
   });
 
+  // The distilled summary buffer carries the turns just behind the verbatim
+  // window — passed as ChatEntry[] (assistant entries with a `summary`). These
+  // key on the block header, distinct from the TURN SUMMARY instruction text.
+  const SUMMARY_BLOCK_MARKER = 'EARLIER CONTEXT (distilled';
+
+  it('renders the distilled summary buffer for turns behind the verbatim window', () => {
+    const window: ChatEntry[] = [
+      {
+        role: 'assistant',
+        content: 'reply',
+        createdAt: 0,
+        summary: {
+          persistent: ['lives in Sydney'],
+          volatile: ['comparing flights'],
+          established_patterns: ['asks for tests first'],
+        },
+      },
+    ];
+    const prompt = buildPrompt(memories, [], null, null, null, undefined, undefined, window);
+    expect(prompt).toContain(SUMMARY_BLOCK_MARKER);
+    expect(prompt).toContain('persistent: lives in Sydney');
+    expect(prompt).toContain('volatile: comparing flights');
+    expect(prompt).toContain('established patterns: asks for tests first');
+  });
+
+  it('renders one distilled line per summarized turn, oldest first (order preserved)', () => {
+    const window: ChatEntry[] = [
+      { role: 'assistant', content: 'a', createdAt: 0, summary: { persistent: ['fact A'], volatile: [], established_patterns: [] } },
+      { role: 'assistant', content: 'b', createdAt: 0, summary: { persistent: ['fact B'], volatile: [], established_patterns: [] } },
+    ];
+    const prompt = buildPrompt(memories, [], null, null, null, undefined, undefined, window);
+    const a = prompt.indexOf('fact A');
+    const b = prompt.indexOf('fact B');
+    expect(a).toBeGreaterThan(-1);
+    expect(b).toBeGreaterThan(a);
+  });
+
+  it('skips non-assistant / empty-summary entries and omits the block when none qualify', () => {
+    const userEntry: ChatEntry = { role: 'user', content: 'hi', createdAt: 0 };
+    const emptySummary: ChatEntry = {
+      role: 'assistant',
+      content: 'x',
+      createdAt: 0,
+      summary: { persistent: [], volatile: [], established_patterns: [] },
+    };
+    expect(
+      buildPrompt(memories, [], null, null, null, undefined, undefined, [userEntry, emptySummary]),
+    ).not.toContain(SUMMARY_BLOCK_MARKER);
+    expect(buildPrompt(memories, [], null)).not.toContain(SUMMARY_BLOCK_MARKER);
+  });
+
   it('includes the local buffer when present', () => {
     const buffer: ChatEntry[] = [{ role: 'user', content: 'hello there', createdAt: 0 }];
     const prompt = buildPrompt(memories, buffer, null);

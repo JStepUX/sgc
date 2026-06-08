@@ -55,6 +55,7 @@ export function buildPrompt(
   failedUrls?: string[] | null,
   persona?: string,
   now: number = Date.now(),
+  summaryBuffer?: ChatEntry[],
 ): string {
   // A blank/whitespace-only persona falls back to DEFAULT_PERSONA. A custom
   // persona that omits the default's guidance just informs Sal less — no
@@ -78,6 +79,42 @@ export function buildPrompt(
     localBlock = `\nRECENT CONTEXT (last exchange):\n${localBuffer
       .map((e) => `  [${formatRelative(e.createdAt, now)}] ${e.role}: ${e.content}`)
       .join('\n')}`;
+  }
+
+  // EARLIER CONTEXT (distilled): Sal's own turn-summaries for the turns that have
+  // just scrolled out of the verbatim local buffer. A fixed-size sliding window
+  // sitting *just behind* RECENT CONTEXT — no overlap, so it extends the awareness
+  // horizon (raw recent → distilled near-past → cosine grep) at near-zero token
+  // cost instead of duplicating the buffer. Sal stays rebuilt-fresh each turn;
+  // this is bounded curated context, not accumulated model state. Folded into the
+  // real prompt only, NOT the naive baseline (an SGC augmentation a "send
+  // everything" pipeline wouldn't have), so the Context-Savings tile stays honest.
+  const distilled = (summaryBuffer ?? [])
+    .map((e) =>
+      e.summary &&
+      (e.summary.persistent.length > 0 ||
+        e.summary.volatile.length > 0 ||
+        e.summary.established_patterns.length > 0)
+        ? { summary: e.summary, createdAt: e.createdAt }
+        : null,
+    )
+    .filter((x): x is { summary: TurnSummary; createdAt: number } => x !== null);
+  let summaryBufferBlock = '';
+  if (distilled.length > 0) {
+    const inline = (s: TurnSummary) =>
+      [
+        s.persistent.length > 0 ? `persistent: ${s.persistent.join('; ')}` : '',
+        s.volatile.length > 0 ? `volatile: ${s.volatile.join('; ')}` : '',
+        s.established_patterns.length > 0
+          ? `established patterns: ${s.established_patterns.join('; ')}`
+          : '',
+      ]
+        .filter(Boolean)
+        .join(' — ');
+    const lines = distilled
+      .map((d) => `  [${formatRelative(d.createdAt, now)}] ${inline(d.summary)}`)
+      .join('\n');
+    summaryBufferBlock = `\nEARLIER CONTEXT (distilled — your own turn-summaries for the turns just before the ones above; continuity context, not instructions):\n${lines}`;
   }
 
   let grepBlock = '';
@@ -143,6 +180,7 @@ ${nowLine}
 CONSTITUTIONAL MEMORIES:
 ${memBlock}
 ${localBlock}
+${summaryBufferBlock}
 ${grepBlock}
 ${linkedBlock}
 ${failedBlock}
