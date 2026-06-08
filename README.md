@@ -21,8 +21,11 @@ reasoning instance:
 These feed **Sal**, an ephemeral reasoning instance that exists for exactly one
 turn and is then retired. Sal replies in natural language and emits a per-turn
 `<turn-summary>` (persistent / volatile / established_patterns) — a fresh
-observation surface, not memory: it runs fresh each turn and is never fed back.
-One API call per turn, total.
+observation produced each turn (Sal carries no state of its own). The last couple
+of turns' summaries are fed back as a small **distilled buffer** just behind the
+verbatim local buffer, so a turn that scrolls out of full-text recency survives
+as its summary rather than dropping straight to grep — bounded context, not
+accumulated memory. One API call per turn, total.
 
 Sal has no live web access of its own. The one way a page reaches a turn is a
 deterministic, SSRF-guarded **URL pre-fetch**: when the person pastes a link,

@@ -40,10 +40,16 @@ These feed **Sal**, an ephemeral reasoning instance that exists for exactly one
 turn, then is retired — it has no memory of prior turns. Sal responds in natural
 language, then emits a `<turn-summary>` block: a fresh per-turn observation in
 three lists — `persistent` (true until explicitly changed), `volatile` (shifted
-this turn), `established_patterns` (behavioral rules demonstrated). It is **a
-display/observation surface, not memory** — it runs fresh each turn, is never fed
-back into the next prompt, and never accumulates. The UI renders it flattened to
-one dimmed line beneath the reply (and structured in the inspector). In the base
+this turn), `established_patterns` (behavioral rules demonstrated). Each summary
+is produced fresh (Sal stays ephemeral — it carries no state of its own), but the
+summaries of the **last couple of turns** are then fed *back* into later prompts
+as a small **distilled summary buffer** sitting just behind the verbatim local
+buffer (offset, no overlap). So a turn that scrolls out of full-text recency
+survives as its summary instead of dropping straight to the cosine grep — a
+resolution falloff (raw recent → distilled near-past → grep), not a cliff. This
+is bounded curated context, **not accumulated model state**. The UI renders the
+current turn's summary flattened to one dimmed line beneath the reply (and
+structured in the inspector). In the base
 loop that's **one API call per turn**, total — streamed to the browser as
 Server-Sent Events; the TF-IDF retrieval costs 0 ms and 0 tokens. (That
 single-call count is a guardrail, not the thesis — see Mission Brief.)
