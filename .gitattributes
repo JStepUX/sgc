@@ -1,0 +1,6 @@
+# Normalize every text file to LF, in the repo and the working tree.
+# Origin: a Windows-side whole-file rewrite once landed a CRLF source file
+# (src/client/lib/eval/fixtures.ts) that lit up `git diff --check` on every
+# line while its siblings were LF. This makes that class of error impossible
+# instead of asking anyone to be diligent about it (Core Value #3).
+* text=auto eol=lf

@@ -29,7 +29,7 @@ import type { ChatEntry } from '../types';
  * 2026-06-09 00:00:00 UTC — matches spec date; deliberately not
  * Date.now() so the suite is time-invariant.
  */
-export const FIXED_NOW: number = 1749427200000; // 2026-06-09T00:00:00.000Z
+export const FIXED_NOW: number = 1780963200000; // 2026-06-09T00:00:00.000Z
 
 // ---- Time helpers -------------------------------------------------
 
