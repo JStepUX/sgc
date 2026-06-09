@@ -41,6 +41,24 @@ ongoing visual conversation untouched so a memory isn't retroactively injected
 mid-scroll. SGC keeps `messages` (display) and `chatLog` (retrieval) as separate
 state; don't assume mutating one mirrors the other.
 
+## Known-gap synonymy probes need pure-synonym queries — no overlapping terms (retrieval eval harness, 2026-06-09)
+
+When authoring 'known-gap' probes for synonym coverage, the probe query must contain ONLY
+the synonym word with no terms that also appear in the planted fact. For example, a fact
+containing "boss approved budget proposal" will match a query of "manager approved budget
+proposal" on TF-IDF shared terms ('approved', 'budget', 'proposal') — that is NOT a synonym
+gap, it is an ordinary exact-term match. Redesign synonym queries to share zero vocabulary
+with the planted fact text; test against the fixture before declaring a gap.
+
+## Apostrophes in single-quoted TS string literals cause esbuild parse errors (retrieval eval harness, 2026-06-09)
+
+TypeScript fixture strings written as single-quoted literals must not contain apostrophes
+(e.g. `'Saturn's rings'`). esbuild terminates the string at the first `'` and fails with
+"Expected ')' but found 's'". Use double-quoted strings or remove the possessive form.
+The affected lines were in `src/client/lib/eval/fixtures.ts` — two instances fixed by
+dropping the possessive suffix. This does not affect retrieval behaviour because the
+apostrophised words were not the probe target terms.
+
 ## `npm audit` reports a pre-existing "critical" — don't `audit fix --force` it (mermaid add, 2026-06-02)
 
 After `npm install`, `npm audit` shows ~4 moderate + 1 critical. They all live in
