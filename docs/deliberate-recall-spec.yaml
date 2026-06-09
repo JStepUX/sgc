@@ -1,0 +1,325 @@
+spec: deliberate recall ("Remembering…" — Sal queries its own history mid-turn via a tool loop)
+status: proposed              # 2026-06-09 — raised with the developer and approved per Mission Brief ("raise it first"); build AFTER retrieval-eval-harness-spec.yaml
+date: 2026-06-09
+depends_on: docs/ignored/retrieval-eval-harness-spec.yaml   # implemented 2026-06-09 (archived) — the probe suite is the regression net for this change
+goal: >
+  Give Sal a `recall` tool that runs the SAME deterministic retrieval engine
+  (searchScored) mid-turn with a query Sal formulates — ambient retrieval stays
+  as-is; deliberate recall is added on top. Client-orchestrated tool loop (max
+  2 recall rounds), Anthropic provider only in v1. Rides along: an explicit
+  absence marker when ambient retrieval surfaces nothing, and matched-term
+  provenance on every retrieved fragment. All user-visible / Sal-visible naming
+  is diegetic: the tool is `recall`, the UI status is "Remembering…" — no
+  GREP_*/internal jargon on screen or in the prompt.
+
+invariant_check:
+  no_model_in_retrieval: ranking/threshold/ordering stay 100% searchScored — pure math, byte-identical engine. Sal authors only the QUERY (and may target a turn's neighbors). The model proposes; the math disposes. A model still never decides what a query MATCHES.
+  sal_ephemeral: the loop lives entirely WITHIN one turn — rounds share a conversation only for the duration of the turn, then the instance is retired as always. Nothing model-generated persists into any later turn's context via this feature.
+  one_call_per_turn: consciously amended, per Mission Brief ("a guardrail, not the law"). Worst case 1 + MAX_RECALL_ROUNDS = 3 calls per turn, only when Sal invokes recall. The guardrail's purpose (a model creeping into RETRIEVAL shows up as an extra call) is preserved: the extra calls here are the REASONING component pausing to ask the deterministic engine — raised 2026-06-09 and approved. CLAUDE.md update is build step 10.
+  web_access_unchanged: recall reaches the chat's own history ONLY. No web tools return; URL pre-fetch path untouched.
+  classification: model-upstream-of-deterministic-retrieval. NOT embedding/semantic search (still a phase change, still out of scope).
+
+naming:                        # immersion contract — single source of truth for copy
+  tool_name: recall            # what Sal sees
+  ui_status: "Remembering…"    # shown while a recall round-trip is in flight (U+2026 ellipsis)
+  inspector_label: "Deliberate recall"
+  rule: no internal jargon (grep/TF-IDF/cosine) in Sal-visible prompt text or user-visible chat UI. The inspector may stay technical — it's the diagnostic surface.
+
+current_state:
+  server_route:
+    file: src/server/index.ts
+    lines: 133-227              # TurnRequestBody {system, message, provider} + the SSE handler
+    note: body is a single prebuilt system + ONE user message string; SSE frames are delta/done/error only.
+  provider_contract:
+    file: src/server/providers.ts
+    lines: 26-40                # TurnChunk (delta|done) + TurnProvider.streamTurn(system, message, signal)
+    no_tools_note: lines 104-108 — "No tools are attached" comment documents the web-tools removal; this spec adds CLIENT-DEFINED tools passthrough, which is a different thing (no server-side tool scaffolding cost when unused).
+  client_transport:
+    file: src/client/lib/api.ts
+    lines: 98-206               # runTurn POSTs {system, message, provider}, parses delta/done/error SSE
+  turn_loop_call_site:
+    file: src/client/SalienceGatedCognition.tsx
+    lines: 1279-1287            # const turnResult = await runTurn(systemPrompt, userInput, onDelta, provider)
+    streaming_state: lines 924-927 (isProcessing, streamingText) — null streamingText + isProcessing → dot-pulse loader at lines 1586-1600
+    turn_data: lines 1213-1230  # TurnData literal — gains recall fields
+    persist: lines 1324-1336    # inspectorJson = JSON.stringify(turnData) — recalls ride along free
+  prompt_builder:
+    file: src/client/lib/prompt.ts
+    grep_block: lines 120-136   # fragment formatting — `[Turn N · when] User/Assistant:` — REUSE this exact format for tool results
+    task_tail: lines 188-211    # the persona-independent architectural tail — recall framing lands HERE (so custom personas can't drop it), conditionally
+    persona_web_honesty: lines 47-48  # "you cannot search or open pages yourself" — stays true; recall is history, not web. Add one clause distinguishing the two.
+  retrieval:
+    file: src/client/lib/time-score.ts
+    lines: 177-230              # searchScored — the recall executor calls this, same params as ambient
+  engine:
+    file: src/client/lib/tfidf.ts
+    lines: 120-174              # cosineSearch; GrepResult at 30-32 — gains optional matchedTerms (additive, pure)
+  turn_index_mapping:
+    note: turnIndex is 1-based over the pre-buffer searchable slice; chatLog indices are userIdx=(turnIndex-1)*2, assistIdx=userIdx+1 (see time-score.ts:199-208). Neighbor fetch uses this same mapping.
+  constants:
+    file: src/client/lib/constants.ts
+    note: LOCAL_BUFFER_SIZE = 4 — recall must exclude the same tail (those messages are already verbatim in context).
+
+resolved_decisions:
+  - id: D1-client-orchestrated-loop
+    decision: the tool loop runs in the BROWSER. Server gains only a dumb passthrough (messages array + tools array forwarded verbatim); it never sees a corpus, never executes a tool.
+    rationale: the corpus and the engine live client-side by design ("no memory logic server-side"). Server-side execution would either move the corpus to the server (architecture change) or have the server call back into the client (absurd). Each round = one POST/SSE cycle; between rounds the client runs searchScored locally (0 ms, 0 tokens).
+  - id: D2-anthropic-only-v1
+    decision: tools are attached only when the resolved provider is 'anthropic'. For 'openai' (LOCAL), no tools are sent and the prompt's recall framing is omitted — Sal-on-LOCAL behaves exactly as today.
+    rationale: OpenAI-compatible local servers have wildly inconsistent tool support. Never tell Sal about a tool it doesn't have (it would try). buildPrompt gains a recallEnabled flag so prompt and tool attachment toggle together from one value.
+  - id: D3-rounds-cap
+    decision: MAX_RECALL_ROUNDS = 2 (so ≤ 3 API calls per turn, worst case). On hitting the cap, the final round is sent WITHOUT tools so the model must answer.
+    rationale: bounds cost and latency; two recalls covers "search, then refine or pull neighbors". Constant exported next to LOCAL_BUFFER_SIZE for visibility.
+  - id: D4-tool-modes
+    decision: one tool, two modes — input {query?: string, around_turn?: number}, at least one required. `query` → searchScored. `around_turn` → deterministic fetch of turn N-1 and N+1 (the episode mechanic, on demand and bounded — NOT ambient episode retrieval, which was considered and rejected for unbounded context bloat).
+    rationale: neighbors answer "what was around that?" without a topic-shaped query; capped at ±1 turn per call, ≤ 2 calls — worst case 4 extra turns, never 16 butterfly turns.
+  - id: D5-dedup
+    decision: a per-turn Set of surfaced turnIndexes (seeded from ambient grepResults) filters every recall result; around_turn skips neighbors already in the local buffer / summary window and says so in the tool result.
+    rationale: recall must widen context, never duplicate it.
+  - id: D6-text-concatenation
+    decision: Sal's text across rounds concatenates (joined with '\n\n' when both sides non-empty) into the single displayed/persisted assistant message; parseTurnResponse runs on the full concatenation (the <turn-summary> contract binds the FINAL round).
+    rationale: one turn = one reply, however many pauses-to-remember it contained. The tail instructs Sal to keep pre-recall text minimal.
+  - id: D7-provenance-rides-along
+    decision: ship the absence marker + matched-term provenance in this spec (small prompt.ts/tfidf.ts deltas, same surfaces).
+    rationale: with recall available, "nothing surfaced" stops being a dead end and becomes actionable — the marker is what tells Sal to reach for the tool. Provenance lets Sal weigh a thin lexical match vs a strong one instead of trusting all retrieved turns equally.
+  - id: D8-error-handling
+    decision: an error in ANY round aborts the whole turn into the existing catch path (existing "I lost my place" bubble). No partial-turn salvage in v1.
+    rationale: simple and honest; partial salvage invites a half-reply with no turn-summary.
+
+design:
+  wire_protocol:
+    request_body: |
+      TurnRequestBody widens (back-compatible):
+        { system: string, provider?: ProviderId }
+        + EITHER message: string                       // existing form, still accepted
+        + OR     messages: WireMessage[]               // new form the recall loop uses
+        + tools?: WireTool[]                           // forwarded verbatim to the provider
+      WireMessage = { role: 'user' | 'assistant', content: string | ContentBlock[] }
+      ContentBlock = text | tool_use | tool_result (Anthropic block shapes; the server
+      validates only role/content presence + total size — it does NOT interpret blocks).
+    sse_frames: |
+      delta / done / error unchanged in shape, plus:
+        event: tool_use   data: { id: string, name: string, input: object }   // 0..n per round, emitted before done
+        done gains stopReason: 'end_turn' | 'tool_use' | string
+  providers:
+    file: src/server/providers.ts
+    changes: |
+      TurnChunk gains   { kind: 'tool_use'; id: string; name: string; input: unknown }
+      done chunk gains  stopReason: string
+      streamTurn signature → streamTurn(system, messages: WireMessage[], tools: WireTool[] | undefined, signal)
+      createAnthropicProvider: client.messages.stream({ system, messages, tools? }) — text deltas
+      stream as today via the 'text' event; after the stream, await finalMessage() and emit one
+      tool_use chunk per tool_use content block, then done with stop_reason. Update the lines
+      104-108 comment: server-side web tools stay gone; CLIENT-DEFINED tools pass through and
+      cost nothing when absent.
+      createOpenAIProvider: signature updated for uniformity; ignores tools entirely (D2 means
+      the client never sends them to it); joins messages into its existing prompt shape; always
+      reports stopReason 'end_turn'.
+      resolveTurnProvider: untouched.
+  server_route:
+    file: src/server/index.ts
+    changes: |
+      /api/turn: accept message OR messages (normalize message → [{role:'user',content:message}]);
+      validate tools is an array when present; forward both to provider.streamTurn. Map the new
+      tool_use chunk onto its SSE frame; include stopReason in done. NO other logic — the server
+      still doesn't know what `recall` is. Body limit stays 1mb.
+  client_transport:
+    file: src/client/lib/api.ts
+    changes: |
+      runTurn(systemPrompt, messages: WireMessage[], onDelta?, provider?, tools?: WireTool[])
+      TurnResult gains stopReason: string and toolUses: { id, name, input }[].
+      SSE dispatch handles the tool_use frame (accumulate into toolUses) and reads stopReason
+      from done. Existing single-message callers (none after this change) — processInput moves
+      to the loop below.
+  recall_executor:
+    file: src/client/lib/recall.ts
+    new: true
+    purpose: pure, testable execution of one recall tool call — NO React, NO network.
+    exported_api: |
+      export interface RecallInput { query?: string; around_turn?: number }
+      export interface RecallOutcome {
+        content: string;            // the tool_result text handed back to Sal
+        surfaced: number[];         // turnIndexes newly surfaced (for dedup set + inspector)
+        mode: 'query' | 'neighbors';
+      }
+      export function executeRecall(
+        input: RecallInput,
+        chatLog: ChatEntry[],
+        now: number,
+        alreadySurfaced: ReadonlySet<number>,
+      ): RecallOutcome;
+    behavior: |
+      query mode: searchScored(query, chatLog, now, { excludeLastN: LOCAL_BUFFER_SIZE, topK: 3,
+        threshold: 0.08 }) → drop results whose turnIndex ∈ alreadySurfaced → format remaining
+        with the SAME fragment format as the prompt grep block (lift the fragment formatter out
+        of buildPrompt into an exported formatGrepFragment(r, now) in prompt.ts; both call it).
+      neighbors mode: turnIndexes around_turn±1, clamped to the searchable range (1‥pre-buffer
+        turn count); skip gated halves (active === false), skip indexes ∈ alreadySurfaced, skip
+        turns inside the local buffer / summary window (note this in content: "that turn is
+        already in your recent context"). Format identically.
+      empty outcome (either mode): content = "Nothing came back for that — it may not exist in
+        this conversation's older history." — honest absence, no fabricated filler.
+      invalid input (neither field, both empty): same honest-empty content; never throws.
+  recall_loop:
+    file: src/client/lib/recall-loop.ts
+    new: true
+    purpose: the per-turn orchestrator — deterministic control flow, dependencies injected so it unit-tests without a server.
+    exported_api: |
+      export const MAX_RECALL_ROUNDS = 2;
+      export interface RecallEvent { round: number; input: RecallInput; matches: number }
+      export interface TurnWithRecallResult {
+        text: string;               // concatenated across rounds (D6)
+        inputTokens: number;        // summed across rounds
+        outputTokens: number;       // summed across rounds
+        elapsed: number;
+        recalls: RecallEvent[];
+      }
+      export async function runTurnWithRecall(opts: {
+        systemPrompt: string;
+        userMessage: string;
+        tools: WireTool[] | null;   // null → single round, no tools (LOCAL / recall disabled)
+        provider?: ProviderId;
+        onDelta: (textSoFar: string) => void;        // receives the cross-round concatenation
+        onStatus: (status: 'streaming' | 'remembering') => void;
+        executeTool: (input: RecallInput, surfaced: ReadonlySet<number>) => RecallOutcome;
+        callTurn?: typeof runTurn;  // injectable for tests
+      }): Promise<TurnWithRecallResult>;
+    behavior: |
+      round loop: call runTurn with messages-so-far (+ tools unless final permitted round, per D3);
+      on stopReason 'tool_use' → onStatus('remembering') → executeTool per tool_use block →
+      append the assistant content blocks + a user message of tool_result blocks → next round →
+      onStatus('streaming') on first delta. Any round rejecting → the whole promise rejects (D8).
+      The dedup Set lives here, seeded by the caller via executeTool's closure or an init arg.
+  tool_definition:               # client-defined, attached per D2 — Sal-facing text, keep diegetic
+    name: recall
+    description: |
+      Reach back through the older history of this conversation for something specific. Use it
+      when retrieved history hints there is more, when the person refers to something you can't
+      see, or when nothing surfaced but the topic feels like it has roots here. Search with
+      `query`: a few distinctive words (names, places, terms) likely to appear in the original
+      exchange — not a full sentence. Or pass `around_turn` with a turn number you've already
+      seen to read what was said just before and after it. Results are excerpts from this same
+      conversation. If nothing comes back, the memory likely isn't there — say so rather than
+      guessing.
+    input_schema: |
+      { type: 'object', properties: {
+          query: { type: 'string', description: 'a few distinctive words to search the older history for' },
+          around_turn: { type: 'integer', description: 'a turn number already shown to you — returns its immediate neighbors' } },
+        required: [] }            # at-least-one enforced by executeRecall's honest-empty, not schema
+  prompt_changes:
+    file: src/client/lib/prompt.ts
+    recall_framing: |
+      buildPrompt gains recallEnabled?: boolean (default false). When true, the ARCHITECTURAL
+      TAIL (not the persona — custom personas must not be able to drop it) gains, before YOUR TASK:
+        "Older history surfaces beside you when the current topic stirs it; a topic that is new
+         here may stir nothing. When you sense there is more to remember — a name, a detail, a
+         thread the person expects you to hold — reach for it with the recall tool before you
+         answer. Keep any text before a recall brief; recall first, then respond. If recall
+         returns nothing, trust that and say plainly that you don't have it."
+      When false: tail byte-identical to today.
+    persona_clause: |
+      DEFAULT_PERSONA web-honesty sentence (line ~47) gains one clause so the two retrieval
+      worlds can't be confused: "...you cannot search or open pages yourself — though this
+      conversation's own older history is yours to reach back into."  (Only meaningful when
+      recallEnabled; harmless when not — the tail governs capability.)
+    absence_marker: |
+      Today an empty grep yields NO block at all. New behavior (both recallEnabled states):
+        - older history EXISTS beyond buffers but nothing cleared threshold →
+          "RETRIEVED HISTORY: (nothing from older history surfaced for this turn's topic)"
+          + when recallEnabled, append: " — if something feels missing, recall for it."
+        - chat has NO history beyond the buffers → no block (today's behavior; nothing to be
+          honest about).
+      Requires buildPrompt to know older history exists: add hasOlderHistory?: boolean param,
+      computed at the call site as chatLog.length > LOCAL_BUFFER_SIZE + SUMMARY_BUFFER_SIZE.
+    provenance: |
+      Fragment prefix gains matched terms: `[Turn N · 3 days ago · via "maren, glassblowing"]`.
+      Reads from ScoredResult.matchedTerms (below). Same prefix in recall tool results (shared
+      formatGrepFragment). Term list is lowercase post-tokenization vocabulary — acceptable;
+      it's provenance, not prose.
+  engine_changes:
+    file: src/client/lib/tfidf.ts
+    change: |
+      GrepResult gains matchedTerms: string[] — top 3 shared terms by contribution
+      (queryVec[t] * docVec[t], descending) computed inside cosineSearch where both TF-IDF
+      vectors are in scope. Additive and pure; existing fields/ordering byte-identical.
+      time-score.ts forwards it onto ScoredResult.
+    tests: tfidf.test.ts — matchedTerms contains the planted rare term for an exact-match query; empty for empty-overlap; capped at 3.
+  state_and_ui:
+    file: src/client/SalienceGatedCognition.tsx
+    changes: |
+      - turnStatus state: 'streaming' | 'remembering' | null (replaces nothing — sits beside
+        streamingText). The dot-pulse loader block (lines 1586-1600) additionally renders the
+        quiet status line when turnStatus === 'remembering': the string "Remembering…" in the
+        existing muted-meta style (font-mono text-[10.5px] tracking-wide text-fg-3, gentle
+        opacity pulse). It appears UNDER any already-streamed round-1 text — the partial reply
+        stays visible while Sal remembers.
+      - processInput: seed dedup Set from ambient grepResults' turnIndexes; call
+        runTurnWithRecall instead of runTurn, with tools = (provider === 'anthropic')
+        ? [RECALL_TOOL] : null and recallEnabled/hasOlderHistory threaded into buildPrompt.
+      - TurnData gains recalls: RecallEvent[] and apiCalls: number — inspector tile
+        "Deliberate recall" renders query/around_turn + match count per round; token tiles show
+        summed tokens (already do — values are summed upstream). naiveTokens baseline unchanged
+        (recall is an SGC capability the naive pipeline lacks; do NOT fold tool rounds into it).
+      - tokenHistory entry: summed inputTokens (no shape change).
+  persistence: no schema change. displayText (concatenated) persists as the assistant turn; recalls ride inside inspector_json automatically (lines 1324-1336).
+  claude_md_update:
+    file: CLAUDE.md
+    change: Mission Brief gains one sentence under the guardrail bullet — deliberate recall (this spec) is the sanctioned tool-loop case: ≤ 3 calls/turn, retrieval still deterministic, raised + approved 2026-06-09.
+
+out_of_scope:
+  - repetition / usage-based salience factor — separate spec; recall events are a natural future input to it (a deliberate recall is the strongest rehearsal signal), noted here so the data lands in inspector_json from day one.
+  - recall across OTHER chats — cross-chat memory is a phase question, not a parameter.
+  - tools on the LOCAL provider — revisit when a local server with reliable tool support is actually in use (friction-driven).
+  - ambient episode retrieval — rejected (unbounded context bloat); around_turn IS the bounded replacement.
+  - embedding/semantic retrieval — still a phase change, still requires its own raise.
+  - retry/salvage of a failed mid-loop round (D8) — add only if real friction shows up.
+  - streaming UI for tool_use input deltas — the input JSON is small; arrives whole with the frame.
+
+build_sequence:
+  - step: 1
+    target: src/client/lib/tfidf.ts (+ tfidf.test.ts)
+    do: matchedTerms on GrepResult + tests. Forward through ScoredResult in time-score.ts. Run npm test (eval harness from the prior spec must stay green — it pins ranking behavior).
+  - step: 2
+    target: src/client/lib/prompt.ts (+ prompt.test.ts)
+    do: lift formatGrepFragment; absence marker (+ hasOlderHistory param); provenance prefix; recallEnabled tail block + persona clause. Tests for - marker present/absent per hasOlderHistory, tail present only when recallEnabled, fragment provenance rendering.
+  - step: 3
+    target: src/server/providers.ts
+    do: TurnChunk/streamTurn deltas; anthropic tool_use streaming; openai messages-join. Keep resolveTurnProvider tests green.
+  - step: 4
+    target: src/server/index.ts
+    do: message|messages normalization, tools passthrough, tool_use SSE frame, stopReason on done.
+  - step: 5
+    target: src/client/lib/api.ts
+    do: runTurn messages/tools signature + tool_use/stopReason parsing.
+  - step: 6
+    target: src/client/lib/recall.ts (+ recall.test.ts)
+    do: executeRecall both modes — dedup, gating respected, buffer-resident neighbor skip, honest-empty strings. Behavioural tests, no mocks (fixtures from the eval harness are reusable here).
+  - step: 7
+    target: src/client/lib/recall-loop.ts (+ recall-loop.test.ts)
+    do: runTurnWithRecall with injected callTurn — tests cover - no-tool single round; one recall round; cap behavior (final round sent without tools); error propagation (D8); token summing; status callback ordering.
+  - step: 8
+    target: src/client/SalienceGatedCognition.tsx
+    do: turnStatus state + "Remembering…" status line; processInput swap to runTurnWithRecall; TurnData.recalls + inspector "Deliberate recall" tile.
+  - step: 9
+    target: manual smoke
+    do: |
+      - Plant a fact ~10 turns back, open a fresh topic referencing it obliquely so ambient grep misses → Sal recalls (status line shows "Remembering…"), answers with the fact; inspector shows the round + query + tokens summed.
+      - Ask about something never discussed → absence marker in prompt; Sal says it doesn't have it WITHOUT recalling, or recalls once and gets the honest-empty.
+      - around_turn: ask "what else did we say around that?" after a retrieval → neighbors surface, no duplicates of already-shown turns.
+      - LOCAL provider selected → no tools sent, no recall framing in prompt (inspect systemPrompt), behavior identical to today.
+  - step: 10
+    target: CLAUDE.md
+    do: Mission Brief guardrail amendment (see design.claude_md_update).
+  - step: 11
+    target: QA
+    do: /pre-commit-qa — full npm test (tfidf + prompt + recall + recall-loop + eval harness), typecheck client+server, lint, the step-9 smoke evidence.
+
+surprises_to_log:
+  - file: AGENTS.md
+    entry_if_anything_surprises: |
+      Title pattern: "## <Short scannable title> (deliberate recall, 2026-06-09)"
+      Candidates to watch for:
+        - Anthropic SDK stream event shapes for tool_use input deltas (input_json_delta accumulation — prefer finalMessage() over hand-assembling)
+        - token accounting across rounds (each round bills its own input; the summed number on the chart will be visibly larger on recall turns — expected, document in inspector copy if confusing)
+        - Sal recalling redundantly when the answer is already in RECENT CONTEXT (tune the tail copy "recall first, then respond" if over-triggering appears)
+        - stop-word tokenization making short recall queries return nothing (the tool description steers toward distinctive words; watch real usage)
