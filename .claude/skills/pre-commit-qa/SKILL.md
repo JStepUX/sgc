@@ -2,15 +2,16 @@
 name: pre-commit-qa
 description: >
   A mandatory quality gate that enforces verification, documentation, spec
-  archival, and commit hygiene after any implementation work. Use this skill
-  whenever code changes are complete and about to be committed — trigger on
-  phrases like "I'm done", "ready to commit", "finished implementing", "task
-  complete", "wrap up", "ship it", "PR ready", or any signal that implementation
-  is finished and the work is moving toward version control. Also trigger when
-  reviewing someone else's completed work before merge. This skill should fire
-  even if the user doesn't explicitly ask for a quality check — if implementation
-  just finished, this gate applies. Do NOT skip steps. Do NOT self-certify.
-  Every item requires evidence.
+  archival, and commit hygiene before work lands in version control. This skill
+  is invoked by the DEVELOPER only — NEVER proactively by the agent, no matter
+  how finished the implementation looks. The developer routinely interposes a
+  cross-model peer review (Codex) between "implementation finished" and "ready
+  to land"; an agent-initiated gate commits unreviewed work and forces a second
+  landing pass. When implementation finishes: verify (tests/typecheck/lint),
+  present the work, and WAIT. The developer running /pre-commit-qa IS the
+  commit order — once invoked, walk every gate with evidence and, if all pass,
+  proceed to commit without further approval pauses. Do NOT skip steps. Do NOT
+  self-certify. Every item requires evidence.
 ---
 
 # Pre-Commit Quality Assurance Gate
@@ -108,7 +109,10 @@ directory is already correct and `Bash(git:*)` is pre-approved in
 unnecessary approval prompts.
 
 **Evidence required:** List the planned commits with their messages before
-executing them. The developer should approve the commit plan.
+executing them — as documentation, not as a checkpoint. The developer invoking
+this skill IS the approval; do not pause for plan sign-off. The developer does
+not review commit structure after the fact, so a reasonable logical split beats
+a perfect one — decide and proceed.
 
 ---
 

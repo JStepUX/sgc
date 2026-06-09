@@ -196,7 +196,20 @@ review workflow that benefits from feature branches, and stray branches turn int
 "compare & pull request" banners on GitHub. Single linear history on `main` is
 the convention.
 
-`git commit` is gated. Run the `/pre-commit-qa` skill when work is ready; it
-walks a checklist and, only if every item passes, writes the marker that
-unlocks commits for the next 10 minutes. Use bare `git` commands (no `cd`
-prefix) so the pre-approved `Bash(git:*)` permission matches.
+`git commit` is gated, and the gate is **developer-invoked only** — never run
+`/pre-commit-qa` proactively, even when implementation is plainly finished. The
+developer usually interposes a cross-model peer review (Codex) between
+"implementation done" and "ready to land"; an early gate commits unreviewed
+work and forces a second landing pass (QA ceremony, changelog amendments,
+re-walked gates) once review findings come back. The loop:
+
+1. implement → verify (tests / typecheck / lint — **no gate**) → present
+2. developer reviews (often Codex; findings return as "critically interrogate")
+3. interrogate → harden → verify again → present, leaving the tree dirty
+4. developer runs `/pre-commit-qa` — that invocation IS the commit order
+5. walk the gates with evidence; if all pass, commit **without further
+   approval pauses** (the developer doesn't review commit structure; a
+   reasonable logical split beats a perfect one)
+
+The skill writes a marker that unlocks commits for 10 minutes. Use bare `git`
+commands (no `cd` prefix) so the pre-approved `Bash(git:*)` permission matches.
