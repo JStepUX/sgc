@@ -68,7 +68,7 @@ on the local path.
 | Command | Does |
 |---------|------|
 | `npm run dev` | Client + server, hot-reloading |
-| `npm test` | Vitest — covers the TF-IDF engine |
+| `npm test` | Vitest — TF-IDF engine, time scorer, retrieval eval probes |
 | `npm run typecheck` | `tsc` on client and server |
 | `npm run lint` | ESLint |
 | `npm run build` | Production build into `dist/` |

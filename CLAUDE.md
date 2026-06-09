@@ -100,8 +100,11 @@ src/client/
     utils.ts                  cn() — Tailwind-aware class-name merge
     tfidf.ts                  the TF-IDF cosine engine ("Grepory") — pure, deterministic
     tfidf.test.ts             Vitest behavioral tests for the engine
+    time-score.ts             time scorer + searchScored orchestrator (concept × time)
     prompt.ts                 system-prompt builder + response parser
     api.ts                    runTurn() — POSTs to /api/turn
+    eval/                     retrieval eval harness — planted-fact fixtures + probes
+                              replayed through searchScored, ratcheted recall@3 / MRR
 src/server/
   index.ts                    Express proxy — holds ANTHROPIC_API_KEY, one route
 docs/
@@ -135,7 +138,11 @@ retired.)
   `@anthropic-ai/sdk`, one route (`POST /api/turn`); model defaults to
   `claude-opus-4-7`, overridable via the `ANTHROPIC_MODEL` env var.
 - **Tests:** Vitest. The TF-IDF engine (`lib/tfidf.ts`) is pure logic and the
-  prime test target — see `lib/tfidf.test.ts`.
+  prime test target — see `lib/tfidf.test.ts`. Retrieval *quality* has its own
+  instrument: `lib/eval/` replays planted-fact fixtures through `searchScored`
+  and ratchets recall@3 / MRR; `known-gap` probes document the synonymy limits
+  and fail loudly if a change closes one (promote them to `pass` when that
+  happens). Turn-score changes must keep this suite green.
 - **Run it:** `npm install`, then `cp .env.example .env` and add an
   `ANTHROPIC_API_KEY`, then `npm run dev`. That runs the Vite client (`:5555`)
   and the Express proxy (`:3000`) together via `concurrently`; Vite proxies
