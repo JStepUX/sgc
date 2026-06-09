@@ -39,6 +39,14 @@ export interface Probe {
   expectTurns: number[];
   /** turnIndexes that MUST NOT appear in results (any expectation). */
   forbidTurns?: number[];
+  /**
+   * 1-based turnIndex that must be the TOP-RANKED result (got[0]). Set this on
+   * probes whose category contract is ORDERING (time-intent anchoring, default
+   * recency) — membership assertions alone let a rank regression pass, and the
+   * aggregate MRR ratchet absorbs a single slip to rank 2-3 without failing.
+   * Only meaningful with expectation 'pass'.
+   */
+  expectTopTurn?: number;
   expectation: 'pass' | 'known-gap';
   /** Why this probe exists, or what limitation it documents. */
   note?: string;
@@ -179,6 +187,7 @@ export const PROBES: Probe[] = [
     fixture: 'temporal',
     query: 'what did I say yesterday about tiling the bathroom',
     expectTurns: [5],
+    expectTopTurn: 5,
     expectation: 'pass',
     note: "Intent anchor ~daysAgo(1); turn 5 (bathroom/grout, daysAgo(1)) should outrank turn 3 (adhesive, daysAgo(7)) and turn 1 (kiln, daysAgo(30)) by combined score.",
   },
@@ -194,6 +203,7 @@ export const PROBES: Probe[] = [
     fixture: 'temporal',
     query: 'ceramic tile',
     expectTurns: [5],
+    expectTopTurn: 5,
     expectation: 'pass',
     note: "No time intent; turn 5 (daysAgo(1)) should have the highest combined score because default recency decay favours it over turns 3 (daysAgo(7)) and 1 (daysAgo(30)).",
   },

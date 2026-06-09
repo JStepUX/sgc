@@ -120,6 +120,15 @@ describe('retrieval probes', () => {
             `[${probe.id}] turnIndex ${ti} must NOT surface — query: "${probe.query}"`,
           ).not.toContain(ti);
         }
+        // Rank-sensitive categories pin the top result: a regression that
+        // demotes the expected turn to rank 2-3 still satisfies toContain and
+        // survives the aggregate MRR ratchet, so it must fail HERE.
+        if (probe.expectTopTurn !== undefined) {
+          expect(
+            got[0],
+            `[${probe.id}] expected turnIndex ${probe.expectTopTurn} at rank 1, got [${got.join(', ')}] — query: "${probe.query}"`,
+          ).toBe(probe.expectTopTurn);
+        }
       } else {
         // 'known-gap': expected turns must NOT be present.
         for (const ti of probe.expectTurns) {
