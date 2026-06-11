@@ -21,12 +21,15 @@ import {
   listChats as apiListChats,
   loadChat as apiLoadChat,
   saveMemories as apiSaveMemories,
+  savePromptVersion as apiSavePromptVersion,
   saveTurn as apiSaveTurn,
   type ChatSummary,
+  type PromptVersion,
   type TurnActiveState,
 } from './lib/persistence';
 import { ChatHistoryModal } from './components/ChatHistoryModal';
 import { ConfirmPersonaModal } from './components/ConfirmPersonaModal';
+import { PromptEditorModal } from './components/PromptEditorModal';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -347,9 +350,25 @@ interface MemoryPanelProps {
   onUpdate: (id: string, newText: string) => void;
   onAdd: (text: string) => void;
   onRemove: (id: string) => void;
+  // The live system-prompt version label + a handler to open the editor. Passed
+  // as primitives (number + stable callback) rather than a ReactNode so this
+  // memoized panel still skips re-renders during streaming / typing.
+  promptVersionN: number;
+  onOpenPromptEditor: () => void;
+  // Disabled until the active chat id is ready (pre-hydration / mid chat-swap /
+  // hydration failure) — there'd be no chat to scope the edit to.
+  promptEditorDisabled: boolean;
 }
 
-const MemoryPanel = memo(function MemoryPanel({ memories, onUpdate, onAdd, onRemove }: MemoryPanelProps) {
+const MemoryPanel = memo(function MemoryPanel({
+  memories,
+  onUpdate,
+  onAdd,
+  onRemove,
+  promptVersionN,
+  onOpenPromptEditor,
+  promptEditorDisabled,
+}: MemoryPanelProps) {
   const [newMemText, setNewMemText] = useState('');
 
   const submitNew = () => {
@@ -361,7 +380,23 @@ const MemoryPanel = memo(function MemoryPanel({ memories, onUpdate, onAdd, onRem
 
   return (
     <section className="flex flex-col gap-2.5">
-      <div className={RAIL_LABEL}>Constitutional Memories</div>
+      {/* Header: section label + the System Prompt editor button (top-right). */}
+      <div className="mb-1 flex items-center justify-between gap-2.5">
+        <span className="font-mono text-[11px] tracking-[0.18em] uppercase text-fg-3">
+          Constitutional Memories
+        </span>
+        <button
+          type="button"
+          onClick={onOpenPromptEditor}
+          disabled={promptEditorDisabled}
+          aria-label="Edit this chat's system prompt"
+          className="shrink-0 whitespace-nowrap rounded-md border border-hairline-strong px-2.5 py-1.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-ember transition-colors hover:border-ember/60 hover:bg-ember/[0.08] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-hairline-strong disabled:hover:bg-transparent"
+        >
+          <span className="text-fg-4">[</span> System Prompt{' '}
+          <span className="text-fg-2">v{promptVersionN}</span>{' '}
+          <span className="text-fg-4">]</span>
+        </button>
+      </div>
 
       <div className="flex flex-col gap-2.5">
         {memories.map((mem, i) => (
@@ -942,6 +977,11 @@ export default function SalienceGatedCognition() {
   const [activePersona, setActivePersona] = useState<string>(DEFAULT_PERSONA);
   const [activeMask, setActiveMask] = useState<string>('');
   const [personaModalOpen, setPersonaModalOpen] = useState(false);
+  // Edit history of the active chat's persona (newest-first; head = live). Empty
+  // until the prompt is first edited — the editor synthesises a baseline from
+  // `activePersona` in that case. Hydrated alongside persona on load/switch.
+  const [promptVersions, setPromptVersions] = useState<PromptVersion[]>([]);
+  const [promptEditorOpen, setPromptEditorOpen] = useState(false);
   // Has the initial hydration completed? Guards the memory-save effect from
   // firing on mount (with the empty placeholder set) before the active chat's
   // memories have loaded.
@@ -1052,6 +1092,7 @@ export default function SalienceGatedCognition() {
           // Restore the chat's persona (null → DEFAULT_PERSONA) + display mask.
           setActivePersona(detail.persona?.trim() ? detail.persona : DEFAULT_PERSONA);
           setActiveMask(detail.mask ?? '');
+          setPromptVersions(detail.versions);
           if (detail.latestInspector) {
             setLatestTurn(detail.latestInspector as TurnData);
           }
@@ -1164,6 +1205,33 @@ export default function SalienceGatedCognition() {
     memoriesDirtyRef.current = true;
     setMemories((prev) => prev.filter((m) => m.id !== id));
   }, []);
+
+  // Stable opener for the prompt editor (kept referentially stable so the
+  // memoized MemoryPanel doesn't re-render on every parent tick).
+  const handleOpenPromptEditor = useCallback(() => setPromptEditorOpen(true), []);
+
+  // Save a new live version of the active chat's system prompt. The server mints
+  // a new head, freezes the pre-edit baseline as v1 on the first edit (via
+  // `baselineText`), and mirrors the head into the live persona. We then adopt
+  // the fresh history + drive the NEXT turn with the new live text (buildPrompt
+  // reads activePersona). Errors propagate to the modal, which surfaces them.
+  //
+  // No active chat → THROW, never silently resolve. A resolved onSave is the
+  // modal's success signal (it clears the dirty state), so returning here would
+  // report a save that never persisted. This also closes the chat-swap window:
+  // startNewChat nulls chatId before the new id arrives (see below), so a save
+  // mid-swap surfaces an error instead of writing to the outgoing chat. The UI
+  // also disables the opener while chatId is null, so this should never fire —
+  // it's the explicit backstop behind that guard.
+  const handleSavePromptVersion = useCallback(
+    async (text: string, baselineText: string) => {
+      if (!chatId) throw new Error('No active chat yet — wait a moment and try again.');
+      const { versions } = await apiSavePromptVersion(chatId, text, baselineText);
+      setPromptVersions(versions);
+      if (versions[0]) setActivePersona(versions[0].text);
+    },
+    [chatId],
+  );
 
   // `text` is the trimmed draft the composer passed up. The composer also
   // pre-checks `submitDisabled`, but we keep the guard here as a belt to
@@ -1358,7 +1426,16 @@ export default function SalienceGatedCognition() {
   // and resolves to DEFAULT_PERSONA at build time.
   const startNewChat = useCallback(async (persona?: string, mask?: string) => {
     // Flush any pending edit to the OUTGOING chat before we clear the set.
+    // (flushPendingMemorySave reads chatIdRef synchronously, so it still sees the
+    // outgoing id even though we null chatId on the next line.)
     flushPendingMemorySave();
+    // Null the active chat for the duration of the create round-trip. We set the
+    // NEW chat's persona/versions below before apiCreateChat resolves; without
+    // this, chatId would still point at the OUTGOING chat during that window, so
+    // a prompt save mid-swap (or any chatId-scoped write) would target the wrong
+    // chat with the new chat's state. "No active chat" until the new id lands is
+    // the honest state — the composer + prompt editor already disable on it.
+    setChatId(null);
     setChatLog([]);
     setMessages([]);
     setLatestTurn(null);
@@ -1374,6 +1451,9 @@ export default function SalienceGatedCognition() {
     const resolvedMask = mask?.trim() ?? '';
     setActivePersona(resolvedPersona);
     setActiveMask(resolvedMask);
+    // A new chat has no prompt edit history yet — the editor synthesises a
+    // baseline from the persona above until the first edit lands.
+    setPromptVersions([]);
     // Clear + refocus the composer's textarea (it owns its own input state).
     setComposerResetSignal((s) => s + 1);
     try {
@@ -1444,6 +1524,7 @@ export default function SalienceGatedCognition() {
       // Restore the chat's persona (null → DEFAULT_PERSONA) + display mask.
       setActivePersona(detail.persona?.trim() ? detail.persona : DEFAULT_PERSONA);
       setActiveMask(detail.mask ?? '');
+      setPromptVersions(detail.versions);
       setChatId(id);
       setHistoryOpen(false);
     } catch (err) {
@@ -1622,6 +1703,9 @@ export default function SalienceGatedCognition() {
               onUpdate={handleMemoryUpdate}
               onAdd={handleMemoryAdd}
               onRemove={handleMemoryRemove}
+              promptVersionN={promptVersions.length > 0 ? promptVersions[0].n : 1}
+              onOpenPromptEditor={handleOpenPromptEditor}
+              promptEditorDisabled={!chatId}
             />
             <TurnInspector turnData={latestTurn} />
             <TokenChart tokenHistory={tokenHistory} />
@@ -1647,6 +1731,14 @@ export default function SalienceGatedCognition() {
         defaultPersona={DEFAULT_PERSONA}
         onConfirm={confirmPersona}
         onCancel={() => setPersonaModalOpen(false)}
+      />
+
+      <PromptEditorModal
+        open={promptEditorOpen}
+        onClose={() => setPromptEditorOpen(false)}
+        livePersona={activePersona}
+        versions={promptVersions}
+        onSave={handleSavePromptVersion}
       />
     </div>
   );

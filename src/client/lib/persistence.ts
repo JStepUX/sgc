@@ -35,6 +35,16 @@ export interface ChatTurn {
   timeless: boolean;
 }
 
+/** One frozen entry in a chat's system-prompt edit history. `n` is a stable,
+ *  monotonically-increasing per-chat label; the head (max n / versions[0]) is
+ *  the live prompt. Forward-only — saving always mints a new head. */
+export interface PromptVersion {
+  id: number;
+  n: number;
+  text: string;
+  createdAt: number;
+}
+
 /** Raw /api/chats/:id payload. Memories arrive as plain {id, text} rows — they
  *  are already the domain `Memory` shape (no scoring, no history). */
 interface ChatDetailWire {
@@ -45,6 +55,7 @@ interface ChatDetailWire {
   persona: string | null;
   mask: string | null;
   memories: { id: string; text: string }[];
+  versions: PromptVersion[];
 }
 
 export interface ChatDetail {
@@ -53,12 +64,16 @@ export interface ChatDetail {
   turns: ChatTurn[];
   /** Parsed TurnData JSON from the chat's latest assistant turn (server-decoded). */
   latestInspector: unknown | null;
-  /** Per-chat system-prompt persona. null → resolve DEFAULT_PERSONA at build time. */
+  /** Per-chat system-prompt persona — the LIVE prompt. null → resolve
+   *  DEFAULT_PERSONA at build time. Mirrors versions[0].text when versions exist. */
   persona: string | null;
   /** Display-only assistant mask. null/'' → "Sal". Never sent to the model. */
   mask: string | null;
   /** This chat's constitutional memories — plain durable facts (id/text). */
   memories: Memory[];
+  /** Edit history of the persona, newest-first. Empty when never edited (the UI
+   *  synthesises a baseline from `persona`). versions[0] is the live prompt. */
+  versions: PromptVersion[];
 }
 
 export interface SaveTurnArgs {
@@ -112,7 +127,27 @@ export async function loadChat(id: string): Promise<ChatDetail> {
     persona: wire.persona,
     mask: wire.mask,
     memories: wire.memories,
+    // Tolerate an older server that predates versioning by defaulting to [].
+    versions: wire.versions ?? [],
   };
+}
+
+// Append a new live version of this chat's system prompt (persona). Forward-only:
+// the server mints a new head and mirrors it into the live persona, returning the
+// fresh history (newest-first). `baselineText` is the pre-edit live prompt — the
+// server uses it ONLY to freeze the original as v1 on the chat's first edit
+// (DEFAULT_PERSONA is client-side, so the baseline can't be resolved server-side).
+export function savePromptVersion(
+  chatId: string,
+  text: string,
+  baselineText?: string,
+): Promise<{ versions: PromptVersion[] }> {
+  const body: { text: string; baselineText?: string } = { text };
+  if (baselineText !== undefined) body.baselineText = baselineText;
+  return jsonFetch<{ versions: PromptVersion[] }>(
+    `/api/chats/${encodeURIComponent(chatId)}/prompt-versions`,
+    { method: 'POST', body: JSON.stringify(body) },
+  );
 }
 
 /**
