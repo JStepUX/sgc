@@ -93,6 +93,7 @@ src/client/
     ChatHistoryModal.tsx      history list + (editor mode) the rail
     ChatMemoryEditor.tsx      per-turn cosine-grep gating editor (4-col card grid)
     ConfirmPersonaModal.tsx   per-chat persona (system prompt) + optional mask, set at "Begin again"
+    PromptEditorModal.tsx     edit THIS chat's persona mid-chat, forward-only version history
     MermaidBlock.tsx          lazy-loaded mermaid code blocks → themed SVG; streaming-gated, code-block fallback
     ui/                       shadcn/ui primitives (button, card)
   lib/

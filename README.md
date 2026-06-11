@@ -40,11 +40,14 @@ curated-tier context. See `CLAUDE.md` → Mission Brief.
 
 Sal's persona — the head of the per-turn system prompt — is editable **per
 chat**: "Begin again" opens a Confirm Persona step where you can rewrite it and
-set an optional display-only name (a "mask") for the assistant's turns. This
-lets several personas be tested against the same architecture without editing
-source. It changes only *what* the system prompt says, not how memory works:
-the mask is cosmetic and never reaches the model, and choosing a persona
-involves no model — the memory tiers stay exactly as above.
+set an optional display-only name (a "mask") for the assistant's turns. It's
+also editable **mid-chat** from the **System Prompt** button in the right rail,
+which keeps a forward-only edit history (each save mints a new live version; old
+versions stay frozen and can be reloaded into the editor). This lets several
+personas be tested against the same architecture without editing source. It
+changes only *what* the system prompt says, not how memory works: the mask is
+cosmetic and never reaches the model, and editing a persona involves no model —
+the memory tiers stay exactly as above.
 
 ## Running it
 
