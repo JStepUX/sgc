@@ -27,6 +27,7 @@ import {
   type ProviderId,
 } from './providers.js';
 import {
+  appendPromptVersion as dbAppendPromptVersion,
   createChat as dbCreateChat,
   deleteChat as dbDeleteChat,
   deleteManualTurnPair as dbDeleteManualTurnPair,
@@ -674,6 +675,55 @@ app.put('/api/chats/:id/turn-active', (req, res) => {
     }
     console.error('setTurnsActive failed:', err);
     res.status(500).json({ error: 'Failed to update turn states.' });
+  }
+});
+
+// Append a new version of the chat's system prompt (persona) and make it live.
+// Append-only / forward-only: the new version becomes the head and its text is
+// mirrored into chats.persona, so the next /api/turn build picks it up. NOT a
+// model route — it's curation of the active chat's prompt, the same class as
+// turn-active / manual-turns. `baselineText` is the pre-edit live prompt the
+// client resolved (DEFAULT_PERSONA lives client-side); the DB uses it only to
+// freeze the original as v1 when this is the chat's first edit (see db.ts).
+interface SavePromptVersionBody {
+  text?: unknown;
+  baselineText?: unknown;
+}
+
+app.post('/api/chats/:id/prompt-versions', (req, res) => {
+  const { text, baselineText } = (req.body ?? {}) as SavePromptVersionBody;
+  if (typeof text !== 'string' || !text.trim()) {
+    res.status(400).json({ error: 'text must be a non-empty string.' });
+    return;
+  }
+  if (baselineText !== undefined && typeof baselineText !== 'string') {
+    res.status(400).json({ error: 'baselineText must be a string when provided.' });
+    return;
+  }
+  // Same cap as the persona (this IS the persona, versioned).
+  if (text.length > MAX_PERSONA_CHARS) {
+    res.status(400).json({ error: `text exceeds ${MAX_PERSONA_CHARS} characters.` });
+    return;
+  }
+  if (typeof baselineText === 'string' && baselineText.length > MAX_PERSONA_CHARS) {
+    res.status(400).json({ error: `baselineText exceeds ${MAX_PERSONA_CHARS} characters.` });
+    return;
+  }
+  try {
+    const versions = dbAppendPromptVersion(
+      req.params.id,
+      text,
+      typeof baselineText === 'string' ? baselineText : undefined,
+    );
+    res.json({ versions });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'unknown';
+    if (msg.startsWith('chat not found')) {
+      res.status(404).json({ error: 'Chat not found.' });
+      return;
+    }
+    console.error('appendPromptVersion failed:', err);
+    res.status(500).json({ error: 'Failed to save prompt version.' });
   }
 });
 

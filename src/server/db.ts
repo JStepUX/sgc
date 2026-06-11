@@ -44,6 +44,22 @@ db.exec(`
     active INTEGER NOT NULL DEFAULT 1
   );
   CREATE INDEX IF NOT EXISTS idx_turns_chat ON turns(chat_id, ordinal);
+
+  -- Edit history of a chat's system prompt (persona). Append-only, forward-only:
+  -- each save mints a new version at the head (n = max(n)+1) and that head IS the
+  -- live prompt — its text is mirrored into chats.persona so the buildPrompt path
+  -- (which reads persona) is untouched. There is no "set an old version live"
+  -- and no rewind, matching the relay: selecting an old version loads it into the
+  -- editor as a draft; saving makes a NEW head. Per-chat, cascade on chat delete.
+  CREATE TABLE IF NOT EXISTS prompt_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+    n INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE(chat_id, n)
+  );
+  CREATE INDEX IF NOT EXISTS idx_prompt_versions_chat ON prompt_versions(chat_id, n);
 `);
 
 // Constitutional memories — plain durable facts, scoped per chat via chat_id
@@ -148,12 +164,26 @@ export interface ChatDetail {
   title: string;
   turns: ChatTurn[];
   latestInspector: unknown | null;
-  /** Per-chat system-prompt persona. null → client resolves DEFAULT_PERSONA. */
+  /** Per-chat system-prompt persona — the LIVE prompt (mirrors prompt_versions
+   *  head when any version exists). null → client resolves DEFAULT_PERSONA. */
   persona: string | null;
   /** Display-only assistant mask. null/'' → "Sal". Never sent to the model. */
   mask: string | null;
   /** This chat's constitutional memories — plain durable facts (id/text). */
   memories: MemoryRow[];
+  /** Edit history of this chat's persona, newest-first. Empty for a chat whose
+   *  prompt has never been edited (the client synthesises a baseline from
+   *  `persona`). The head (versions[0]) is the live prompt. */
+  versions: PromptVersion[];
+}
+
+/** One frozen entry in a chat's prompt edit history. `n` is a stable,
+ *  monotonically-increasing per-chat label; the head (max n) is live. */
+export interface PromptVersion {
+  id: number;
+  n: number;
+  text: string;
+  createdAt: number;
 }
 
 export interface MemoryRow {
@@ -294,6 +324,7 @@ export function loadChat(id: string): ChatDetail | null {
     persona: header.persona,
     mask: header.mask,
     memories: mem.memories,
+    versions: getPromptVersions(id),
   };
 }
 
@@ -451,6 +482,78 @@ export function setTurnsActive(chatId: string, states: TurnActiveState[]): void 
     }
   });
   txn();
+}
+
+// ============================================================
+// PROMPT-VERSION HELPERS — the edit history of a chat's persona.
+// ============================================================
+
+const listPromptVersionsStmt = db.prepare(`
+  SELECT id, n, text, created_at
+  FROM prompt_versions
+  WHERE chat_id = ?
+  ORDER BY n DESC
+`);
+const countPromptVersionsStmt = db.prepare(
+  `SELECT COUNT(*) AS n FROM prompt_versions WHERE chat_id = ?`,
+);
+const maxPromptVersionNStmt = db.prepare(
+  `SELECT COALESCE(MAX(n), 0) AS max_n FROM prompt_versions WHERE chat_id = ?`,
+);
+const insertPromptVersionStmt = db.prepare(`
+  INSERT INTO prompt_versions (chat_id, n, text, created_at)
+  VALUES (?, ?, ?, ?)
+`);
+const setPersonaStmt = db.prepare(`UPDATE chats SET persona = ? WHERE id = ?`);
+
+interface PromptVersionDbRow { id: number; n: number; text: string; created_at: number }
+
+// All of a chat's prompt versions, newest-first (head = live). Empty list for a
+// chat whose prompt has never been edited through the editor.
+export function getPromptVersions(chatId: string): PromptVersion[] {
+  return (listPromptVersionsStmt.all(chatId) as PromptVersionDbRow[]).map((r) => ({
+    id: r.id,
+    n: r.n,
+    text: r.text,
+    createdAt: r.created_at,
+  }));
+}
+
+// Append a new prompt version at the head and make it live.
+//
+// First-edit baseline: a chat created through the normal flow has NO version
+// rows — its live prompt is just chats.persona (or DEFAULT_PERSONA when null,
+// resolved client-side). To keep the original frozen in the history instead of
+// being overwritten by the first edit, the caller passes the pre-edit live text
+// as `baselineText`; when the chat has zero versions we insert that as v1 before
+// the edit lands as v2. (DEFAULT_PERSONA lives client-side, so the client is the
+// only place that can resolve the baseline — hence it's passed in, not derived
+// here. The server stays persona-agnostic.)
+//
+// chats.persona is mirrored to the new head's text so the per-turn prompt build
+// (which reads persona) uses the new live prompt with no other change. Does NOT
+// bump updated_at: editing the prompt is curation of the active chat's config,
+// not new conversational activity — same reasoning as setTurnsActive — so it
+// shouldn't reshuffle the history list's recency order mid-edit.
+export function appendPromptVersion(
+  chatId: string,
+  text: string,
+  baselineText?: string,
+): PromptVersion[] {
+  const exists = getChatStmt.get(chatId) as ChatHeaderRow | undefined;
+  if (!exists) throw new Error(`chat not found: ${chatId}`);
+  const txn = db.transaction(() => {
+    const now = Date.now();
+    const count = (countPromptVersionsStmt.get(chatId) as { n: number }).n;
+    if (count === 0 && typeof baselineText === 'string' && baselineText.length > 0) {
+      insertPromptVersionStmt.run(chatId, 1, baselineText, now);
+    }
+    const nextN = (maxPromptVersionNStmt.get(chatId) as { max_n: number }).max_n + 1;
+    insertPromptVersionStmt.run(chatId, nextN, text, now);
+    setPersonaStmt.run(text, chatId);
+  });
+  txn();
+  return getPromptVersions(chatId);
 }
 
 // ============================================================
