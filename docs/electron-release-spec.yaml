@@ -1,0 +1,251 @@
+spec: Electron release (Windows) + bring-your-own Anthropic key
+status: proposed              # 2026-06-09 — four product decisions locked (see decisions_locked); not yet built
+date: 2026-06-09
+amended: 2026-06-12           # anchors re-verified vs main + five amendments: persisted serverPort (origin stability), unconditional .cjs emit, rebuild moved to pack time, chip row un-disable for the intercept, fallback asarUnpack note
+goal: >
+  Ship SGC as a distributable Windows desktop app (electron-builder, NSIS) that
+  defaults to the existing LOCAL provider and lets the user supply their own
+  Anthropic key from the UI. The key is written to a plaintext config file in
+  userData; setting it RESTARTS the embedded server (which still reads keys from
+  env at boot — server source unchanged). Renderer loads the embedded server's
+  own origin, so the existing relative /api fetches and static SPA serving work
+  unchanged.
+
+invariant_check:              # why this is packaging, not a Phase 1.5 phase change
+  no_model_in_retrieval: untouched — cosine grep + URL pre-fetch are client-side and provider-agnostic; this work adds no retrieval path
+  sal_ephemeral: untouched — one fresh instance per turn; Electron only changes how the process is launched and where the key rests
+  one_call_per_turn: untouched — no new model calls; the "restart" is a process relaunch, not an API call
+  server_frozen_boot_contract: PRESERVED by design — the restart-on-key-change path exists precisely so src/server/* stays byte-unchanged (key read once at boot, as today)
+  classification: distribution + process-supervision + a UI enhancement to an EXISTING dropdown. No thesis surface touched.
+
+decisions_locked:             # set by the developer 2026-06-09; design to these
+  - id: D1-local-is-user-server
+    decision: LOCAL = the user's own OpenAI-compatible server (Ollama/KoboldCPP via OPENAI_BASE_URL), exactly as today. App bundles NO model. Default provider on a fresh install = LOCAL.
+    rationale: smallest scope; matches the implemented local-provider spec. A fresh install with no OPENAI_BASE_URL and no key has neither provider available — server /api/health.default is null; the client default + key flow carry the UX.
+    known_gap: the packaged app has NO UI for OPENAI_BASE_URL — LOCAL is configured by hand-editing sgc-config.json then a full app relaunch (config is read only when the server is spawned). Accepted per scope; stated so verification expectations are clear.
+  - id: D2-key-plaintext-userdata
+    decision: the Anthropic key is stored as plaintext JSON at app.getPath('userData')/sgc-config.json. NOT renderer localStorage, NOT OS keychain.
+    rationale: simplest persistence the developer chose; the renderer never persists the secret (preserves "key not in the browser layer"). safeStorage explicitly declined.
+  - id: D3-restart-on-key-change
+    decision: writing/changing the key restarts the embedded server. Main writes the config file, relaunches the server child with new env, re-polls health, reloads the window. NO runtime hot-reload of the key inside the server.
+    rationale: keeps src/server/{index,db,providers}.ts UNCHANGED — they already read keys once at boot, which is exactly what a relaunch needs. Hot-reload would force a server change (out of scope).
+  - id: D4-builder-windows-only
+    decision: package with electron-builder, Windows-only, NSIS installer.
+    rationale: current/only target OS; electron-builder has the best native-module (better-sqlite3) rebuild story.
+
+current_state:
+  provider_system_already_exists: true   # this request is largely an ENHANCEMENT, not new infra
+  provider_chip:                # anchors re-verified 2026-06-12 (post prompt-editor commits)
+    file: src/client/SalienceGatedCognition.tsx
+    lines: 181-277              # ProviderChip — hand-rolled popover; PhaseBar starts 283
+    map_rows: 240-272           # per-provider menu rows; disabled={!available} at 250; selected dot at 267-269
+    collapsed_button: 219-230   # the chip pill itself
+    choose_fn: 212-215          # commit selection + close
+    labels: line 123            # PROVIDER_LABEL { anthropic:'ANTHROPIC', openai:'LOCAL' }
+    order: line 129             # PROVIDER_ORDER ['anthropic','openai']
+    default_init: 993-1001      # provider useState fallback returns 'anthropic' at line 1000
+    health_reconcile: 1128-1148 # coerces stored/boot provider to an AVAILABLE one on mount
+    ls_key: line 128            # PROVIDER_LS_KEY = 'sgc.provider'
+  client_transport:
+    file: src/client/lib/api.ts
+    turn_post: line 106         # fetch('/api/turn') — RELATIVE; works same-origin in any host
+    health_fetch: SalienceGatedCognition.tsx:1132   # GET /api/health on mount (lives in the component, not api.ts)
+  server_boot_config:
+    file: src/server/index.ts
+    lines: 46-105               # PORT/CORS/ANTHROPIC_*/OPENAI_*/LLM_* read from env at boot
+    anthropic_client: line 69   # const anthropic = API_KEY ? new Anthropic(...) : null  (FROZEN)
+    availability: 90-93         # providerAvailable computed once
+    default_resolver: 98-105    # resolveDefaultProvider — only adopts an AVAILABLE provider
+    health_route: 121-132       # /api/health shape the chip reads
+    static_serve: 793-799       # resolve(dirname(fileURLToPath(import.meta.url)),'../client') → express.static + app.get('*') SPA fallback, presence-gated on index.html, AFTER all /api routes
+  db_path:
+    file: src/server/db.ts
+    line: 19                    # SGC_DB_PATH || resolve(process.cwd(),'data','sgc.db'); mkdirSync(dir) at import time
+  provider_resolver:
+    file: src/server/providers.ts
+    lines: 61-93                # resolveTurnProvider — explicit-but-unavailable token 503s, never reroutes
+  modal_style_reference:
+    file: src/client/components/ConfirmPersonaModal.tsx
+    note: frosted overlay (fixed inset-0 z-50 bg-ground/70 backdrop-blur-md), dialog rounded-[22px] border-hairline-strong bg-ground/85, input rounded-[14px] border-hairline-strong bg-surface focus:border-ember/55, Escape-cancel + Tab focus-trap — mirror for the key modal
+  tokens:
+    file: src/client/index.css
+    success: "--color-success #6e8a6a (line 33) → key-present dot"
+    danger: "--color-danger #b5503a (line 34) → no-key dot"
+    ember: "--color-ember #b85c2e (line 30) → existing selected glow"
+  native_module:
+    pkg: better-sqlite3 ^12.10.0
+    fact: no prebuilds shipped; build/Release/better_sqlite3.node currently compiled for Node v22 ABI, NOT Electron — MUST be rebuilt for Electron
+  assets:
+    icon: public/sal_logo.ico   # NSIS/window icon (Vite also copies to dist/client/)
+
+architecture:
+  load_strategy: packaged renderer loads http://127.0.0.1:<port> (the embedded server's OWN origin) — relative /api fetches + static SPA both work, no CORS, no client URL change
+  origin_stability: localStorage is per-origin and the origin embeds the port — so the port MUST be stable across launches, not just within a session. serverManager persists the chosen port to sgc-config.json (serverPort) and reuses it every launch, re-picking only if occupied. Without this, sgc.provider (and any future client-side persistence) silently resets on every launch — a user with both providers configured would re-land on LOCAL each time.
+  dev_vs_packaged: app.isPackaged === false → load Vite dev URL http://localhost:5555 and do NOT spawn a server (the existing `npm run dev` concurrently flow already runs client+server). app.isPackaged === true → spawn server, poll health, load its origin.
+  key_invariant_kept: server source untouched; main supplies env to the fork; key change = relaunch fork
+
+server:
+  changes: NONE                # load-bearing — src/server/{index,db,providers}.ts stay byte-identical
+  required_env_from_main:      # the fork's env, derived from sgc-config.json + computed paths
+    PORT: <dynamic free 127.0.0.1 port>
+    SGC_DB_PATH: <userData>/data/sgc.db    # MANDATORY — else db.ts falls back to process.cwd() (non-writable in a packaged app)
+    CORS_ORIGIN: http://127.0.0.1:<port>   # same-origin anyway; set defensively
+    ANTHROPIC_API_KEY: <from config, omitted when absent>   # absent → anthropic provider stays unavailable, as today
+    ANTHROPIC_MODEL / ANTHROPIC_MAX_TOKENS / OPENAI_BASE_URL / OPENAI_API_KEY / LLM_MODEL / LLM_PROVIDER: forwarded from config when present
+  dotenv_note: server imports 'dotenv/config'; no .env in the package (keep .env OUT of build.files) → dotenv no-ops, fork env wins (dotenv does not override already-set process.env)
+
+electron_shell:               # new dir electron/ → bundled to dist/electron/ as CJS via esbuild
+  language: TypeScript; main + preload bundled to CJS and emitted as .cjs — NOT .js. Root package.json is "type":"module", so a .js emit loads as ESM and CJS-in-.js deterministically fails; this is a certainty, not a contingency. (Sandboxed preload requires CJS; forked SERVER stays ESM in a separate process — no conflict.)
+  files:
+    - path: electron/config.ts → dist/electron (bundled into main)
+      exports: |
+        interface SgcConfig { anthropicApiKey?:string; anthropicModel?:string; anthropicMaxTokens?:number;
+          openaiBaseUrl?:string; openaiApiKey?:string; llmModel?:string; llmProvider?:'anthropic'|'openai';
+          serverPort?:number }             // serverPort: persisted by serverManager — see architecture.origin_stability
+        readConfig(): SgcConfig            // {} if missing/corrupt; never throws
+        writeConfig(patch: Partial<SgcConfig>): SgcConfig   // merge + atomic tmp-write then renameSync
+        configToEnv(cfg): Record<string,string>             // map present fields → server env names ONLY; serverPort EXCLUDED (consumed by serverManager, which sets PORT itself)
+      location: path.join(app.getPath('userData'),'sgc-config.json')
+    - path: electron/serverManager.ts → bundled into main
+      exports: |
+        interface ServerHandle { port:number; pid:number }
+        start(): Promise<ServerHandle>     // resolvePort → fork → waitForHealth
+        restart(): Promise<ServerHandle>   // stop → start (same port within a session; the origin must not change across the reload)
+        stop(): Promise<void>              // SIGTERM → SIGKILL fallback
+        getPort(): number|null; isRunning(): boolean
+      launch: |
+        PRIMARY: utilityProcess.fork(serverEntryAbs, [], { env, stdio:'pipe' }) — Electron's Node + ABI, MessagePort channel, lifecycle-managed.
+        FALLBACK (behind ONE swappable fn): child_process.spawn(process.execPath,[serverEntryAbs],{ env:{...,ELECTRON_RUN_AS_NODE:'1'} }) — same ABI, Node's own ESM loader. Use if ESM-in-utilityProcess misbehaves on the chosen Electron version. If this fallback SHIPS, also add "dist/server/**" to asarUnpack — plain-Node ESM loading from inside asar is unreliable under ELECTRON_RUN_AS_NODE.
+        serverEntryAbs = path.join(__dirname,'../server/index.js') (absolute, from dist/electron/)
+      resolve_port: prefer readConfig().serverPort when set AND free (probe it); else net.createServer().listen(0) on 127.0.0.1 → read address().port → close; writeConfig({serverPort:chosen}) whenever it changes. Keeps the origin — and localStorage — stable across launches (architecture.origin_stability). Small TOCTOU; health-poll + ≤3 retries cover collisions.
+      wait_for_health: poll GET http://127.0.0.1:<port>/api/health every ~150ms until {ok:true}; ~15s timeout; abort early if child exits/errors; tee child stdout/stderr → <userData>/logs/server.log; on failure dialog.showErrorBox with the log tail
+      kill_on_quit: app.on('will-quit') → stop()
+    - path: electron/preload.ts → dist/electron/preload.cjs (CJS, contextIsolation safe)
+      contextBridge: |
+        exposeInMainWorld('sgcDesktop', {
+          isDesktop: true,
+          getConfigState(): Promise<ConfigState>,       // ipcRenderer.invoke('sgc:getConfigState')
+          setAnthropicKey(key:string): Promise<ConfigState>  // ipcRenderer.invoke('sgc:setAnthropicKey', key)
+        })
+        ConfigState = { anthropicKeyPresent:boolean; anthropicModel?:string; openaiBaseUrl?:string; llmProvider?:'anthropic'|'openai' }  // REDACTED — never the raw key
+    - path: electron/main.ts → dist/electron/main.cjs ("main" in package.json)
+      window: { webPreferences: { preload, contextIsolation:true, nodeIntegration:false, sandbox:true } }
+      flow: "app.isPackaged ? (serverManager.start() → loadURL('http://127.0.0.1:'+port)) : loadURL('http://localhost:5555')+openDevTools"
+      ipc: |
+        handle('sgc:getConfigState', () => redact(readConfig()))
+        handle('sgc:setAnthropicKey', async (_e,key) => { writeConfig({anthropicApiKey:key}); const h = await serverManager.restart(); reloadWindow(h); return redact(readConfig()) })
+
+client:                       # additive, web-build-safe (guards on window.sgcDesktop)
+  - file: src/client/lib/desktop.ts
+    new: true
+    do: declare global Window.sgcDesktop typing; export isDesktop() + a typed getter. Web build → undefined → callers fall back.
+  - file: src/client/SalienceGatedCognition.tsx
+    do: |
+      default_to_local: change provider useState fallback (line 1000) 'anthropic' → 'openai'. health-reconcile (1128-1148) still self-corrects to whatever's available, so existing web deploys are unaffected; only the truly-empty fresh install lands on LOCAL.
+      status_dots: in the rows map (240-272) add a leading dot per provider from health?.providers[p]?.available → bg-success (present) vs bg-danger (missing); mirror the ember glow at 267-269. Add the same dot to the collapsed chip button (219-230) for the CURRENT provider.
+      intercept_anthropic_when_unavailable: |
+        the rows render disabled={!available} (line 250) — a disabled button never fires choose(), so the intercept REQUIRES un-disabling the anthropic row: anthropic stays clickable when unavailable (keep the dimmed styling so it still reads as unconfigured); openai keeps disabled={!available}. Then in choose() (212-215): if p==='anthropic' && !available → do NOT switch; raise onRequestAnthropicKey (new prop) so the parent opens the key modal.
+  - file: src/client/components/AnthropicKeyModal.tsx
+    new: true
+    props: "{ open; onSave(key:string); onCancel; mode:'desktop'|'web' }"
+    do: |
+      mirror ConfirmPersonaModal styling; password-type input. On save:
+        desktop (window.sgcDesktop present): await sgcDesktop.setAnthropicKey(key) → main restarts + reloads; optionally set localStorage['sgc.provider']='anthropic' pre-reload so it lands on ANTHROPIC after reload.
+        web (no sgcDesktop): show inline guidance ("set ANTHROPIC_API_KEY in the server .env and restart"); NO network write (would touch the server — out of scope).
+
+build_wiring:
+  package_json:
+    devDeps_add: [ "electron (latest stable w/ utilityProcess ESM, e.g. ^33)", "electron-builder (^25)", "@electron/rebuild (^3)", "esbuild", "wait-on (dev)" ]
+    deps_slim_optional: client-only packages currently in "dependencies" get packed into the installer (electron-builder always includes production node_modules) even though Vite already bundles them — move @radix-ui/react-slot, class-variance-authority, chrono-node, clsx, lucide-react, mermaid, react-markdown, remark-gfm, tailwind-merge to devDependencies (react/react-dom already are; verified client-only by grep 2026-06-12). Server-runtime deps STAY in dependencies — @anthropic-ai/sdk, @mozilla/readability, better-sqlite3, cors, dotenv, express, jsdom.
+    main: "dist/electron/main.cjs"  # .cjs REQUIRED — "type":"module" makes a .js emit load as ESM and fail; not a contingency
+    scripts:
+      build:electron: "esbuild electron/main.ts electron/preload.ts --bundle --platform=node --format=cjs --external:electron --outdir=dist/electron --out-extension:.js=.cjs"
+      rebuild:electron: "electron-rebuild -f -w better-sqlite3"   # NOT part of dev or build — only for hand-debugging a packaged fork; dev-mode Electron never loads better-sqlite3 (no fork in dev)
+      rebuild:node: "npm rebuild better-sqlite3"                  # restore the Node ABI after packing (electron-builder npmRebuild MUTATES node_modules) so vitest/dev work again
+      electron:dev: "concurrently -k -n vite,server,electron \"npm:dev:client\" \"npm:dev:server\" \"npm:electron:dev:run\""
+      electron:dev:run: "wait-on http://localhost:5555 && npm run build:electron && electron dist/electron/main.cjs"
+      electron:build: "npm run build && npm run build:electron"
+      dist:win: "npm run electron:build && electron-builder --win --x64 && npm run rebuild:node"   # rebuild:node chained so the ABI flip can't be forgotten (Core Value 3)
+  electron_builder_config:    # package.json "build" block (or electron-builder.yml)
+    appId: com.boltontechnology.sgc
+    productName: Salience-Gated Cognition
+    directories: { output: release }
+    files: [ "dist/electron/**", "dist/server/**", "dist/client/**", "package.json" ]
+    asar: true
+    asarUnpack: [ "**/node_modules/better-sqlite3/**" ]    # native .node cannot load from inside asar
+    npmRebuild: true                                       # rebuilds better-sqlite3 against Electron ABI at pack time
+    win: { target: ["nsis"], icon: "public/sal_logo.ico" }
+    nsis: { oneClick: false, allowToChangeInstallationDirectory: true, createDesktopShortcut: true }
+  gitignore_add: [ "release/" ]
+
+out_of_scope:
+  - bundling/downloading a local model — D1 says LOCAL is the user's own server; a bundled runtime is a separate sub-project
+  - OS keychain / safeStorage for the key — D2 chose plaintext userData; revisit if security review demands it
+  - runtime hot-reload of the key inside the server — D3 chose restart; hot-reload would force a server change
+  - macOS / Linux targets, code-signing/notarization — D4 is Windows-only
+  - auto-update (electron-updater) — separate spec if wanted
+  - moving any memory logic server-side — architecture invariant, never
+
+build_sequence:
+  - step: 1
+    target: deps
+    do: add devDeps (+ the optional deps_slim move); npm install. Do NOT electron-rebuild here — dev-mode Electron forks no server, so nothing loads better-sqlite3 under the Electron ABI in dev, and an eager rebuild just breaks vitest/dev:server. The Electron ABI is produced at pack time by electron-builder npmRebuild; the dist:win chain ends with rebuild:node to flip it back.
+  - step: 2
+    target: electron/config.ts + electron/serverManager.ts
+    do: config read/write/atomic + configToEnv; server lifecycle (resolvePort incl. serverPort persistence, fork w/ env incl. SGC_DB_PATH, waitForHealth, stop, restart, log tee). Unit-test configToEnv mapping (incl. serverPort exclusion) + readConfig-on-missing.
+  - step: 3
+    target: electron/preload.ts + electron/main.ts + build:electron
+    do: contextBridge surface; window; dev/packaged branch; IPC handlers; will-quit kill. Confirm dist/electron/{main,preload}.cjs emit (.cjs, not .js — see build_wiring).
+  - step: 4
+    target: set package.json "main"; dev smoke
+    do: npm run electron:dev → window loads :5555, app works, NO second :3000 spawned by Electron.
+  - step: 5
+    target: src/client/lib/desktop.ts + SalienceGatedCognition.tsx + components/AnthropicKeyModal.tsx
+    do: default→LOCAL; status dots; intercept ANTHROPIC-unavailable → key modal; modal desktop/web branches. typecheck + lint green; web build still compiles.
+  - step: 6
+    target: package.json "build" block + .gitignore
+    do: electron-builder config (files, asarUnpack, npmRebuild, win/nsis, icon).
+  - step: 7
+    target: npm run dist:win
+    do: produce NSIS installer in release/ (electron-builder rebuilds native module, unpacks better-sqlite3). The script chain ends with rebuild:node, restoring node_modules to the Node ABI so step 9's npm test passes.
+  - step: 8
+    target: docs + AGENTS.md + CLAUDE.md
+    do: flip this spec status→implemented w/ deviations; AGENTS.md entries (see surprises_to_log); CLAUDE.md "Run it" / structure note gains the Electron build path + scripts. ALSO fix CLAUDE.md's stale Project Structure while in there — src/server is still described as one-route index.ts but db.ts + providers.ts (+ tests) exist; a future agent designing from CLAUDE.md would miss the DB entirely.
+  - step: 9
+    target: QA
+    do: /pre-commit-qa — full npm test + typecheck (client+server) + lint + the verification evidence below. Commit on main.
+
+verification:                 # manual, packaged build
+  - fresh_install_defaults_local: clean profile (or delete %APPDATA%/<productName>/sgc-config.json) → chip shows LOCAL; ANTHROPIC row red dot + "not configured"; /api/health.default null
+  - select_anthropic_no_key_prompts: clicking ANTHROPIC (red dot, enabled-but-unavailable row) opens AnthropicKeyModal instead of switching
+  - save_key_restarts_flips_green: paste sk-ant-… → window briefly reloads (restart + health re-poll) → chip ANTHROPIC, green dot; %APPDATA%/<productName>/sgc-config.json contains the key (plaintext, per D2)
+  - turn_streams_from_anthropic: send a message → SSE deltas render; inspector shows token counts (proves restarted server built the anthropic client + routed /api/turn)
+  - persistence: create chat + memory, quit fully, relaunch → history + memories present (DB at %APPDATA%/<productName>/data/sgc.db); ANTHROPIC still green AND still the selected provider — proves the persisted serverPort kept the origin (and localStorage) stable across launches
+  - port_stable_across_launches: sgc-config.json contains serverPort after first run; a relaunch reuses it (same http://127.0.0.1:<port>); kill a squatter on the port mid-test → app re-picks, updates config, still boots
+  - no_orphan: after quit, no node/electron-helper holds the port
+
+surprises_to_log:             # AGENTS.md candidates — title "## <title> (electron release, 2026-06-09)"
+  - native_abi_mismatch: better-sqlite3 has no prebuilds. Dev NEVER needs the Electron ABI (dev-mode Electron forks no server; the tsx server runs under Node) — the flip happens at `npm run dist:win`, whose npmRebuild MUTATES node_modules to the Electron ABI; vitest/dev then fail with "NODE_MODULE_VERSION" / "not a valid Win32 application" until rebuild:node runs (chained into dist:win). Log this — future agents WILL hit it.
+  - esm_in_utilityprocess: if fork of the ESM server throws a loader error, ensure asar root package.json ("type":"module") is in build.files; else fall back to spawn+ELECTRON_RUN_AS_NODE (kept swappable) — which ALSO requires "dist/server/**" in asarUnpack (plain-Node ESM from inside asar is unreliable). Log whichever path actually shipped.
+  - sgc_db_path_mandatory: without SGC_DB_PATH the packaged app writes under process.cwd() (Program Files, non-writable) and crashes at db.ts mkdirSync — note the userData requirement.
+  - dist_client_in_asar: SPA static assets load fine from inside asar (fs patched); only the .node needs asarUnpack. Note if any path resolution surprised.
+  - preload_cjs: main + preload ship as .cjs BY DESIGN — root package.json "type":"module" makes any .js emit load as ESM. "require is not defined" (main) / "contextBridge is not defined" (preload) = a .js emit slipped back in; check --out-extension:.js=.cjs is still on build:electron.
+
+files:
+  create:
+    - electron/main.ts
+    - electron/preload.ts
+    - electron/serverManager.ts
+    - electron/config.ts
+    - src/client/lib/desktop.ts
+    - src/client/components/AnthropicKeyModal.tsx
+    - docs/electron-release-spec.yaml   # this file
+  modify:
+    - package.json                       # devDeps, scripts, "main", "build" block
+    - src/client/SalienceGatedCognition.tsx   # default→LOCAL; status dots; key-modal intercept
+    - .gitignore                         # release/
+    - AGENTS.md ; CLAUDE.md              # docs (step 8)
+  untouched_load_bearing:
+    - src/server/index.ts
+    - src/server/db.ts
+    - src/server/providers.ts            # restart-on-key-change exists to keep these byte-identical
