@@ -1,39 +1,70 @@
 {
   "name": "sgc",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "Salience-Gated Cognition — a tiered-memory conversational architecture prototype.",
+  "main": "dist/electron/main.cjs",
   "scripts": {
     "dev": "concurrently -k -n client,server -c cyan,green \"npm:dev:client\" \"npm:dev:server\"",
     "dev:client": "vite",
     "dev:server": "tsx watch src/server/index.ts",
     "build": "vite build && tsc -p tsconfig.server.json",
+    "build:electron": "esbuild electron/main.ts electron/preload.ts --bundle --platform=node --format=cjs --external:electron --outdir=dist/electron --out-extension:.js=.cjs",
     "start": "node dist/server/index.js",
+    "electron:dev": "concurrently -k -n vite,server,electron \"npm:dev:client\" \"npm:dev:server\" \"npm:electron:dev:run\"",
+    "electron:dev:run": "wait-on http://localhost:5555 && npm run build:electron && electron dist/electron/main.cjs",
+    "electron:build": "npm run build && npm run build:electron",
+    "dist:win": "npm run electron:build && node scripts/dist-win.mjs",
+    "rebuild:electron": "electron-rebuild -f -w better-sqlite3",
+    "rebuild:node": "npm rebuild better-sqlite3",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
-    "lint": "eslint src"
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
+    "lint": "eslint src electron"
+  },
+  "build": {
+    "appId": "com.boltontechnology.sgc",
+    "productName": "Salience-Gated Cognition",
+    "artifactName": "sgc-v${version}.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/electron/**",
+      "dist/server/**",
+      "dist/client/**",
+      "package.json"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**"
+    ],
+    "npmRebuild": false,
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "public/sal_logo.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
     "@mozilla/readability": "^0.6.0",
-    "@radix-ui/react-slot": "^1.2.4",
     "better-sqlite3": "^12.10.0",
-    "chrono-node": "^2.9.1",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
     "cors": "^2.8",
     "dotenv": "^16.4",
     "express": "^4.21",
-    "jsdom": "^29.1.1",
-    "lucide-react": "^1.16.0",
-    "mermaid": "^11.15.0",
-    "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1",
-    "tailwind-merge": "^3.6.0"
+    "jsdom": "^29.1.1"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.4",
+    "@radix-ui/react-slot": "^1.2.4",
     "@tailwindcss/vite": "^4.3.0",
     "@testing-library/react": "^16.3",
     "@types/better-sqlite3": "^7.6.13",
@@ -46,15 +77,27 @@
     "@typescript-eslint/eslint-plugin": "^8.20",
     "@typescript-eslint/parser": "^8.20",
     "@vitejs/plugin-react": "^4.3",
+    "chrono-node": "^2.9.1",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "concurrently": "^9.1",
+    "electron": "^41.7.2",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.1",
     "eslint": "^9.18",
     "eslint-plugin-react-hooks": "^5.1",
+    "lucide-react": "^1.16.0",
+    "mermaid": "^11.15.0",
     "react": "^19.2",
     "react-dom": "^19.2",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.0",
     "tsx": "^4.19",
     "typescript": "^5.6",
     "vite": "^6.0",
-    "vitest": "^2.1"
+    "vitest": "^2.1",
+    "wait-on": "^9.0.10"
   }
 }

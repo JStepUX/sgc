@@ -67,8 +67,27 @@ export default [
     },
   },
   {
+    // Electron shell — Node-side like the server (main/preload/config/
+    // serverManager). console logging is legitimate here too.
+    files: ['electron/**/*.ts'],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: { ecmaVersion: 'latest', sourceType: 'module' },
+    },
+    plugins: { '@typescript-eslint': tseslint },
+    rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
+      ],
+      '@typescript-eslint/no-explicit-any': 'warn',
+      'no-debugger': 'error',
+      'no-console': 'off',
+    },
+  },
+  {
     // Test files — assertion libraries have legitimate reasons to use `any`.
-    files: ['src/**/*.{test,spec}.{ts,tsx}'],
+    files: ['src/**/*.{test,spec}.{ts,tsx}', 'electron/**/*.{test,spec}.ts'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       'no-console': 'off',

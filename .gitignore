@@ -5,6 +5,7 @@ node_modules/
 dist/
 build/
 .vite/
+release/
 
 # SQLite persistence (chats, turns, memories)
 data/
