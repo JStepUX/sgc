@@ -59,6 +59,60 @@ The affected lines were in `src/client/lib/eval/fixtures.ts` — two instances f
 dropping the possessive suffix. This does not affect retrieval behaviour because the
 apostrophised words were not the probe target terms.
 
+## better-sqlite3 + Electron: prebuild-or-MSVC — pin Electron to an ABI with a prebuild (electron release, 2026-06-12)
+
+This machine has NO Visual Studio toolchain, so `electron-builder`'s pack-time
+`npmRebuild` can only succeed when better-sqlite3 ships a prebuilt binary for
+the target Electron ABI. Electron 42 (ABI 146) had none → node-gyp → "Could not
+find any Visual Studio installation". Electron is pinned to `^41` (ABI 145,
+prebuild exists) for exactly this reason — before bumping the Electron major,
+check the better-sqlite3 release assets for `electron-v<abi>-win32-x64`
+(`node -e "require('node-abi').getAbi('<ver>','electron')"` gives the ABI).
+Separately: `npm run dist:win` MUTATES node_modules to the Electron ABI; the
+wrapper (`scripts/dist-win.mjs`) restores the Node ABI in a `finally`, so
+vitest/dev work even after a failed pack. If you ever see
+"NODE_MODULE_VERSION" / "not a valid Win32 application" from vitest, run
+`npm run rebuild:node`.
+
+Second-order trap (hit on the SECOND pack of a session): @electron/rebuild
+writes an "already built" marker — `build/Release/.forge-meta` ("x64--145") —
+next to the binary. The post-pack restore swaps the binary back to the Node
+ABI but the marker survives, so a marker-trusting rebuild (electron-builder's
+`npmRebuild`, or `electron-rebuild` without `-f`) SKIPS and silently packages
+the NODE binary → the installed app crashes at boot with ERR_DLOPEN_FAILED.
+That's why `npmRebuild` is `false` and `scripts/dist-win.mjs` force-rebuilds
+(`electron-rebuild -f`) before the pack and deletes the stale marker after the
+restore. Don't "simplify" either of those away.
+
+## The ESM server runs under utilityProcess.fork from inside asar — primary path shipped (electron release, 2026-06-12)
+
+The packaged app forks `dist/server/index.js` (ESM) with
+`utilityProcess.fork` and it loads cleanly from inside the asar because the
+asar root `package.json` (with `"type": "module"`) is in `build.files`. The
+spawn+`ELECTRON_RUN_AS_NODE` fallback in `electron/serverManager.ts` was NOT
+needed — it stays behind the single `launch` assignment; if you ever swap to
+it, also add `"dist/server/**"` to `asarUnpack`. The SPA static assets serve
+fine from inside the asar too; only the better-sqlite3 `.node` needs
+`asarUnpack`.
+
+## SGC_DB_PATH is mandatory in the packaged app; userData is %APPDATA%\sgc, not the productName (electron release, 2026-06-12)
+
+Without `SGC_DB_PATH` the server's `db.ts` falls back to `process.cwd()` —
+non-writable under Program Files — and crashes at import-time `mkdirSync`.
+`electron/serverManager.ts` always sets it to `<userData>/data/sgc.db`. Note
+the real path: Electron derives userData from package.json `name`, so it is
+`%APPDATA%\sgc\…`, NOT `%APPDATA%\Salience-Gated Cognition\…` as the spec's
+verification section assumed. sgc-config.json and logs/server.log live there
+too.
+
+## Electron main + preload ship as .cjs BY DESIGN (electron release, 2026-06-12)
+
+The root package.json is `"type": "module"`, so a `.js` emit from esbuild
+would load as ESM and CJS-in-.js deterministically fails. `build:electron`
+emits `dist/electron/{main,preload}.cjs` via `--out-extension:.js=.cjs`.
+"require is not defined" (main) or "contextBridge is not defined" (preload)
+means a `.js` emit slipped back in — check that flag is still on the script.
+
 ## `npm audit` reports a pre-existing "critical" — don't `audit fix --force` it (mermaid add, 2026-06-02)
 
 After `npm install`, `npm audit` shows ~4 moderate + 1 critical. They all live in

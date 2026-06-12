@@ -1,28 +1,46 @@
 spec: Electron release (Windows) + bring-your-own Anthropic key
-status: proposed              # 2026-06-09 — four product decisions locked (see decisions_locked); not yet built
+status: implemented           # 2026-06-12 — built + packaged + smoke-verified; deviations in implementation_notes
 date: 2026-06-09
-amended: 2026-06-12           # anchors re-verified vs main + five amendments: persisted serverPort (origin stability), unconditional .cjs emit, rebuild moved to pack time, chip row un-disable for the intercept, fallback asarUnpack note
+amended: 2026-06-12           # anchors re-verified vs main + eight amendments: persisted serverPort (origin stability), unconditional .cjs emit, rebuild moved to pack time w/ finally-restore wrapper, chip row un-disable for the intercept, fallback asarUnpack note, provider-config UI (D5 — generalizes the key-only modal, adds llmMaxTokens), electron/ typecheck+lint coverage
+implemented: 2026-06-12
+
+implementation_notes:         # deviations + facts discovered at build time
+  electron_version: "^41 (41.7.2), NOT latest (42): the build machine has no MSVC, so pack-time npmRebuild needs a better-sqlite3 prebuild for the Electron ABI — ABI 146 (Electron 42) has none, ABI 145 (Electron 41) does. Before bumping the major, check WiseLibs/better-sqlite3 release assets for electron-v<abi>-win32-x64 (see AGENTS.md)."
+  userdata_path: "%APPDATA%\\sgc (Electron derives userData from package.json name), NOT %APPDATA%\\<productName> as the verification section assumed — sgc-config.json / data/sgc.db / logs/server.log all live under %APPDATA%\\sgc."
+  config_module_shape: "electron/config.ts is electron-free: the file path is injected via initConfig(filePath) (main binds app.getPath('userData') at startup) so the required unit tests run under plain vitest. redactConfig + whitelistPatch also live here; main consumes them."
+  modal_save_ownership: "ProviderConfigModal validates + builds the patch; the PARENT owns the bridge call (onSave returns a promise the modal awaits for busy/error state) and the unconfigured-row localStorage pre-set. label is a prop so PROVIDER_LABEL stays the single mapping site."
+  env_scrub: "serverManager scrubs the eight managed env names from the inherited process.env before applying configToEnv — sgc-config.json is the single source of provider truth in the packaged app; a stray shell ANTHROPIC_API_KEY can't flip availability."
+  extra_files_modified: [ vitest.config.ts (include electron/**), eslint.config.js (electron block) ]
+  launch_path_shipped: "utilityProcess.fork PRIMARY path works — ESM server loads from inside asar (root package.json type:module in build.files); spawn fallback unused."
+  verified_packaged: [ fresh_install_defaults_local (health default null), port persisted + reused across relaunch, SPA served from asar, DB at userData/data/sgc.db, clean quit / no orphan, Node-ABI restore after pack (192 tests green) ]
+  pending_manual_verification: [ unconfigured_row_opens_modal, local_configures_keyless, gear_opens_prefilled, model_picker_applies, save_key_restarts_flips_green, turn_streams_from_anthropic, persistence (chat+memory across relaunch) ]   # need a real key / local model / hands on the UI
+  review_hardening_2026-06-12:  # Codex peer review, all three confirmed + fixed
+    - setConfig rejects on failed packaged restart (was dialog + success-shaped return; modal now stays open w/ inline error, retry safe over IPC)
+    - serverManager exit handler identity-gated (late exit of a force-killed previous child no longer poisons the next child's waitForHealth/isRunning)
+    - provider token sent to /api/turn only when health has CONFIRMED it available; else omitted → server boot default (closes the pre-reconcile/failed-health explicit-503 window the LOCAL default opened)
+    - repack trap (found re-verifying) — @electron/rebuild's .forge-meta marker survives the Node-ABI restore, so a SECOND pack skipped the Electron rebuild and shipped the Node binary (ERR_DLOPEN_FAILED at boot); dist-win.mjs now electron-rebuild -f BEFORE the pack + scrubs the marker after restore; npmRebuild false (see AGENTS.md)
+  artifact: version 1.0.0; build.artifactName "sgc-v${version}.${ext}" → release/sgc-v1.0.0.exe (installed app/shortcut keep the productName)
 goal: >
   Ship SGC as a distributable Windows desktop app (electron-builder, NSIS) that
-  defaults to the existing LOCAL provider and lets the user supply their own
-  Anthropic key from the UI. The key is written to a plaintext config file in
-  userData; setting it RESTARTS the embedded server (which still reads keys from
-  env at boot — server source unchanged). Renderer loads the embedded server's
-  own origin, so the existing relative /api fetches and static SPA serving work
-  unchanged.
+  defaults to the existing LOCAL provider and lets the user configure BOTH
+  providers from the UI (D5): Anthropic key + model + max tokens; LOCAL base
+  URL + model + max tokens. Config is written to a plaintext file in userData;
+  every save RESTARTS the embedded server (which still reads its env at boot —
+  server source unchanged). Renderer loads the embedded server's own origin, so
+  the existing relative /api fetches and static SPA serving work unchanged.
 
 invariant_check:              # why this is packaging, not a Phase 1.5 phase change
   no_model_in_retrieval: untouched — cosine grep + URL pre-fetch are client-side and provider-agnostic; this work adds no retrieval path
   sal_ephemeral: untouched — one fresh instance per turn; Electron only changes how the process is launched and where the key rests
   one_call_per_turn: untouched — no new model calls; the "restart" is a process relaunch, not an API call
-  server_frozen_boot_contract: PRESERVED by design — the restart-on-key-change path exists precisely so src/server/* stays byte-unchanged (key read once at boot, as today)
-  classification: distribution + process-supervision + a UI enhancement to an EXISTING dropdown. No thesis surface touched.
+  server_frozen_boot_contract: PRESERVED by design — the restart-on-config-change path exists precisely so src/server/* stays byte-unchanged (key/model/max-tokens all read once at boot, as today — LLM_MAX_TOKENS already an env read at index.ts:58)
+  classification: distribution + process-supervision + a UI enhancement to an EXISTING dropdown + a provider-config modal over EXISTING boot-time env. No thesis surface touched.
 
 decisions_locked:             # set by the developer 2026-06-09; design to these
   - id: D1-local-is-user-server
     decision: LOCAL = the user's own OpenAI-compatible server (Ollama/KoboldCPP via OPENAI_BASE_URL), exactly as today. App bundles NO model. Default provider on a fresh install = LOCAL.
     rationale: smallest scope; matches the implemented local-provider spec. A fresh install with no OPENAI_BASE_URL and no key has neither provider available — server /api/health.default is null; the client default + key flow carry the UX.
-    known_gap: the packaged app has NO UI for OPENAI_BASE_URL — LOCAL is configured by hand-editing sgc-config.json then a full app relaunch (config is read only when the server is spawned). Accepted per scope; stated so verification expectations are clear.
+    known_gap: SUPERSEDED 2026-06-12 by D5 — LOCAL is now configurable from the UI (ProviderConfigModal). Hand-editing sgc-config.json + relaunch remains a valid escape hatch.
   - id: D2-key-plaintext-userdata
     decision: the Anthropic key is stored as plaintext JSON at app.getPath('userData')/sgc-config.json. NOT renderer localStorage, NOT OS keychain.
     rationale: simplest persistence the developer chose; the renderer never persists the secret (preserves "key not in the browser layer"). safeStorage explicitly declined.
@@ -32,6 +50,27 @@ decisions_locked:             # set by the developer 2026-06-09; design to these
   - id: D4-builder-windows-only
     decision: package with electron-builder, Windows-only, NSIS installer.
     rationale: current/only target OS; electron-builder has the best native-module (better-sqlite3) rebuild story.
+  - id: D5-provider-config-ui
+    decision: >
+      (set by the developer 2026-06-12; audience = a non-technical share-target)
+      BOTH providers are configurable from the chip dropdown via a single
+      ProviderConfigModal. Unconfigured row → clicking it opens that provider's
+      modal instead of switching (generalizes the anthropic-only intercept).
+      Configured row → hover/focus reveals a gear icon on the row → opens the
+      same modal pre-filled; clicking the row itself still switches provider.
+      Save = writeConfig(patch) → server restart → window reload (D3
+      generalized from key-only to ALL provider config — restart stays the
+      apply mechanism, no hot-reload).
+    fields:
+      anthropic: api key (password; blank = keep existing), model (curated picker + Custom free-text), max tokens (blank = server default 16384)
+      openai_local: base URL, model name (label-only for Kobold; must match a pulled model for Ollama), max tokens (blank = server default 512), optional api key
+    rationale: >
+      the share-target runs apps "by the seat of their pants" with guidance
+      docs — every config surface that was a JSON hand-edit becomes a modal
+      field. Also closes the llmMaxTokens gap: SgcConfig had no field mapping
+      to LLM_MAX_TOKENS, so packaged local turns were pinned to the 512-token
+      server default with no .env to override — tight enough to truncate the
+      reply + <turn-summary> block and break summary parsing.
 
 current_state:
   provider_system_already_exists: true   # this request is largely an ENHANCEMENT, not new infra
@@ -66,7 +105,7 @@ current_state:
     lines: 61-93                # resolveTurnProvider — explicit-but-unavailable token 503s, never reroutes
   modal_style_reference:
     file: src/client/components/ConfirmPersonaModal.tsx
-    note: frosted overlay (fixed inset-0 z-50 bg-ground/70 backdrop-blur-md), dialog rounded-[22px] border-hairline-strong bg-ground/85, input rounded-[14px] border-hairline-strong bg-surface focus:border-ember/55, Escape-cancel + Tab focus-trap — mirror for the key modal
+    note: frosted overlay (fixed inset-0 z-50 bg-ground/70 backdrop-blur-md), dialog rounded-[22px] border-hairline-strong bg-ground/85, input rounded-[14px] border-hairline-strong bg-surface focus:border-ember/55, Escape-cancel + Tab focus-trap — mirror for ProviderConfigModal
   tokens:
     file: src/client/index.css
     success: "--color-success #6e8a6a (line 33) → key-present dot"
@@ -91,7 +130,7 @@ server:
     SGC_DB_PATH: <userData>/data/sgc.db    # MANDATORY — else db.ts falls back to process.cwd() (non-writable in a packaged app)
     CORS_ORIGIN: http://127.0.0.1:<port>   # same-origin anyway; set defensively
     ANTHROPIC_API_KEY: <from config, omitted when absent>   # absent → anthropic provider stays unavailable, as today
-    ANTHROPIC_MODEL / ANTHROPIC_MAX_TOKENS / OPENAI_BASE_URL / OPENAI_API_KEY / LLM_MODEL / LLM_PROVIDER: forwarded from config when present
+    ANTHROPIC_MODEL / ANTHROPIC_MAX_TOKENS / OPENAI_BASE_URL / OPENAI_API_KEY / LLM_MODEL / LLM_MAX_TOKENS / LLM_PROVIDER: forwarded from config when present
   dotenv_note: server imports 'dotenv/config'; no .env in the package (keep .env OUT of build.files) → dotenv no-ops, fork env wins (dotenv does not override already-set process.env)
 
 electron_shell:               # new dir electron/ → bundled to dist/electron/ as CJS via esbuild
@@ -100,11 +139,12 @@ electron_shell:               # new dir electron/ → bundled to dist/electron/ 
     - path: electron/config.ts → dist/electron (bundled into main)
       exports: |
         interface SgcConfig { anthropicApiKey?:string; anthropicModel?:string; anthropicMaxTokens?:number;
-          openaiBaseUrl?:string; openaiApiKey?:string; llmModel?:string; llmProvider?:'anthropic'|'openai';
+          openaiBaseUrl?:string; openaiApiKey?:string; llmModel?:string; llmMaxTokens?:number;
+          llmProvider?:'anthropic'|'openai';
           serverPort?:number }             // serverPort: persisted by serverManager — see architecture.origin_stability
         readConfig(): SgcConfig            // {} if missing/corrupt; never throws
-        writeConfig(patch: Partial<SgcConfig>): SgcConfig   // merge + atomic tmp-write then renameSync
-        configToEnv(cfg): Record<string,string>             // map present fields → server env names ONLY; serverPort EXCLUDED (consumed by serverManager, which sets PORT itself)
+        writeConfig(patch: Partial<SgcConfig>): SgcConfig   // merge + atomic tmp-write then renameSync; empty-string/null patch value DELETES the field (clear semantics for the modal)
+        configToEnv(cfg): Record<string,string>             // map present fields → server env names ONLY (llmMaxTokens → LLM_MAX_TOKENS); serverPort EXCLUDED (consumed by serverManager, which sets PORT itself)
       location: path.join(app.getPath('userData'),'sgc-config.json')
     - path: electron/serverManager.ts → bundled into main
       exports: |
@@ -125,15 +165,19 @@ electron_shell:               # new dir electron/ → bundled to dist/electron/ 
         exposeInMainWorld('sgcDesktop', {
           isDesktop: true,
           getConfigState(): Promise<ConfigState>,       // ipcRenderer.invoke('sgc:getConfigState')
-          setAnthropicKey(key:string): Promise<ConfigState>  // ipcRenderer.invoke('sgc:setAnthropicKey', key)
+          setConfig(patch:ConfigPatch): Promise<ConfigState>  // ipcRenderer.invoke('sgc:setConfig', patch) — writes + restarts + reloads
         })
-        ConfigState = { anthropicKeyPresent:boolean; anthropicModel?:string; openaiBaseUrl?:string; llmProvider?:'anthropic'|'openai' }  // REDACTED — never the raw key
+        ConfigPatch = Partial<Pick<SgcConfig,'anthropicApiKey'|'anthropicModel'|'anthropicMaxTokens'|'openaiBaseUrl'|'openaiApiKey'|'llmModel'|'llmMaxTokens'>>
+                      // whitelisted in MAIN, not just typed — llmProvider/serverPort are never renderer-settable; empty-string field = delete from config
+        ConfigState = { anthropicKeyPresent:boolean; openaiKeyPresent:boolean; anthropicModel?:string; anthropicMaxTokens?:number;
+                        openaiBaseUrl?:string; llmModel?:string; llmMaxTokens?:number }  // REDACTED — never raw keys
     - path: electron/main.ts → dist/electron/main.cjs ("main" in package.json)
       window: { webPreferences: { preload, contextIsolation:true, nodeIntegration:false, sandbox:true } }
       flow: "app.isPackaged ? (serverManager.start() → loadURL('http://127.0.0.1:'+port)) : loadURL('http://localhost:5555')+openDevTools"
       ipc: |
         handle('sgc:getConfigState', () => redact(readConfig()))
-        handle('sgc:setAnthropicKey', async (_e,key) => { writeConfig({anthropicApiKey:key}); const h = await serverManager.restart(); reloadWindow(h); return redact(readConfig()) })
+        handle('sgc:setConfig', async (_e,patch) => { writeConfig(whitelist(patch)); const h = await serverManager.restart(); reloadWindow(h); return redact(readConfig()) })
+        // whitelist() drops non-ConfigPatch keys (llmProvider, serverPort, anything unknown) so the renderer can never steer process supervision
 
 client:                       # additive, web-build-safe (guards on window.sgcDesktop)
   - file: src/client/lib/desktop.ts
@@ -143,15 +187,32 @@ client:                       # additive, web-build-safe (guards on window.sgcDe
     do: |
       default_to_local: change provider useState fallback (line 1000) 'anthropic' → 'openai'. health-reconcile (1128-1148) still self-corrects to whatever's available, so existing web deploys are unaffected; only the truly-empty fresh install lands on LOCAL.
       status_dots: in the rows map (240-272) add a leading dot per provider from health?.providers[p]?.available → bg-success (present) vs bg-danger (missing); mirror the ember glow at 267-269. Add the same dot to the collapsed chip button (219-230) for the CURRENT provider.
-      intercept_anthropic_when_unavailable: |
-        the rows render disabled={!available} (line 250) — a disabled button never fires choose(), so the intercept REQUIRES un-disabling the anthropic row: anthropic stays clickable when unavailable (keep the dimmed styling so it still reads as unconfigured); openai keeps disabled={!available}. Then in choose() (212-215): if p==='anthropic' && !available → do NOT switch; raise onRequestAnthropicKey (new prop) so the parent opens the key modal.
-  - file: src/client/components/AnthropicKeyModal.tsx
+      intercept_unconfigured_rows: |
+        the rows render disabled={!available} (line 250) — a disabled button never fires choose(), so BOTH rows must become clickable when unavailable (keep the dimmed styling so they still read as unconfigured). In choose() (212-215): if !available → do NOT switch; raise onConfigureProvider(p) (new prop) so the parent opens ProviderConfigModal for that provider (D5).
+      gear_on_configured_rows: |
+        configured rows get a gear icon (lucide, ~14px) revealed on row hover AND :focus-visible (keyboard parity), right-aligned beside the selected dot; clicking it opens ProviderConfigModal pre-filled WITHOUT switching provider. HTML hazard: rows are <button>s (240-272) and nested <button>s are invalid — restructure each row as a relative wrapper with the select button + an absolutely-positioned SIBLING gear button; stopPropagation so gear-click never fires choose().
+  - file: src/client/components/ProviderConfigModal.tsx
     new: true
-    props: "{ open; onSave(key:string); onCancel; mode:'desktop'|'web' }"
+    props: "{ open; provider:'anthropic'|'openai'; configState:ConfigState|null; onSave(patch:ConfigPatch); onCancel; mode:'desktop'|'web' }"
     do: |
-      mirror ConfirmPersonaModal styling; password-type input. On save:
-        desktop (window.sgcDesktop present): await sgcDesktop.setAnthropicKey(key) → main restarts + reloads; optionally set localStorage['sgc.provider']='anthropic' pre-reload so it lands on ANTHROPIC after reload.
-        web (no sgcDesktop): show inline guidance ("set ANTHROPIC_API_KEY in the server .env and restart"); NO network write (would touch the server — out of scope).
+      mirror ConfirmPersonaModal styling (frosted overlay, rounded-[22px] dialog, Escape-cancel, Tab focus-trap). Fields per provider:
+        anthropic:
+          api key — password input; placeholder "key on file" when anthropicKeyPresent; blank = keep existing; explicit Clear affordance = delete
+          model — curated <select> with cost hints (ids per claude-api reference, cached 2026-06-04; verify at implementation):
+            (unset)            "server default" — claude-opus-4-7 today
+            claude-opus-4-8    "most capable — $5/$25 per MTok"
+            claude-sonnet-4-6  "balanced — $3/$15 per MTok"
+            claude-haiku-4-5   "fastest + cheapest — $1/$5 per MTok"
+            Custom…            → free-text input (any model id)
+          max tokens — number input; blank = server default (16384)
+        openai (LOCAL):
+          base URL — text; placeholder http://localhost:5001/v1 (KoboldCPP); helper text notes Ollama = http://localhost:11434/v1
+          model name — text; helper text: label-only for Kobold, MUST match a pulled model for Ollama
+          max tokens — number input; blank = server default (512); helper text: 512 can truncate the reply + turn-summary block — suggest 1024+
+          api key — password, optional (Kobold ignores it)
+      save (desktop): await sgcDesktop.setConfig(patch) → main writes config, restarts server, reloads window. When the modal was opened from an UNCONFIGURED row, pre-set localStorage['sgc.provider'] to that provider before save so the reload lands on it.
+      save (web): per-provider inline guidance (env names ANTHROPIC_API_KEY / ANTHROPIC_MODEL / ANTHROPIC_MAX_TOKENS / OPENAI_BASE_URL / LLM_MODEL / LLM_MAX_TOKENS in the server .env + restart); NO network write — server stays frozen.
+      validation: base URL must parse as an http(s) URL; max tokens a positive integer; stored keys are never displayed (ConfigState is redacted — only presence booleans).
 
 build_wiring:
   package_json:
@@ -165,7 +226,9 @@ build_wiring:
       electron:dev: "concurrently -k -n vite,server,electron \"npm:dev:client\" \"npm:dev:server\" \"npm:electron:dev:run\""
       electron:dev:run: "wait-on http://localhost:5555 && npm run build:electron && electron dist/electron/main.cjs"
       electron:build: "npm run build && npm run build:electron"
-      dist:win: "npm run electron:build && electron-builder --win --x64 && npm run rebuild:node"   # rebuild:node chained so the ABI flip can't be forgotten (Core Value 3)
+      dist:win: "npm run electron:build && node scripts/dist-win.mjs"   # wrapper = electron-builder --win --x64 with rebuild:node in FINALLY — even a failed pack restores the Node ABI (an && chain only restores on success; Core Value 3)
+      typecheck: 'EXTEND existing: append "&& tsc -p tsconfig.electron.json --noEmit" — esbuild does NOT typecheck; without this electron/ ships untypechecked'
+      lint: 'EXTEND existing: "eslint src" → "eslint src electron"'
   electron_builder_config:    # package.json "build" block (or electron-builder.yml)
     appId: com.boltontechnology.sgc
     productName: Salience-Gated Cognition
@@ -181,7 +244,8 @@ build_wiring:
 out_of_scope:
   - bundling/downloading a local model — D1 says LOCAL is the user's own server; a bundled runtime is a separate sub-project
   - OS keychain / safeStorage for the key — D2 chose plaintext userData; revisit if security review demands it
-  - runtime hot-reload of the key inside the server — D3 chose restart; hot-reload would force a server change
+  - runtime hot-reload of key/config inside the server — D3 chose restart (D5 keeps it as the apply mechanism); hot-reload would force a server change
+  - live model-list probe of the local server (a /v1/models dropdown for LOCAL) — needs either a frozen-server change or a cross-origin renderer fetch with unreliable CORS; free-text model name + helper text instead
   - macOS / Linux targets, code-signing/notarization — D4 is Windows-only
   - auto-update (electron-updater) — separate spec if wanted
   - moving any memory logic server-side — architecture invariant, never
@@ -192,16 +256,16 @@ build_sequence:
     do: add devDeps (+ the optional deps_slim move); npm install. Do NOT electron-rebuild here — dev-mode Electron forks no server, so nothing loads better-sqlite3 under the Electron ABI in dev, and an eager rebuild just breaks vitest/dev:server. The Electron ABI is produced at pack time by electron-builder npmRebuild; the dist:win chain ends with rebuild:node to flip it back.
   - step: 2
     target: electron/config.ts + electron/serverManager.ts
-    do: config read/write/atomic + configToEnv; server lifecycle (resolvePort incl. serverPort persistence, fork w/ env incl. SGC_DB_PATH, waitForHealth, stop, restart, log tee). Unit-test configToEnv mapping (incl. serverPort exclusion) + readConfig-on-missing.
+    do: config read/write/atomic + configToEnv; server lifecycle (resolvePort incl. serverPort persistence, fork w/ env incl. SGC_DB_PATH, waitForHealth, stop, restart, log tee). Unit-test configToEnv mapping (incl. serverPort exclusion + llmMaxTokens → LLM_MAX_TOKENS), writeConfig delete-on-empty, and readConfig-on-missing.
   - step: 3
-    target: electron/preload.ts + electron/main.ts + build:electron
-    do: contextBridge surface; window; dev/packaged branch; IPC handlers; will-quit kill. Confirm dist/electron/{main,preload}.cjs emit (.cjs, not .js — see build_wiring).
+    target: electron/preload.ts + electron/main.ts + build:electron + quality gates
+    do: contextBridge surface; window; dev/packaged branch; IPC handlers; will-quit kill. Confirm dist/electron/{main,preload}.cjs emit (.cjs, not .js — see build_wiring). Add tsconfig.electron.json + extend typecheck/lint scripts to cover electron/ — verify a deliberate type error in electron/main.ts FAILS npm run typecheck before moving on.
   - step: 4
     target: set package.json "main"; dev smoke
     do: npm run electron:dev → window loads :5555, app works, NO second :3000 spawned by Electron.
   - step: 5
-    target: src/client/lib/desktop.ts + SalienceGatedCognition.tsx + components/AnthropicKeyModal.tsx
-    do: default→LOCAL; status dots; intercept ANTHROPIC-unavailable → key modal; modal desktop/web branches. typecheck + lint green; web build still compiles.
+    target: src/client/lib/desktop.ts + SalienceGatedCognition.tsx + components/ProviderConfigModal.tsx
+    do: default→LOCAL; status dots; unconfigured-row click → ProviderConfigModal; gear-on-hover/focus for configured rows (sibling-button structure, no nested <button>); modal fields + desktop/web branches per D5. typecheck + lint green; web build still compiles.
   - step: 6
     target: package.json "build" block + .gitignore
     do: electron-builder config (files, asarUnpack, npmRebuild, win/nsis, icon).
@@ -217,7 +281,10 @@ build_sequence:
 
 verification:                 # manual, packaged build
   - fresh_install_defaults_local: clean profile (or delete %APPDATA%/<productName>/sgc-config.json) → chip shows LOCAL; ANTHROPIC row red dot + "not configured"; /api/health.default null
-  - select_anthropic_no_key_prompts: clicking ANTHROPIC (red dot, enabled-but-unavailable row) opens AnthropicKeyModal instead of switching
+  - unconfigured_row_opens_modal: clicking ANTHROPIC or LOCAL (red dot, enabled-but-unavailable row) opens ProviderConfigModal for that provider instead of switching
+  - local_configures_keyless: fresh install, NO Anthropic key — click LOCAL (red) → enter Kobold base URL + max tokens 1024 → save → restart → LOCAL green dot; a turn streams from the local model; no key anywhere in sgc-config.json
+  - gear_opens_prefilled: hover (and keyboard-focus) a CONFIGURED row → gear appears; clicking it opens the modal pre-filled WITHOUT switching provider
+  - model_picker_applies: switch the anthropic model to claude-haiku-4-5 via the picker → after the reload /api/health providers.anthropic.model reflects it; chip submenu shows the new label
   - save_key_restarts_flips_green: paste sk-ant-… → window briefly reloads (restart + health re-poll) → chip ANTHROPIC, green dot; %APPDATA%/<productName>/sgc-config.json contains the key (plaintext, per D2)
   - turn_streams_from_anthropic: send a message → SSE deltas render; inspector shows token counts (proves restarted server built the anthropic client + routed /api/turn)
   - persistence: create chat + memory, quit fully, relaunch → history + memories present (DB at %APPDATA%/<productName>/data/sgc.db); ANTHROPIC still green AND still the selected provider — proves the persisted serverPort kept the origin (and localStorage) stable across launches
@@ -237,8 +304,10 @@ files:
     - electron/preload.ts
     - electron/serverManager.ts
     - electron/config.ts
+    - tsconfig.electron.json             # extends base; types ["node"]; include ["electron"] — wired into typecheck
+    - scripts/dist-win.mjs               # spawn electron-builder --win --x64; npm rebuild better-sqlite3 in finally; exit with builder's code
     - src/client/lib/desktop.ts
-    - src/client/components/AnthropicKeyModal.tsx
+    - src/client/components/ProviderConfigModal.tsx
     - docs/electron-release-spec.yaml   # this file
   modify:
     - package.json                       # devDeps, scripts, "main", "build" block

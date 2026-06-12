@@ -68,19 +68,30 @@ switchable at runtime from the header provider chip. It's opt-in: uncomment
 deterministic memory tiers work identically; Anthropic-only web tools are dark
 on the local path.
 
+**Desktop (Windows).** `npm run dist:win` packages SGC as an NSIS installer in
+`release/` (electron-builder). The installed app embeds the same server as a
+supervised child process and configures both providers from the UI — click an
+unconfigured provider in the header chip (or the gear on a configured one) to
+set the Anthropic key / local base URL, model, and max tokens. Config lives in
+`%APPDATA%\sgc\sgc-config.json`; saving restarts the embedded server. No `.env`
+needed.
+
 | Command | Does |
 |---------|------|
 | `npm run dev` | Client + server, hot-reloading |
-| `npm test` | Vitest — TF-IDF engine, time scorer, retrieval eval probes |
-| `npm run typecheck` | `tsc` on client and server |
+| `npm run electron:dev` | The same dev stack plus an Electron window |
+| `npm test` | Vitest — TF-IDF engine, time scorer, retrieval eval probes, desktop config |
+| `npm run typecheck` | `tsc` on client, server, and electron shell |
 | `npm run lint` | ESLint |
 | `npm run build` | Production build into `dist/` |
+| `npm run dist:win` | Windows NSIS installer into `release/` |
 
 ## Repository layout
 
 ```
 src/client/    React + TypeScript UI; lib/ holds the memory-architecture logic
-src/server/    Express proxy — holds ANTHROPIC_API_KEY, one route
+src/server/    Express server — provider keys/URLs, /api/turn (SSE), SQLite persistence
+electron/      Windows desktop shell — forks the server, supervises, never thinks
 docs/          phase-1-5-reference.jsx (frozen original artifact) + changelogs
 scripts/agent/ Bash utilities for codebase recon and checks
 .claude/       Agents, skills, and the pre-commit QA gate

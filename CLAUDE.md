@@ -94,6 +94,8 @@ src/client/
     ChatMemoryEditor.tsx      per-turn cosine-grep gating editor (4-col card grid)
     ConfirmPersonaModal.tsx   per-chat persona (system prompt) + optional mask, set at "Begin again"
     PromptEditorModal.tsx     edit THIS chat's persona mid-chat, forward-only version history
+    ProviderConfigModal.tsx   configure either provider from the chip (desktop saves via the
+                              Electron bridge → server restart; web mode shows .env guidance)
     MermaidBlock.tsx          lazy-loaded mermaid code blocks → themed SVG; streaming-gated, code-block fallback
     ui/                       shadcn/ui primitives (button, card)
   lib/
@@ -104,10 +106,23 @@ src/client/
     time-score.ts             time scorer + searchScored orchestrator (concept × time)
     prompt.ts                 system-prompt builder + response parser
     api.ts                    runTurn() — POSTs to /api/turn
+    desktop.ts                typed guard for window.sgcDesktop (Electron bridge; web → absent)
     eval/                     retrieval eval harness — planted-fact fixtures + probes
                               replayed through searchScored, ratcheted recall@3 / MRR
 src/server/
-  index.ts                    Express proxy — holds ANTHROPIC_API_KEY, one route
+  index.ts                    Express server — holds the provider keys/URLs; /api/health,
+                              /api/turn (SSE), chat/turn/memory persistence routes; serves
+                              dist/client when built. Reads ALL config from env once at boot.
+  db.ts                       SQLite persistence (better-sqlite3) — chats/turns/memories,
+                              schema + pure helpers; SGC_DB_PATH overrides the ./data default
+  providers.ts                per-turn provider registry/resolver (anthropic | openai "LOCAL")
+electron/                     Windows desktop shell — supervises, never thinks
+  main.ts                     window + IPC; packaged: fork server, load ITS origin; dev: load :5555
+  serverManager.ts            fork (utilityProcess) + health poll + restart-on-config-change;
+                              persists serverPort so the origin/localStorage survive relaunches
+  config.ts                   sgc-config.json read/merge/atomic-write + env mapping (+ tests)
+  preload.ts                  contextBridge → window.sgcDesktop (redacted state, whitelisted patches)
+scripts/dist-win.mjs          electron-builder wrapper — restores the Node ABI in a finally
 docs/
   phase-1-5-reference.jsx     frozen original single-file artifact
   *-spec.yaml                 implementation specs (YAML — see "Spec format" below)
@@ -144,12 +159,23 @@ retired.)
   and ratchets recall@3 / MRR; `known-gap` probes document the synonymy limits
   and fail loudly if a change closes one (promote them to `pass` when that
   happens). Turn-score changes must keep this suite green.
-- **Run it:** `npm install`, then `cp .env.example .env` and add an
+- **Run it (web/dev):** `npm install`, then `cp .env.example .env` and add an
   `ANTHROPIC_API_KEY`, then `npm run dev`. That runs the Vite client (`:5555`)
   and the Express proxy (`:3000`) together via `concurrently`; Vite proxies
   `/api` to the server. Open `http://localhost:5555`.
-- **Key handling:** the API key lives *only* on the server. The browser calls
-  `/api/turn` and never touches `api.anthropic.com`. See `AGENTS.md`.
+- **Run it (desktop):** `npm run electron:dev` adds an Electron window over the
+  same dev stack (no embedded server in dev). `npm run dist:win` builds the
+  NSIS installer into `release/` — it rebuilds better-sqlite3 to the Electron
+  ABI at pack time and flips it back to the Node ABI in a `finally` (see
+  `AGENTS.md`). Packaged, the app forks the built server, loads its origin
+  (`http://127.0.0.1:<persisted port>`), and applies provider-config changes
+  (the chip's ProviderConfigModal → `%APPDATA%\sgc\sgc-config.json`) by
+  restarting that fork — the server still reads env once at boot, unchanged.
+- **Key handling:** the API key lives *only* on the server (web: `.env`;
+  desktop: `sgc-config.json` in userData, plaintext by decision D2, handed to
+  the fork as env). The browser/renderer calls `/api/turn` and never touches
+  `api.anthropic.com`; the renderer sees only redacted presence booleans. See
+  `AGENTS.md`.
 
 ## Core Values
 
