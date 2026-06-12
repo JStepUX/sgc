@@ -1,5 +1,5 @@
 import { memo, useState, useRef, useEffect, useCallback, isValidElement } from 'react';
-import { ArrowUp, Clock, Plus } from 'lucide-react';
+import { ArrowUp, Clock, Plus, Settings } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeQuotes from './lib/rehype-quotes';
@@ -30,6 +30,8 @@ import {
 import { ChatHistoryModal } from './components/ChatHistoryModal';
 import { ConfirmPersonaModal } from './components/ConfirmPersonaModal';
 import { PromptEditorModal } from './components/PromptEditorModal';
+import { ProviderConfigModal } from './components/ProviderConfigModal';
+import { getDesktop, isDesktop, type DesktopConfigPatch, type DesktopConfigState } from './lib/desktop';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -175,7 +177,10 @@ const AuroraBackground = memo(function AuroraBackground({
 // was low-value signage, the switcher earns the spot. Hand-rolled popover (no
 // new modal/Radix infra) — a positioned div with an outside-click + Escape
 // dismiss. Selecting commits to state + localStorage and applies to the NEXT
-// turn; unconfigured providers render disabled.
+// turn. Per provider, a status dot mirrors availability (success = configured,
+// danger = not). Unconfigured rows stay clickable (dimmed) and open the
+// ProviderConfigModal instead of switching (D5); configured rows reveal a gear
+// on hover/focus that opens the same modal pre-filled without switching.
 // ============================================================
 
 const ProviderChip = memo(function ProviderChip({
@@ -183,11 +188,13 @@ const ProviderChip = memo(function ProviderChip({
   health,
   processing,
   onSelect,
+  onConfigure,
 }: {
   provider: ProviderId;
   health: HealthResponse | null;
   processing: boolean;
   onSelect: (p: ProviderId) => void;
+  onConfigure: (p: ProviderId) => void;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -209,10 +216,19 @@ const ProviderChip = memo(function ProviderChip({
     };
   }, [open]);
 
+  // Unconfigured providers don't switch — they raise onConfigure so the
+  // parent opens the ProviderConfigModal for that provider (D5).
   const choose = (p: ProviderId) => {
-    onSelect(p);
+    const available = health?.providers[p]?.available ?? false;
     setOpen(false);
+    if (!available) {
+      onConfigure(p);
+      return;
+    }
+    onSelect(p);
   };
+
+  const currentAvailable = health?.providers[provider]?.available;
 
   return (
     <div className="relative" ref={wrapRef}>
@@ -224,8 +240,20 @@ const ProviderChip = memo(function ProviderChip({
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="rounded-full border border-ember/35 bg-ember/[0.08] px-2.5 py-1 font-mono text-[11px] font-medium tracking-[0.08em] text-ember transition-colors hover:bg-ember/[0.14] disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex items-center gap-1.5 rounded-full border border-ember/35 bg-ember/[0.08] px-2.5 py-1 font-mono text-[11px] font-medium tracking-[0.08em] text-ember transition-colors hover:bg-ember/[0.14] disabled:cursor-not-allowed disabled:opacity-50"
       >
+        {/* Status dot for the CURRENT provider — rendered once health is known. */}
+        {currentAvailable !== undefined && (
+          <span
+            aria-hidden="true"
+            className={cn(
+              'size-1.5 shrink-0 rounded-full',
+              currentAvailable
+                ? 'bg-success shadow-[0_0_6px_var(--color-success)]'
+                : 'bg-danger shadow-[0_0_6px_var(--color-danger)]',
+            )}
+          />
+        )}
         {PROVIDER_LABEL[provider]}
       </button>
 
@@ -241,33 +269,61 @@ const ProviderChip = memo(function ProviderChip({
             const info = health?.providers[p];
             const available = info?.available ?? false;
             const selected = p === provider;
+            // Rows are a relative wrapper with the select <button> plus an
+            // absolutely-positioned SIBLING gear <button> — nested <button>s
+            // are invalid HTML. stopPropagation keeps gear-click off choose().
             return (
-              <button
-                key={p}
-                type="button"
-                role="menuitemradio"
-                aria-checked={selected}
-                disabled={!available}
-                onClick={() => choose(p)}
-                className={cn(
-                  'flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left transition-colors',
-                  available ? 'hover:bg-fg-1/[0.06]' : 'cursor-not-allowed opacity-40',
-                  selected && 'bg-ember/[0.1]',
-                )}
-              >
-                <span className="flex flex-col">
-                  <span className="font-mono text-[11px] tracking-[0.06em] text-fg-1">
-                    {PROVIDER_LABEL[p]}
+              <div key={p} className="group relative">
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={selected}
+                  onClick={() => choose(p)}
+                  className={cn(
+                    'flex w-full items-center justify-between gap-3 rounded-md py-1.5 pl-2 text-left transition-colors',
+                    available ? 'pr-8 hover:bg-fg-1/[0.06]' : 'pr-2 opacity-40 hover:opacity-60',
+                    selected && 'bg-ember/[0.1]',
+                  )}
+                >
+                  <span className="flex items-center gap-2">
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        'size-1.5 shrink-0 rounded-full',
+                        available
+                          ? 'bg-success shadow-[0_0_6px_var(--color-success)]'
+                          : 'bg-danger shadow-[0_0_6px_var(--color-danger)]',
+                      )}
+                    />
+                    <span className="flex flex-col">
+                      <span className="font-mono text-[11px] tracking-[0.06em] text-fg-1">
+                        {PROVIDER_LABEL[p]}
+                      </span>
+                      <span className="font-mono text-[10px] text-fg-3">
+                        {info?.model ?? '—'}
+                        {!available && ' · not configured — click to set up'}
+                      </span>
+                    </span>
                   </span>
-                  <span className="font-mono text-[10px] text-fg-3">
-                    {info?.model ?? '—'}
-                    {!available && ' · not configured'}
-                  </span>
-                </span>
-                {selected && available && (
-                  <span className="size-1.5 shrink-0 rounded-full bg-ember shadow-[0_0_8px_var(--color-ember)]" />
+                  {selected && available && (
+                    <span className="size-1.5 shrink-0 rounded-full bg-ember shadow-[0_0_8px_var(--color-ember)]" />
+                  )}
+                </button>
+                {available && (
+                  <button
+                    type="button"
+                    aria-label={`Configure ${PROVIDER_LABEL[p]}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpen(false);
+                      onConfigure(p);
+                    }}
+                    className="absolute right-1.5 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-fg-3 opacity-0 transition-opacity hover:bg-fg-1/[0.08] hover:text-fg-1 focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100"
+                  >
+                    <Settings className="size-3.5" aria-hidden="true" />
+                  </button>
                 )}
-              </button>
+              </div>
             );
           })}
         </div>
@@ -286,12 +342,14 @@ const PhaseBar = memo(function PhaseBar({
   provider,
   health,
   onSelectProvider,
+  onConfigureProvider,
 }: {
   processing: boolean;
   onReset: () => void;
   provider: ProviderId;
   health: HealthResponse | null;
   onSelectProvider: (p: ProviderId) => void;
+  onConfigureProvider: (p: ProviderId) => void;
 }) {
   // All three remain true on the local path (one request to one model; TF-IDF
   // grep and the 2-turn buffer are client-side and provider-agnostic).
@@ -311,6 +369,7 @@ const PhaseBar = memo(function PhaseBar({
           health={health}
           processing={processing}
           onSelect={onSelectProvider}
+          onConfigure={onConfigureProvider}
         />
       </div>
       <div className="flex items-center gap-[14px]">
@@ -997,7 +1056,11 @@ export default function SalienceGatedCognition() {
     } catch {
       /* localStorage unavailable (private mode) — fall through to default */
     }
-    return 'anthropic';
+    // LOCAL by default: a truly-empty fresh install (no key, no base URL)
+    // should not land on a provider that needs a paid key. The health
+    // reconcile below still coerces to whatever IS available, so existing
+    // web deploys with only Anthropic configured are unaffected.
+    return 'openai';
   });
   const chatEndRef = useRef<HTMLDivElement>(null);
   const historyButtonRef = useRef<HTMLButtonElement>(null);
@@ -1158,6 +1221,60 @@ export default function SalienceGatedCognition() {
       /* localStorage unavailable — selection still applies in-session */
     }
   }, []);
+
+  // --- Provider config modal (D5): which provider is being configured, and
+  // whether the modal was opened from an UNCONFIGURED row (the intercept) —
+  // in that case a successful save pre-sets the stored provider so the
+  // post-restart reload lands on it. ---
+  const [providerConfig, setProviderConfig] = useState<{
+    provider: ProviderId;
+    fromUnconfigured: boolean;
+  } | null>(null);
+  // Redacted desktop config (presence booleans, models, token caps) for
+  // pre-filling the modal. Stays null on web — the modal renders .env
+  // guidance instead of a save path.
+  const [desktopConfigState, setDesktopConfigState] = useState<DesktopConfigState | null>(null);
+  useEffect(() => {
+    getDesktop()
+      ?.getConfigState()
+      .then(setDesktopConfigState)
+      .catch((err) => console.warn('desktop config state fetch failed:', err));
+  }, []);
+
+  const handleConfigureProvider = useCallback(
+    (p: ProviderId) => {
+      setProviderConfig({
+        provider: p,
+        fromUnconfigured: !(health?.providers[p]?.available ?? false),
+      });
+    },
+    [health],
+  );
+
+  const handleSaveProviderConfig = useCallback(
+    async (patch: DesktopConfigPatch) => {
+      const bridge = getDesktop();
+      if (!bridge || !providerConfig) return;
+      if (providerConfig.fromUnconfigured) {
+        // The save below reloads the window (packaged) — persist the intent
+        // first so the reload's provider init lands on the newly configured
+        // provider. The health reconcile still corrects it if the save left
+        // the provider unavailable.
+        try {
+          localStorage.setItem(PROVIDER_LS_KEY, providerConfig.provider);
+        } catch {
+          /* localStorage unavailable — reload falls back to defaults */
+        }
+      }
+      // Packaged: main writes config → restarts the fork → reloads the window;
+      // execution usually ends with the reload. Dev-mode Electron: the write
+      // lands for the next packaged run and we just refresh local state.
+      const next = await bridge.setConfig(patch);
+      setDesktopConfigState(next);
+      setProviderConfig(null);
+    },
+    [providerConfig],
+  );
 
   // --- Memory sync: persist the active chat's set whenever it changes,
   // debounced. --- Save is fire-and-forget; the UI is the source of truth
@@ -1344,6 +1461,14 @@ export default function SalienceGatedCognition() {
       // to estimateNaiveContextTokens below: it's an SGC augmentation the naive
       // "send everything" baseline wouldn't have, so it doesn't cancel there.
       const systemPrompt = buildPrompt(memories, localBuffer, grepResults.length > 0 ? grepResults : null, fetchedDocs, failedUrls, activePersona, turnStartedAt, summaryWindow);
+      // Assert the provider token only once /api/health has CONFIRMED it
+      // available — an explicit-but-unavailable token 503s by design
+      // (resolveTurnProvider never reroutes), and before health resolves (or
+      // when the fetch failed) the stored/initial token is just a guess.
+      // Omitting it lets the server route to its boot default instead. This
+      // matters since the fresh-install default became LOCAL: a fast submit
+      // on an Anthropic-only deploy must not 503 on an unconfigured 'openai'.
+      const confirmedProvider = health?.providers[provider]?.available ? provider : undefined;
       const turnResult = await runTurn(
         systemPrompt,
         userInput,
@@ -1351,7 +1476,7 @@ export default function SalienceGatedCognition() {
           // Render Sal's reply as it arrives; hide the trailing <turn-summary> block.
           setStreamingText(stripStreamingMeta(rawSoFar));
         },
-        provider,
+        confirmedProvider,
       );
       const { displayText, summary } = parseTurnResponse(turnResult.text);
 
@@ -1643,6 +1768,7 @@ export default function SalienceGatedCognition() {
           provider={provider}
           health={health}
           onSelectProvider={handleSelectProvider}
+          onConfigureProvider={handleConfigureProvider}
         />
 
         <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
@@ -1739,6 +1865,16 @@ export default function SalienceGatedCognition() {
         livePersona={activePersona}
         versions={promptVersions}
         onSave={handleSavePromptVersion}
+      />
+
+      <ProviderConfigModal
+        open={providerConfig !== null}
+        provider={providerConfig?.provider ?? 'anthropic'}
+        label={PROVIDER_LABEL[providerConfig?.provider ?? 'anthropic']}
+        configState={desktopConfigState}
+        mode={isDesktop() ? 'desktop' : 'web'}
+        onSave={handleSaveProviderConfig}
+        onCancel={() => setProviderConfig(null)}
       />
     </div>
   );
