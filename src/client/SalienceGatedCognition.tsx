@@ -1,15 +1,13 @@
 import { memo, useState, useRef, useEffect, useCallback, isValidElement } from 'react';
-import { ArrowUp, Clock, Plus, Settings } from 'lucide-react';
+import { ArrowUp, Clock, Pencil, Plus, Settings } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeQuotes from './lib/rehype-quotes';
 import { MermaidBlock } from './components/MermaidBlock';
 import type { Memory, ChatEntry, FetchedDoc, TurnSummary } from './lib/types';
-import { LOCAL_BUFFER_SIZE, SUMMARY_BUFFER_SIZE } from './lib/constants';
-import { searchScored } from './lib/time-score';
+import { assembleTurnContext } from './lib/turn-context';
 import {
   DEFAULT_PERSONA,
-  buildPrompt,
   estimateNaiveContextTokens,
   parseTurnResponse,
   stripStreamingMeta,
@@ -23,6 +21,7 @@ import {
   saveMemories as apiSaveMemories,
   savePromptVersion as apiSavePromptVersion,
   saveTurn as apiSaveTurn,
+  updateTurn as apiUpdateTurn,
   type ChatSummary,
   type PromptVersion,
   type TurnActiveState,
@@ -31,6 +30,7 @@ import { ChatHistoryModal } from './components/ChatHistoryModal';
 import { ConfirmPersonaModal } from './components/ConfirmPersonaModal';
 import { PromptEditorModal } from './components/PromptEditorModal';
 import { ProviderConfigModal } from './components/ProviderConfigModal';
+import { EditResponseModal, type RespinResult } from './components/EditResponseModal';
 import { getDesktop, isDesktop, type DesktopConfigPatch, type DesktopConfigState } from './lib/desktop';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -730,6 +730,8 @@ const AssistantMessage = memo(function AssistantMessage({
   streaming = false,
   label,
   summary,
+  onEdit,
+  canEdit = false,
 }: {
   text: string;
   streaming?: boolean;
@@ -739,19 +741,38 @@ const AssistantMessage = memo(function AssistantMessage({
   /** Sal's per-turn summary, rendered as a dimmed one-line appendage beneath the
    * reply. Absent while streaming and on turns that observed nothing. */
   summary?: TurnSummary;
+  /** Open the response editor for this turn. Present only on the latest reply. */
+  onEdit?: () => void;
+  /** Whether the pencil is actionable (turn persisted + no turn in progress). */
+  canEdit?: boolean;
 }) {
   const name = label && label.trim() ? label : 'Sal';
   const summaryLine = summary ? flattenSummary(summary) : '';
   return (
     <div
       className={cn(
-        'flex flex-col gap-2 text-pretty text-[15px] font-light leading-[1.7] text-fg-1',
+        'group relative flex flex-col gap-2 text-pretty text-[15px] font-light leading-[1.7] text-fg-1',
         streaming && 'sal-streaming',
       )}
     >
       <span className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-fg-3">
         {name}
       </span>
+      {!streaming && onEdit && (
+        // Hover-revealed pencil on the latest reply — opens the response editor
+        // (manual edit / re-spin). Disabled until the turn has a DB id and no
+        // turn is in flight, so Save always has an addressable target.
+        <button
+          type="button"
+          onClick={onEdit}
+          disabled={!canEdit}
+          aria-label="Edit this response"
+          title="Edit this response"
+          className="absolute right-0 top-0 flex size-[26px] items-center justify-center rounded-full border border-hairline-strong bg-surface-thin text-fg-3 opacity-0 transition-opacity hover:border-ember hover:text-ember group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-0"
+        >
+          <Pencil className="size-[12.5px]" />
+        </button>
+      )}
       <div className="flex flex-col gap-3.5">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
@@ -1041,6 +1062,10 @@ export default function SalienceGatedCognition() {
   // `activePersona` in that case. Hydrated alongside persona on load/switch.
   const [promptVersions, setPromptVersions] = useState<PromptVersion[]>([]);
   const [promptEditorOpen, setPromptEditorOpen] = useState(false);
+  // The assistant reply being edited (latest turn only). A snapshot of its id +
+  // content + instant; null when the response editor is closed. The re-spin/save
+  // handlers resolve the live entry from chatLog by this id.
+  const [editTarget, setEditTarget] = useState<{ id: number; content: string; createdAt: number } | null>(null);
   // Has the initial hydration completed? Guards the memory-save effect from
   // firing on mount (with the empty placeholder set) before the active chat's
   // memories have loaded.
@@ -1221,6 +1246,138 @@ export default function SalienceGatedCognition() {
       /* localStorage unavailable — selection still applies in-session */
     }
   }, []);
+
+  // ============================================================
+  // RESPONSE EDITOR — edit the latest assistant reply (manual or re-spin).
+  // ============================================================
+
+  // Open the editor for the latest assistant turn. Snapshots its id/content so
+  // the modal seeds cleanly; the re-spin/save handlers re-resolve the live entry
+  // from chatLog by id (so a mid-edit state change can't mis-target).
+  const openLatestEditor = useCallback(() => {
+    let idx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      // Timeless manual memories are curated in the chat memory editor, not here.
+      if (messages[i].role === 'assistant' && !messages[i].timeless) { idx = i; break; }
+    }
+    const a = idx >= 0 ? messages[idx] : null;
+    if (!a || typeof a.id !== 'number') return;
+    setEditTarget({ id: a.id, content: a.content, createdAt: a.createdAt });
+  }, [messages]);
+
+  // Re-spin: re-run the currently-selected model for the target turn. The chat
+  // HISTORY tier is reconstructed faithfully — sliced to before this turn, recency
+  // anchored at its original instant, so no later turn can leak in. Memories and
+  // persona are CURRENT, not snapshotted (they have no per-turn binding anywhere;
+  // the modal copy says so). Streams stripped preview text via onDelta.
+  // This is the feature's one extra model call: an explicit user action that
+  // reuses the deterministic context-assembly path (assembleTurnContext) and
+  // keeps Sal ephemeral + memory retrieval pure math — inside the Phase 1.5
+  // contract (the "one API call per turn" line is a guardrail, not the law).
+  const handleRespin = useCallback(
+    async (onDelta: (preview: string) => void): Promise<RespinResult> => {
+      if (!editTarget) throw new Error('No reply selected.');
+      const assistantIdx = chatLog.findIndex((e) => e.id === editTarget.id);
+      const userIdx = assistantIdx - 1;
+      if (assistantIdx < 0 || userIdx < 0) throw new Error('Could not locate this turn.');
+      const targetUser = chatLog[userIdx];
+
+      // Re-fetch any links in the original user message so the re-spin reads the
+      // same page context (deterministic, no model — the live turn's helpers).
+      const urls = extractUrls(targetUser.content);
+      const fetched = await Promise.all(urls.map(fetchUrl));
+      const fetchedDocs: FetchedDoc[] = [];
+      const failedUrls: string[] = [];
+      urls.forEach((u, i) => {
+        const doc = fetched[i];
+        if (doc) fetchedDocs.push(doc);
+        else failedUrls.push(u);
+      });
+
+      const { systemPrompt } = assembleTurnContext({
+        query: targetUser.content,
+        priorLog: chatLog.slice(0, userIdx),
+        memories,
+        persona: activePersona,
+        now: targetUser.createdAt,
+        fetchedDocs,
+        failedUrls,
+      });
+
+      const confirmedProvider = health?.providers[provider]?.available ? provider : undefined;
+      const result = await runTurn(
+        systemPrompt,
+        targetUser.content,
+        (raw) => onDelta(stripStreamingMeta(raw)),
+        confirmedProvider,
+      );
+      const { displayText, summary } = parseTurnResponse(result.text);
+      return {
+        text: displayText,
+        summary,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+        elapsed: result.elapsed,
+      };
+    },
+    [editTarget, chatLog, memories, activePersona, health, provider],
+  );
+
+  // Save the edited reply. Persist FIRST, then commit to state on success (a
+  // failure leaves the chat untouched and the modal open with the error). A
+  // re-spin carries a fresh summary + metrics; a manual edit clears the stale
+  // summary. inspector_json is rebuilt from the latest turn's TurnData (this IS
+  // the latest turn) so the right-rail diagnostics survive a reload; only
+  // `summary` is rehydrated onto the message, so that's the load-bearing field.
+  const handleSaveEdit = useCallback(
+    async (text: string, respin: RespinResult | null) => {
+      if (!editTarget || !chatId) return;
+      const turnId = editTarget.id;
+      const newSummary = respin ? (respin.summary ?? undefined) : undefined;
+
+      const base: TurnData =
+        latestTurn ?? {
+          turnNumber: Math.floor(chatLog.length / 2),
+          inputTokens: 0,
+          outputTokens: 0,
+          totalLatency: 0,
+          localBufferSize: 0,
+          grepFired: false,
+          grepMatches: 0,
+          grepDetails: null,
+          summary: null,
+        };
+      const nextInspector: TurnData = respin
+        ? {
+            ...base,
+            inputTokens: respin.inputTokens,
+            outputTokens: respin.outputTokens,
+            totalLatency: respin.elapsed,
+            summary: respin.summary,
+          }
+        : { ...base, summary: null };
+
+      await apiUpdateTurn(chatId, turnId, {
+        content: text,
+        inspectorJson: JSON.stringify(nextInspector),
+      });
+
+      // Persisted — commit to the live logs (by id, so render + retrieval stay
+      // in sync). Re-indexing for cosine grep is automatic (tfidf is uncached).
+      const patch = (e: ChatEntry): ChatEntry =>
+        e.id !== turnId ? e : { ...e, content: text, summary: newSummary };
+      setMessages((prev) => prev.map(patch));
+      setChatLog((prev) => prev.map(patch));
+      setLatestTurn(nextInspector);
+      setEditTarget(null);
+
+      // Refresh the history list so its snippet (the latest assistant content)
+      // reflects the edit. updateTurnContent doesn't bump updated_at, so this
+      // refreshes the snippet without reordering the list.
+      apiListChats().then(setChats).catch((err) => console.warn('listChats refresh failed:', err));
+    },
+    [editTarget, chatId, latestTurn, chatLog],
+  );
 
   // --- Provider config modal (D5): which provider is being configured, and
   // whether the modal was opened from an UNCONFIGURED row (the intercept) —
@@ -1415,31 +1572,22 @@ export default function SalienceGatedCognition() {
     };
 
     try {
-      // ---- LOCAL BUFFER: last 2 turns (4 entries: user+assistant pairs) ----
-      const localBuffer = chatLog.slice(-LOCAL_BUFFER_SIZE);
-      turnData.localBufferSize = localBuffer.length;
-
-      // ---- SUMMARY BUFFER: the SUMMARY_BUFFER_SIZE entries JUST BEHIND the
-      // verbatim buffer, carried forward distilled (each turn's <turn-summary>
-      // in place of its raw text). Sliced so it ends exactly where the local
-      // buffer begins — no overlap, so it extends the awareness horizon rather
-      // than duplicating RECENT CONTEXT. buildPrompt filters these to the
-      // assistant entries that actually carry a non-empty summary.
-      const bufStart = Math.max(0, chatLog.length - LOCAL_BUFFER_SIZE);
-      const summaryWindow = chatLog.slice(Math.max(0, bufStart - SUMMARY_BUFFER_SIZE), bufStart);
-
-      // ---- COSINE GREP + TIME SCORER: two-dimensional retrieval ----
-      // searchScored runs the TF-IDF cosine engine (concept) and the time scorer
-      // (recency / time-intent) and combines them multiplicatively. The cosine
-      // engine (lib/tfidf.ts) stays pure and untouched — this is a sibling
-      // orchestrator. Phase 1.5 invariant intact: no model in the retrieval path.
-      const grepResults = searchScored(userInput, chatLog, turnStartedAt, {
-        // Exclude exactly the buffer window so the two tiers never overlap —
-        // same constant the buffer slice above uses (see lib/constants.ts).
-        excludeLastN: LOCAL_BUFFER_SIZE,
-        topK: 3,
-        threshold: 0.08,
+      // ---- ASSEMBLE THE THREE TIERS (deterministic, no model) ----
+      // localBuffer (verbatim last 2 turns) + distilled summary window + cosine
+      // grep + buildPrompt — all in assembleTurnContext, the shared path the
+      // re-spin editor reuses. `chatLog` here is everything PRIOR to this turn
+      // (the new pair is appended further down), `turnStartedAt` is the single
+      // reference instant for both the time scorer and the relative-time tags.
+      const { systemPrompt, grepResults, localBufferSize } = assembleTurnContext({
+        query: userInput,
+        priorLog: chatLog,
+        memories,
+        persona: activePersona,
+        now: turnStartedAt,
+        fetchedDocs,
+        failedUrls,
       });
+      turnData.localBufferSize = localBufferSize;
       if (grepResults.length > 0) {
         turnData.grepFired = true;
         turnData.grepMatches = grepResults.length;
@@ -1453,14 +1601,6 @@ export default function SalienceGatedCognition() {
       }
 
       // ---- SINGLE MODEL CALL (streamed) ----
-      // Pass the turn instant into buildPrompt so retrieved turns get a
-      // relative-time prefix ("3 hr ago" / "yesterday") computed against the
-      // same reference the time scorer used.
-      // The distilled summary window is passed as the final arg — the turns just
-      // behind the verbatim buffer, carried forward as their summaries. NOT passed
-      // to estimateNaiveContextTokens below: it's an SGC augmentation the naive
-      // "send everything" baseline wouldn't have, so it doesn't cancel there.
-      const systemPrompt = buildPrompt(memories, localBuffer, grepResults.length > 0 ? grepResults : null, fetchedDocs, failedUrls, activePersona, turnStartedAt, summaryWindow);
       // Assert the provider token only once /api/health has CONFIRMED it
       // available — an explicit-but-unavailable token 503s by design
       // (resolveTurnProvider never reroutes), and before health resolves (or
@@ -1523,7 +1663,19 @@ export default function SalienceGatedCognition() {
             inspectorJson: JSON.stringify(turnData),
           },
         })
-          .then(() => apiListChats())
+          .then(({ userId, assistantId }) => {
+            // Stamp the freshly-streamed pair with its DB ids so the
+            // assistant-response editor can address this turn by id WITHOUT a
+            // reload. Both entries share `turnStartedAt` (a unique per-submission
+            // stamp), so matching on it hits exactly this pair in each log.
+            const stamp = (entry: ChatEntry): ChatEntry =>
+              entry.createdAt !== turnStartedAt
+                ? entry
+                : { ...entry, id: entry.role === 'user' ? userId : assistantId };
+            setMessages((prev) => prev.map(stamp));
+            setChatLog((prev) => prev.map(stamp));
+            return apiListChats();
+          })
           .then(setChats)
           .catch((err) => console.warn('saveTurn failed:', err));
       }
@@ -1784,11 +1936,28 @@ export default function SalienceGatedCognition() {
                   </div>
                 )}
 
-                {messages.map((msg, i) =>
-                  msg.role === 'user'
-                    ? <UserPill key={i} text={msg.content} />
-                    : <AssistantMessage key={i} text={msg.content} label={activeMask} summary={msg.summary} />,
-                )}
+                {(() => {
+                  // The pencil lives only on the latest assistant reply (scope:
+                  // latest turn only). canEdit gates on a persisted id + no turn
+                  // in flight, so Save always has an addressable target.
+                  let lastAssistantIdx = -1;
+                  for (let i = messages.length - 1; i >= 0; i--) {
+                    // Skip timeless manual memories — the pencil is for streamed replies.
+                    if (messages[i].role === 'assistant' && !messages[i].timeless) { lastAssistantIdx = i; break; }
+                  }
+                  return messages.map((msg, i) =>
+                    msg.role === 'user'
+                      ? <UserPill key={i} text={msg.content} />
+                      : <AssistantMessage
+                          key={i}
+                          text={msg.content}
+                          label={activeMask}
+                          summary={msg.summary}
+                          onEdit={i === lastAssistantIdx ? openLatestEditor : undefined}
+                          canEdit={i === lastAssistantIdx && !isProcessing && typeof msg.id === 'number'}
+                        />,
+                  );
+                })()}
 
                 {streamingText !== null && (
                   <AssistantMessage text={streamingText || ' '} streaming label={activeMask} />
@@ -1875,6 +2044,16 @@ export default function SalienceGatedCognition() {
         mode={isDesktop() ? 'desktop' : 'web'}
         onSave={handleSaveProviderConfig}
         onCancel={() => setProviderConfig(null)}
+      />
+
+      <EditResponseModal
+        open={editTarget !== null}
+        onClose={() => setEditTarget(null)}
+        initialText={editTarget?.content ?? ''}
+        label={activeMask}
+        canRespin={Boolean(health?.providers[provider]?.available) && !isProcessing}
+        onRespin={handleRespin}
+        onSave={handleSaveEdit}
       />
     </div>
   );
