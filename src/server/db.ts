@@ -354,15 +354,21 @@ export interface SaveTurnInput {
 // Insert one user + assistant pair atomically. On the first turn, derive the
 // chat title from the user content. Bumps updated_at so the chat surfaces at
 // the top of the history list.
-export function saveTurnPair(chatId: string, input: SaveTurnInput): void {
+export function saveTurnPair(
+  chatId: string,
+  input: SaveTurnInput,
+): { userId: number; assistantId: number } {
   const exists = (getChatStmt.get(chatId) as ChatHeaderRow | undefined);
   if (!exists) throw new Error(`chat not found: ${chatId}`);
+  // db.transaction returns the wrapped fn's return value — surface the two new
+  // row ids so the client can stamp the in-session entries without a reload (the
+  // assistant-response editor addresses turns by id; see updateTurnContent).
   const txn = db.transaction(() => {
     const before = (turnCountForChatStmt.get(chatId) as { n: number }).n;
     const baseOrdinal = (nextOrdinalStmt.get(chatId) as { max_ord: number }).max_ord;
     const now = Date.now();
-    insertTurnStmt.run(chatId, baseOrdinal + 1, 'user', input.user.content, now, null);
-    insertTurnStmt.run(
+    const userInfo = insertTurnStmt.run(chatId, baseOrdinal + 1, 'user', input.user.content, now, null);
+    const assistInfo = insertTurnStmt.run(
       chatId,
       baseOrdinal + 2,
       'assistant',
@@ -374,8 +380,12 @@ export function saveTurnPair(chatId: string, input: SaveTurnInput): void {
       setTitleStmt.run(deriveTitle(input.user.content), chatId);
     }
     touchChatStmt.run(now, chatId);
+    return {
+      userId: Number(userInfo.lastInsertRowid),
+      assistantId: Number(assistInfo.lastInsertRowid),
+    };
   });
-  txn();
+  return txn();
 }
 
 // Insert a timeless turn at an explicit ordinal. Separate from insertTurnStmt
@@ -482,6 +492,46 @@ export function setTurnsActive(chatId: string, states: TurnActiveState[]): void 
     }
   });
   txn();
+}
+
+// Replace a turn's content in place (assistant-response editor). created_at and
+// ordinal are intentionally left UNCHANGED: editing a reply is curation of an
+// existing turn, not new activity — the cosine corpus re-reads the new text
+// automatically (tfidf is recomputed fresh every search, no cache) while the
+// time scorer's recency anchor stays put. Scoped by chat_id as well as id so a
+// turn-id from another chat can't be rewritten through this chat's route. Does
+// NOT bump updated_at — same reasoning as setTurnsActive. Returns false when no
+// row matched.
+//
+// inspectorJson === undefined leaves the existing blob untouched; a string/null
+// overwrites it. A manual edit clears the turn-summary by overwriting with a
+// blob whose `summary` is null (the only field loadChat rehydrates); a re-spin
+// overwrites with fresh TurnData.
+//
+// `AND role = 'assistant' AND timeless = 0` scopes this to ordinary streamed
+// replies at the mutation itself — the editor only ever targets those. A user
+// row must never be rewritten through this route, and a timeless manual memory
+// is curated through the chat memory editor's insert/delete path (it has no
+// Sal-emitted summary and no original prompt to re-spin). Defense-in-depth,
+// mirroring setTurnActiveStmt / deleteManualTurnPair: build the check, don't
+// trust the caller — a UI bug or an API client can't reach past the intent.
+const updateTurnContentOnlyStmt = db.prepare(
+  `UPDATE turns SET content = ? WHERE id = ? AND chat_id = ? AND role = 'assistant' AND timeless = 0`,
+);
+const updateTurnContentAndInspectorStmt = db.prepare(
+  `UPDATE turns SET content = ?, inspector_json = ? WHERE id = ? AND chat_id = ? AND role = 'assistant' AND timeless = 0`,
+);
+
+export function updateTurnContent(
+  chatId: string,
+  turnId: number,
+  content: string,
+  inspectorJson?: string | null,
+): boolean {
+  if (inspectorJson === undefined) {
+    return updateTurnContentOnlyStmt.run(content, turnId, chatId).changes > 0;
+  }
+  return updateTurnContentAndInspectorStmt.run(content, inspectorJson, turnId, chatId).changes > 0;
 }
 
 // ============================================================

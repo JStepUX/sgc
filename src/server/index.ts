@@ -37,6 +37,7 @@ import {
   saveMemories as dbSaveMemories,
   saveTurnPair as dbSaveTurnPair,
   setTurnsActive as dbSetTurnsActive,
+  updateTurnContent as dbUpdateTurnContent,
   type ManualTurnInput,
   type SaveMemoryInput,
   type SaveTurnInput,
@@ -556,8 +557,10 @@ app.post('/api/chats/:id/turns', (req, res) => {
   };
 
   try {
-    dbSaveTurnPair(req.params.id, input);
-    res.json({ ok: true });
+    // Return the two new row ids so the client can stamp the in-session entries
+    // without a reload — the assistant-response editor addresses turns by id.
+    const ids = dbSaveTurnPair(req.params.id, input);
+    res.json({ ok: true, ...ids });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'unknown';
     if (msg.startsWith('chat not found')) {
@@ -634,6 +637,58 @@ app.delete('/api/chats/:id/turns/:turnId', (req, res) => {
   } catch (err) {
     console.error('deleteManualTurn failed:', err);
     res.status(500).json({ error: 'Failed to delete memory.' });
+  }
+});
+
+// Replace a turn's content in place (assistant-response editor). PATCH because
+// it's a partial update of an existing turn — content (and optionally the
+// inspector blob) only; created_at/ordinal/active/timeless are left untouched by
+// the DB helper, so ordering + time-score stay anchored. NOT a model route:
+// the re-spin's model call happens client-side via /api/turn; this is just the
+// durable write of whatever text the editor settled on. Empty content is
+// rejected (the cosine engine indexes user+assistant per pair — a blank half
+// silently degrades retrieval). inspectorJson absent = leave the blob as-is;
+// string/null = overwrite (a manual edit clears the summary, a re-spin replaces it).
+interface UpdateTurnBody {
+  content?: unknown;
+  inspectorJson?: unknown;
+}
+
+app.patch('/api/chats/:id/turns/:turnId', (req, res) => {
+  const turnId = Number(req.params.turnId);
+  if (!Number.isInteger(turnId)) {
+    res.status(400).json({ error: 'turnId must be an integer.' });
+    return;
+  }
+  const body = (req.body ?? {}) as UpdateTurnBody;
+  if (typeof body.content !== 'string' || !body.content.trim()) {
+    res.status(400).json({ error: 'content must be a non-empty string.' });
+    return;
+  }
+  if (body.content.length > MAX_MANUAL_TURN_CHARS) {
+    res.status(400).json({ error: `content must be ${MAX_MANUAL_TURN_CHARS} characters or fewer.` });
+    return;
+  }
+  const hasInspector = 'inspectorJson' in body;
+  if (hasInspector && body.inspectorJson !== null && typeof body.inspectorJson !== 'string') {
+    res.status(400).json({ error: 'inspectorJson must be a string or null.' });
+    return;
+  }
+  try {
+    const ok = dbUpdateTurnContent(
+      req.params.id,
+      turnId,
+      body.content,
+      hasInspector ? (body.inspectorJson as string | null) : undefined,
+    );
+    if (!ok) {
+      res.status(404).json({ error: 'No turn with that id in this chat.' });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('updateTurn failed:', err);
+    res.status(500).json({ error: 'Failed to update turn.' });
   }
 });
 
