@@ -167,8 +167,16 @@ export function deleteChat(id: string): Promise<{ ok: true }> {
   return jsonFetch<{ ok: true }>(`/api/chats/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
-export function saveTurn(chatId: string, args: SaveTurnArgs): Promise<{ ok: true }> {
-  return jsonFetch<{ ok: true }>(
+/** POST /turns response — the two new row ids let the caller stamp the
+ *  in-session entries without a reload (assistant-response editor edits by id). */
+export interface SaveTurnResult {
+  ok: true;
+  userId: number;
+  assistantId: number;
+}
+
+export function saveTurn(chatId: string, args: SaveTurnArgs): Promise<SaveTurnResult> {
+  return jsonFetch<SaveTurnResult>(
     `/api/chats/${encodeURIComponent(chatId)}/turns`,
     { method: 'POST', body: JSON.stringify(args) },
   );
@@ -198,6 +206,30 @@ export function deleteManualTurn(chatId: string, turnId: number): Promise<{ ok: 
   return jsonFetch<{ ok: true }>(
     `/api/chats/${encodeURIComponent(chatId)}/turns/${turnId}`,
     { method: 'DELETE' },
+  );
+}
+
+export interface UpdateTurnArgs {
+  content: string;
+  /** Present = overwrite inspector_json (string or null); absent = leave the
+   *  existing blob. A manual edit clears the summary (pass a blob with summary:
+   *  null); a re-spin replaces it with fresh TurnData. */
+  inspectorJson?: string | null;
+}
+
+// Rewrite a turn's content in place (assistant-response editor). created_at /
+// ordinal are preserved server-side so ordering + time-score stay anchored; the
+// next searchScored re-reads the new text automatically (tfidf is uncached).
+export function updateTurn(
+  chatId: string,
+  turnId: number,
+  args: UpdateTurnArgs,
+): Promise<{ ok: true }> {
+  const body: UpdateTurnArgs = { content: args.content };
+  if ('inspectorJson' in args) body.inspectorJson = args.inspectorJson;
+  return jsonFetch<{ ok: true }>(
+    `/api/chats/${encodeURIComponent(chatId)}/turns/${turnId}`,
+    { method: 'PATCH', body: JSON.stringify(body) },
   );
 }
 
