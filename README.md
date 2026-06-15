@@ -49,6 +49,16 @@ changes only *what* the system prompt says, not how memory works: the mask is
 cosmetic and never reaches the model, and editing a persona involves no model —
 the memory tiers stay exactly as above.
 
+Sal's **latest reply** is editable too — hover it for a pencil. You can rewrite
+the text by hand, or **re-spin** it: re-run the current model for that turn with
+its history reconstructed (the chat sliced to before the turn, recency anchored
+at its original instant — so no later turn leaks in) plus your current memories
+and persona. Whichever you keep becomes the turn and is re-indexed for the cosine
+grep going forward. A hand edit drops the turn's stale summary; a re-spin emits a
+fresh one. It edits that one reply only — later turns aren't regenerated — and it
+touches no memory-retrieval invariant: retrieval stays deterministic math, Sal
+stays ephemeral.
+
 ## Running it
 
 ```bash

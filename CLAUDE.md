@@ -94,6 +94,8 @@ src/client/
     ChatMemoryEditor.tsx      per-turn cosine-grep gating editor (4-col card grid)
     ConfirmPersonaModal.tsx   per-chat persona (system prompt) + optional mask, set at "Begin again"
     PromptEditorModal.tsx     edit THIS chat's persona mid-chat, forward-only version history
+    EditResponseModal.tsx     edit the latest assistant reply — manual rewrite or "re-spin"
+                              (re-run the model with this turn's history; current memories/persona)
     ProviderConfigModal.tsx   configure either provider from the chip (desktop saves via the
                               Electron bridge → server restart; web mode shows .env guidance)
     MermaidBlock.tsx          lazy-loaded mermaid code blocks → themed SVG; streaming-gated, code-block fallback
@@ -104,6 +106,8 @@ src/client/
     tfidf.ts                  the TF-IDF cosine engine ("Grepory") — pure, deterministic
     tfidf.test.ts             Vitest behavioral tests for the engine
     time-score.ts             time scorer + searchScored orchestrator (concept × time)
+    turn-context.ts           assembleTurnContext() — deterministic per-turn tier assembly,
+                              shared by the live turn and the response editor's re-spin
     prompt.ts                 system-prompt builder + response parser
     api.ts                    runTurn() — POSTs to /api/turn
     desktop.ts                typed guard for window.sgcDesktop (Electron bridge; web → absent)
