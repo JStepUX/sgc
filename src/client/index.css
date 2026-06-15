@@ -112,6 +112,13 @@
   * {
     border-color: var(--color-border);
   }
+  html {
+    /* The app is permanently dark — tell the browser so OS-rendered UI
+       (native <select> popups, date pickers, autofill, default scrollbars)
+       draws dark too. Without this the ProviderConfigModal's model picker
+       opens a light-mode droplist over the near-black field. */
+    color-scheme: dark;
+  }
   html,
   body,
   #root {
