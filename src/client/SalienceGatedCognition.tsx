@@ -1,5 +1,5 @@
 import { memo, useState, useRef, useEffect, useCallback, isValidElement } from 'react';
-import { ArrowUp, Clock, Pencil, Plus, Settings } from 'lucide-react';
+import { ArrowUp, Clock, PanelRightClose, PanelRightOpen, Pencil, Plus, Settings } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeQuotes from './lib/rehype-quotes';
@@ -129,6 +129,9 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
 
 const PROVIDER_LS_KEY = 'sgc.provider';
 const PROVIDER_ORDER: ProviderId[] = ['anthropic', 'openai'];
+
+// Context-rail collapse state — persisted so the layout choice survives a reload.
+const RAIL_LS_KEY = 'sgc.railCollapsed';
 
 // Shared label style for the context rail's section headers.
 const RAIL_LABEL = 'font-mono text-[11px] tracking-[0.18em] uppercase text-fg-3 mb-1';
@@ -1087,6 +1090,30 @@ export default function SalienceGatedCognition() {
     // web deploys with only Anthropic configured are unaffected.
     return 'openai';
   });
+
+  // --- Context rail (right sidebar) collapse. Desktop-only affordance: there the
+  // rail is a fixed-width column competing for horizontal space; on mobile it's a
+  // bottom drawer that caps its own height, so the toggle is hidden below lg. ---
+  const [railCollapsed, setRailCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(RAIL_LS_KEY) === '1';
+    } catch {
+      /* localStorage unavailable (private mode) — default to expanded */
+      return false;
+    }
+  });
+  const toggleRail = useCallback(() => {
+    setRailCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(RAIL_LS_KEY, next ? '1' : '0');
+      } catch {
+        /* localStorage unavailable — collapse still applies in-session */
+      }
+      return next;
+    });
+  }, []);
+
   const chatEndRef = useRef<HTMLDivElement>(null);
   const historyButtonRef = useRef<HTMLButtonElement>(null);
   // Flipped true when the user or the model actually mutates `memories`.
@@ -1923,7 +1950,7 @@ export default function SalienceGatedCognition() {
           onConfigureProvider={handleConfigureProvider}
         />
 
-        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        <div className="relative flex min-h-0 flex-1 flex-col lg:flex-row">
           {/* Thread */}
           <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="sal-scroll flex-1 overflow-x-hidden overflow-y-auto pt-[30px] pb-3">
@@ -1991,8 +2018,29 @@ export default function SalienceGatedCognition() {
             />
           </div>
 
+          {/* Context-rail collapse toggle — a small tab pinned to the chat/rail
+              seam. Desktop only (hidden lg:flex); its `right` offset animates in
+              lockstep with the rail's width so the tab rides the closing edge. */}
+          <button
+            type="button"
+            onClick={toggleRail}
+            aria-label={railCollapsed ? 'Show context rail' : 'Hide context rail'}
+            aria-expanded={!railCollapsed}
+            className={`absolute top-1/2 z-30 hidden size-7 -translate-y-1/2 items-center justify-center rounded-full border border-hairline-strong bg-surface-thin text-fg-3 transition-[right,color,border-color] duration-300 ease-out hover:border-ember hover:text-ember lg:flex ${
+              railCollapsed ? 'right-2' : 'right-[346px]'
+            }`}
+          >
+            {railCollapsed ? <PanelRightOpen size={15} /> : <PanelRightClose size={15} />}
+          </button>
+
           {/* Context rail */}
-          <aside className="sal-scroll relative z-20 flex max-h-[45vh] w-full flex-col gap-7 overflow-y-auto border-t border-hairline px-6 pt-[26px] pb-8 lg:h-full lg:max-h-none lg:w-[360px] lg:shrink-0 lg:border-t-0 lg:border-l">
+          <aside
+            className={`sal-scroll relative z-20 flex max-h-[45vh] w-full flex-col gap-7 overflow-y-auto border-t border-hairline px-6 pt-[26px] pb-8 lg:h-full lg:max-h-none lg:shrink-0 lg:border-t-0 lg:border-l lg:transition-[width,opacity] lg:duration-300 lg:ease-out ${
+              railCollapsed
+                ? 'lg:w-0 lg:overflow-hidden lg:border-l-0 lg:px-0 lg:opacity-0 lg:pointer-events-none'
+                : 'lg:w-[360px] lg:opacity-100'
+            }`}
+          >
             <MemoryPanel
               memories={memories}
               onUpdate={handleMemoryUpdate}
