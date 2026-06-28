@@ -56,6 +56,7 @@ export function buildPrompt(
   persona?: string,
   now: number = Date.now(),
   summaryBuffer?: ChatEntry[],
+  spontaneityDirective?: string | null,
 ): string {
   // A blank/whitespace-only persona falls back to DEFAULT_PERSONA. A custom
   // persona that omits the default's guidance just informs Sal less — no
@@ -161,6 +162,21 @@ export function buildPrompt(
       .join('\n')}`;
   }
 
+  // SPONTANEITY OPERATOR — a deliberate, one-turn creative perturbation drawn by
+  // the spontaneity engine (lib/spontaneity/) when the recent conversation is
+  // circling. The DECISION and the random draw happen in the caller; this builder
+  // only renders the chosen directive, so it stays a pure function of its inputs
+  // (a re-spin reproduces a turn by passing the SAME snapshotted directive). This
+  // is NOT the memory architecture — it's a separate "controlled unpredictability"
+  // axis; see lib/spontaneity/README.md. The `⟐ … ⟐` block format lives ONLY
+  // here. Folded into the real prompt only — estimateNaiveContextTokens calls
+  // buildPrompt without it, so it never skews the Context-Savings baseline (same
+  // discipline as the distilled summary buffer above).
+  const directive = spontaneityDirective?.trim();
+  const spontaneityBlock = directive
+    ? `\n⟐ SPONTANEITY OPERATOR — a creative directive for THIS turn only. Honor it in the spirit of your reply; do NOT name it, quote it, or explain that you were instructed. Do NOT let it leak into the turn-summary. ⟐\n${directive}\n⟐ END OPERATOR ⟐`
+    : '';
+
   const hasBuffer = localBuffer.length > 0;
   const hasGrep = (grepResults?.length ?? 0) > 0;
   const hasLinked = (fetchedDocs?.length ?? 0) > 0;
@@ -186,7 +202,7 @@ ${linkedBlock}
 ${failedBlock}
 
 When a diagram would clarify structure or flow, emit a mermaid fenced code block (default flowchart TD) — it renders natively for the person.
-
+${spontaneityBlock}
 YOUR TASK:
 1. Respond to the user's input, informed by the memories${hasBuffer ? ', recent context' : ''}${hasGrep ? ', and retrieved history' : ''}${hasLinked ? ', plus the linked pages provided' : ''}.
 2. After your response, output a turn-summary block.

@@ -14,6 +14,14 @@ import {
 } from './lib/prompt';
 import { runTurn, extractUrls, fetchUrl, type ProviderId } from './lib/api';
 import {
+  runSpontaneity,
+  lastFiredOperatorId,
+  type SpontaneityState,
+  type SpontaneityInspector,
+} from './lib/spontaneity/engine';
+import { operatorLabel } from './lib/spontaneity/flexDeck';
+import { DEFAULT_SLACK_THRESHOLD } from './lib/spontaneity/slackDetector';
+import {
   createChat as apiCreateChat,
   deleteChat as apiDeleteChat,
   listChats as apiListChats,
@@ -57,7 +65,15 @@ interface GrepDetail {
   preview: string;
 }
 
-interface TurnData {
+// Spontaneity diagnostics come from SpontaneityInspector (lib/spontaneity/engine):
+// `spontaneitySimilarity` is the average pairwise cosine "slack" reading recorded
+// EVERY turn (even when nothing fired) so the inspector can show how close the
+// conversation came to firing — the live calibration signal. The operator fields
+// are set only on a fire; `spontaneityDirective` is the snapshot a re-spin
+// replays. They're sourced from the shared interface (not redeclared) so the
+// restore reader can't drift on field names. Turns persisted before this feature
+// lack them — read defensively after a JSON parse.
+interface TurnData extends SpontaneityInspector {
   turnNumber: number;
   inputTokens: number;
   outputTokens: number;
@@ -96,6 +112,25 @@ function summaryFromInspector(inspectorJson: string | null): TurnSummary | undef
   if (!inspectorJson) return undefined;
   try {
     return (JSON.parse(inspectorJson) as Partial<TurnData>).summary ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Pull a turn's fired spontaneity operator back out of its persisted
+ * inspector_json so a reloaded reply can rehydrate its dimmed "⟐ Name" marker.
+ * The label is derived from the snapshotted directive (single source — see
+ * operatorLabel), so it survives even if the deck later changes. Tolerant: a null
+ * blob, a parse failure, a non-fire, or an old turn predating the feature all
+ * yield undefined (no marker renders).
+ */
+function spontaneityFromInspector(inspectorJson: string | null): { label: string } | undefined {
+  if (!inspectorJson) return undefined;
+  try {
+    const td = JSON.parse(inspectorJson) as Partial<TurnData>;
+    if (!td.spontaneityFired || !td.spontaneityDirective) return undefined;
+    return { label: operatorLabel(td.spontaneityDirective) };
   } catch {
     return undefined;
   }
@@ -544,6 +579,16 @@ const TurnInspector = memo(function TurnInspector({ turnData }: { turnData: Turn
             ? `${turnData.grepMatches} match${turnData.grepMatches !== 1 ? 'es' : ''}`
             : 'no matches above threshold'}
         </li>
+        {typeof turnData.spontaneitySimilarity === 'number' && (
+          // Always-on slack reading — the calibration signal. Shown even when
+          // nothing fired so the firing line (DEFAULT_SLACK_THRESHOLD) can be
+          // tuned against how close real conversations actually get.
+          <li className="flex items-center gap-2 font-mono text-[11px] tracking-[0.02em] text-fg-2">
+            <span className="size-[5px] shrink-0 rounded-full bg-ember" />
+            Spontaneity: {turnData.spontaneityFired ? 'fired' : 'dormant'} — slack{' '}
+            {turnData.spontaneitySimilarity.toFixed(2)} / fire ≥ {DEFAULT_SLACK_THRESHOLD.toFixed(2)}
+          </li>
+        )}
       </ul>
 
       {turnData.grepFired && turnData.grepDetails && (
@@ -563,6 +608,22 @@ const TurnInspector = memo(function TurnInspector({ turnData }: { turnData: Turn
             </Card>
           ))}
         </div>
+      )}
+
+      {turnData.spontaneityFired && turnData.spontaneityDirective && (
+        // The exact directive injected into Sal's prompt this turn — the INPUT
+        // half of transparency. Whether Sal acted on it is a read of the reply
+        // (we can't auto-grade that without a model in the loop). Same card idiom
+        // as a grep match.
+        <Card className="gap-0 rounded-[4px_10px_10px_4px] border border-l-2 border-l-ember px-3 py-2.5 shadow-none">
+          <div className="mb-1 flex items-baseline gap-2 font-mono text-[10.5px] text-fg-3">
+            <span className="font-medium text-fg-1">⟐ {operatorLabel(turnData.spontaneityDirective)}</span>
+            <span>injected this turn</span>
+          </div>
+          <div className="text-xs leading-[1.5] text-fg-2">
+            {turnData.spontaneityDirective}
+          </div>
+        </Card>
       )}
 
       {(() => {
@@ -733,6 +794,7 @@ const AssistantMessage = memo(function AssistantMessage({
   streaming = false,
   label,
   summary,
+  spontaneity,
   onEdit,
   canEdit = false,
 }: {
@@ -744,6 +806,10 @@ const AssistantMessage = memo(function AssistantMessage({
   /** Sal's per-turn summary, rendered as a dimmed one-line appendage beneath the
    * reply. Absent while streaming and on turns that observed nothing. */
   summary?: TurnSummary;
+  /** The spontaneity operator that fired this turn, rendered as a dimmed "⟐ Name"
+   * marker so a perturbed turn is recognizable at a glance. Absent while streaming
+   * and on turns where nothing fired. Full detail lives in the inspector. */
+  spontaneity?: { label: string };
   /** Open the response editor for this turn. Present only on the latest reply. */
   onEdit?: () => void;
   /** Whether the pencil is actionable (turn persisted + no turn in progress). */
@@ -881,6 +947,14 @@ const AssistantMessage = memo(function AssistantMessage({
         // chrome the reader has to engage with each turn.
         <div className="text-[11px] font-normal leading-[1.45] text-fg-4/70">
           {summaryLine}
+        </div>
+      )}
+      {!streaming && spontaneity && (
+        // The spontaneity marker — same recessive register as the summary line,
+        // with an ember-tinted ⟐ so a perturbed turn is spottable when scrolling.
+        // Name only; the directive + slack reading live in the inspector card.
+        <div className="text-[11px] font-normal leading-[1.45] text-fg-4/70">
+          <span className="text-ember/60">⟐</span> {spontaneity.label}
         </div>
       )}
     </div>
@@ -1129,6 +1203,12 @@ export default function SalienceGatedCognition() {
   memoriesRef.current = memories;
   const chatIdRef = useRef(chatId);
   chatIdRef.current = chatId;
+  // Spontaneity engine's only cross-turn state: the last-fired operator id, so a
+  // fire never repeats the previous one. Per-chat (reset in startNewChat, restored
+  // from the latest turn's inspector on load) — NOT a module singleton, which
+  // would leak across chats. Sal stays ephemeral; this is harness state, like the
+  // chat log. See lib/spontaneity/.
+  const spontaneityStateRef = useRef<SpontaneityState>({ lastFiredId: null });
 
   // --- Aurora gating: drift while active, pulse on keystrokes (throttled) ---
   // The composer signals into these via `handleKeystroke`. Critically, the
@@ -1197,6 +1277,7 @@ export default function SalienceGatedCognition() {
             createdAt: t.createdAt,
             timeless: t.timeless,
             summary: summaryFromInspector(t.inspectorJson),
+            spontaneity: spontaneityFromInspector(t.inspectorJson),
           }));
           setMessages(replay);
           setChatLog(replay);
@@ -1211,6 +1292,12 @@ export default function SalienceGatedCognition() {
           if (detail.latestInspector) {
             setLatestTurn(detail.latestInspector as TurnData);
           }
+          // Restore no-repeat state so the first fire after reload doesn't repeat
+          // the operator that fired last. Scan all turns (not just the latest
+          // inspector) — the latest turn may be dormant while an earlier one fired.
+          spontaneityStateRef.current = {
+            lastFiredId: lastFiredOperatorId(detail.turns.map((t) => t.inspectorJson)),
+          };
         } else {
           // Fresh install: the starter chat stays default-Sal — no persona modal
           // on first run (Q2). activePersona/activeMask keep their defaults, and
@@ -1329,6 +1416,11 @@ export default function SalienceGatedCognition() {
         now: targetUser.createdAt,
         fetchedDocs,
         failedUrls,
+        // REPLAY, don't redraw: re-spin reproduces the turn faithfully, so it
+        // re-injects the operator that originally fired (snapshotted on the turn's
+        // inspector) rather than rolling a fresh one. The pencil is latest-turn
+        // only, so latestTurn is this turn's diagnostics. null → none fired.
+        spontaneityDirective: latestTurn?.spontaneityDirective ?? null,
       });
 
       const confirmedProvider = health?.providers[provider]?.available ? provider : undefined;
@@ -1347,7 +1439,7 @@ export default function SalienceGatedCognition() {
         elapsed: result.elapsed,
       };
     },
-    [editTarget, chatLog, memories, activePersona, health, provider],
+    [editTarget, chatLog, memories, activePersona, health, provider, latestTurn],
   );
 
   // Save the edited reply. Persist FIRST, then commit to state on success (a
@@ -1373,6 +1465,10 @@ export default function SalienceGatedCognition() {
           grepMatches: 0,
           grepDetails: null,
           summary: null,
+          spontaneityFired: false,
+          spontaneityOperatorId: null,
+          spontaneityDirective: null,
+          spontaneitySimilarity: 0,
         };
       const nextInspector: TurnData = respin
         ? {
@@ -1589,6 +1685,12 @@ export default function SalienceGatedCognition() {
       grepMatches: 0,
       grepDetails: null,
       summary: null,
+      // Spontaneity defaults — overwritten by the draw below (the reading is
+      // recorded every turn; the operator fields only on a fire).
+      spontaneityFired: false,
+      spontaneityOperatorId: null,
+      spontaneityDirective: null,
+      spontaneitySimilarity: 0,
       // Counterfactual baseline: what the naive "send the whole history every
       // turn" pipeline would have sent. Computed BEFORE the new pair is
       // appended to chatLog, so `chatLog` here is everything prior to this
@@ -1599,6 +1701,26 @@ export default function SalienceGatedCognition() {
     };
 
     try {
+      // ---- SPONTANEITY DRAW (deterministic detector, random operator pick) ----
+      // The non-deterministic half: measure conversational "slack" over the prior
+      // log and, if it's circling, draw a creative directive to inject this turn.
+      // Done HERE (the caller), not inside assembleTurnContext, so that assembler
+      // stays pure — a re-spin reproduces a turn by replaying the snapshotted
+      // directive instead of redrawing. The detector is pure TF-IDF math (no model,
+      // no API call); only the operator pick uses Math.random. The no-repeat ref
+      // is READ here but COMMITTED only after the reply is finalized (below), so a
+      // failed model call never records a last-fired operator it never delivered —
+      // keeping the ref consistent with persistence (delivered turns only). See
+      // lib/spontaneity/.
+      const spont = runSpontaneity(chatLog, spontaneityStateRef.current);
+      turnData.spontaneitySimilarity = spont.reading.similarity;
+      turnData.spontaneityFired = spont.operator !== null;
+      turnData.spontaneityOperatorId = spont.operator?.id ?? null;
+      turnData.spontaneityDirective = spont.directive;
+      const spontDisplay = spont.operator
+        ? { label: operatorLabel(spont.operator.directive) }
+        : undefined;
+
       // ---- ASSEMBLE THE THREE TIERS (deterministic, no model) ----
       // localBuffer (verbatim last 2 turns) + distilled summary window + cosine
       // grep + buildPrompt — all in assembleTurnContext, the shared path the
@@ -1613,6 +1735,7 @@ export default function SalienceGatedCognition() {
         now: turnStartedAt,
         fetchedDocs,
         failedUrls,
+        spontaneityDirective: spont.directive,
       });
       turnData.localBufferSize = localBufferSize;
       if (grepResults.length > 0) {
@@ -1661,7 +1784,7 @@ export default function SalienceGatedCognition() {
       // same render — so the bubble swaps to a message with no flicker.
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant' as const, content: displayText, createdAt: turnStartedAt, summary: summary ?? undefined },
+        { role: 'assistant' as const, content: displayText, createdAt: turnStartedAt, summary: summary ?? undefined, spontaneity: spontDisplay },
       ]);
 
       // ---- APPEND TO PERSISTENT CHAT LOG ----
@@ -1671,11 +1794,15 @@ export default function SalienceGatedCognition() {
       setChatLog((prev) => [
         ...prev,
         { role: 'user' as const, content: userInput, createdAt: turnStartedAt },
-        { role: 'assistant' as const, content: displayText, createdAt: turnStartedAt, summary: summary ?? undefined },
+        { role: 'assistant' as const, content: displayText, createdAt: turnStartedAt, summary: summary ?? undefined, spontaneity: spontDisplay },
       ]);
 
       setTokenHistory((prev) => [...prev, { turn: newTurnNumber, inputTokens: turnData.inputTokens }]);
       setLatestTurn(turnData);
+      // Commit the no-repeat cursor now that the turn is delivered — not at the
+      // draw, so a failed model call (the catch below) doesn't exclude an operator
+      // that never produced a reply. Unchanged from the prior value when dormant.
+      spontaneityStateRef.current = spont.state;
 
       // ---- PERSIST THE TURN (non-blocking) ----
       // Fired after the UI has rendered the new turn so the network round-trip
@@ -1745,6 +1872,8 @@ export default function SalienceGatedCognition() {
     setLatestTurn(null);
     setTokenHistory([]);
     setTurnCount(0);
+    // A new chat's spontaneity no-repeat history starts clean.
+    spontaneityStateRef.current = { lastFiredId: null };
     // A new chat starts with no constitutional memories. Reset the dirty ref
     // first so emptying the set isn't mistaken for a user edit and saved.
     memoriesDirtyRef.current = false;
@@ -1816,11 +1945,17 @@ export default function SalienceGatedCognition() {
         createdAt: t.createdAt,
         timeless: t.timeless,
         summary: summaryFromInspector(t.inspectorJson),
+        spontaneity: spontaneityFromInspector(t.inspectorJson),
       }));
       setMessages(replay);
       setChatLog(replay);
       setTurnCount(Math.floor(replay.length / 2));
       setLatestTurn((detail.latestInspector as TurnData | null) ?? null);
+      // Restore no-repeat state for the loaded chat (see the hydration site —
+      // scan all turns, since the latest may be dormant over an earlier fire).
+      spontaneityStateRef.current = {
+        lastFiredId: lastFiredOperatorId(detail.turns.map((t) => t.inspectorJson)),
+      };
       setTokenHistory([]);
       // Swap in this chat's memories (a programmatic load, not a user edit).
       memoriesDirtyRef.current = false;
@@ -1980,6 +2115,7 @@ export default function SalienceGatedCognition() {
                           text={msg.content}
                           label={activeMask}
                           summary={msg.summary}
+                          spontaneity={msg.spontaneity}
                           onEdit={i === lastAssistantIdx ? openLatestEditor : undefined}
                           canEdit={i === lastAssistantIdx && !isProcessing && typeof msg.id === 'number'}
                         />,

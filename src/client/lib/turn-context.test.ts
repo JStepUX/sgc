@@ -70,4 +70,17 @@ describe('assembleTurnContext', () => {
     });
     expect(reconstructed.systemPrompt).not.toContain(SENTINEL);
   });
+
+  it('threads a spontaneity directive into the prompt — and omits it when none', () => {
+    const log = [...turnPair('q1', 'a1', 20), ...turnPair('q2', 'a2', 10)];
+    const base = { query: 'q', priorLog: log, memories, persona: 'P', now: NOW, fetchedDocs: [], failedUrls: [] };
+
+    const fired = assembleTurnContext({ ...base, spontaneityDirective: '@!OPERATOR: Zed!@ — a deliberate nudge' });
+    expect(fired.systemPrompt).toContain('SPONTANEITY OPERATOR');
+    expect(fired.systemPrompt).toContain('a deliberate nudge');
+
+    // No directive → no block. (Re-spin passes the snapshotted directive here to
+    // reproduce a turn; a fresh turn passes its draw. Either way it's caller-supplied.)
+    expect(assembleTurnContext(base).systemPrompt).not.toContain('SPONTANEITY OPERATOR');
+  });
 });

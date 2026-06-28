@@ -32,6 +32,14 @@ export interface TurnContextInput {
   now: number;
   fetchedDocs: FetchedDoc[];
   failedUrls: string[];
+  /**
+   * A spontaneity operator's directive to inject this turn, or null/undefined for
+   * none. The DECISION + random draw happen in the CALLER (it's non-deterministic,
+   * so it can't live in this pure assembler) — the live turn passes a fresh draw,
+   * a re-spin passes the turn's SNAPSHOTTED directive so it reproduces faithfully.
+   * See lib/spontaneity/. Deliberately NOT folded into estimateNaiveContextTokens.
+   */
+  spontaneityDirective?: string | null;
 }
 
 export interface TurnContextResult {
@@ -42,7 +50,7 @@ export interface TurnContextResult {
 }
 
 export function assembleTurnContext(input: TurnContextInput): TurnContextResult {
-  const { query, priorLog, memories, persona, now, fetchedDocs, failedUrls } = input;
+  const { query, priorLog, memories, persona, now, fetchedDocs, failedUrls, spontaneityDirective } = input;
 
   // ---- LOCAL BUFFER: last 2 turns (4 entries: user+assistant pairs) ----
   const localBuffer = priorLog.slice(-LOCAL_BUFFER_SIZE);
@@ -76,6 +84,7 @@ export function assembleTurnContext(input: TurnContextInput): TurnContextResult 
     persona,
     now,
     summaryWindow,
+    spontaneityDirective,
   );
 
   return { systemPrompt, grepResults, localBufferSize: localBuffer.length };

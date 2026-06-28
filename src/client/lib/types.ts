@@ -66,6 +66,15 @@ export interface ChatEntry {
    * inside the turn's `inspector_json` blob and rehydrated on load.
    */
   summary?: TurnSummary;
+  /**
+   * The spontaneity operator that fired on this (assistant) turn, if any —
+   * rendered as a dimmed "⟐ Name" marker beneath the reply so a perturbed turn is
+   * recognizable at a glance. Display-only, mirroring `summary`: absent on user
+   * rows and on turns where nothing fired, rehydrated from `inspector_json` on
+   * load, and IGNORED by the cosine grep / local buffer / prompt builder. The
+   * directive's actual injection happens via the prompt path, not this field.
+   */
+  spontaneity?: { label: string };
 }
 
 /**

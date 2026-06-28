@@ -442,6 +442,26 @@ describe('buildPrompt', () => {
     expect(buildPrompt(memories, [], null)).not.toContain('LINKS NOT PRE-LOADED');
     expect(buildPrompt(memories, [], null, null, [])).not.toContain('LINKS NOT PRE-LOADED');
   });
+
+  it('injects a spontaneity operator block when a directive is supplied', () => {
+    const prompt = buildPrompt(
+      memories, [], null, null, null, undefined, undefined, undefined,
+      '@!OPERATOR: Offscreen Life!@ — carry context that predates this turn',
+    );
+    expect(prompt).toContain('⟐ SPONTANEITY OPERATOR');
+    expect(prompt).toContain('carry context that predates this turn');
+    expect(prompt).toContain('⟐ END OPERATOR ⟐');
+    // Must instruct Sal not to leak the mechanism into the turn-summary.
+    expect(prompt).toContain('turn-summary');
+  });
+
+  it('omits the spontaneity block when the directive is absent, null, or blank', () => {
+    expect(buildPrompt(memories, [], null)).not.toContain('SPONTANEITY OPERATOR');
+    expect(buildPrompt(memories, [], null, null, null, undefined, undefined, undefined, null))
+      .not.toContain('SPONTANEITY OPERATOR');
+    expect(buildPrompt(memories, [], null, null, null, undefined, undefined, undefined, '   '))
+      .not.toContain('SPONTANEITY OPERATOR');
+  });
 });
 
 describe('estimateNaiveContextTokens', () => {
@@ -492,5 +512,14 @@ describe('estimateNaiveContextTokens', () => {
     ];
     const withDoc = estimateNaiveContextTokens(memories, [], 'read this', docs);
     expect(withDoc).toBeGreaterThan(withoutDoc);
+  });
+
+  it('never carries a spontaneity block — it is an SGC-side augmentation, not part of the naive baseline', () => {
+    // The naive "send everything" counterfactual has no spontaneity engine, so
+    // the directive must never inflate this baseline (else the Context-Savings
+    // tile would credit SGC for tokens the naive pipeline never had). The signal
+    // helper exposes no directive param, which is the structural guarantee.
+    const naive = buildPrompt(memories, [], null); // what estimateNaive builds under the hood
+    expect(naive).not.toContain('SPONTANEITY OPERATOR');
   });
 });
