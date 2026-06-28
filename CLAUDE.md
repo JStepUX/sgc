@@ -113,6 +113,11 @@ src/client/
     desktop.ts                typed guard for window.sgcDesktop (Electron bridge; web → absent)
     eval/                     retrieval eval harness — planted-fact fixtures + probes
                               replayed through searchScored, ratcheted recall@3 / MRR
+    spontaneity/              SEPARATE AXIS, not memory: a deterministic slack detector
+                              (TF-IDF reuse) + operator deck that injects a one-turn
+                              creative directive when the conversation circles. Wired into
+                              the prompt path; off-thesis by design — read its README.md
+                              first (the why + the accepted refusal-operator trade-off)
 src/server/
   index.ts                    Express server — holds the provider keys/URLs; /api/health,
                               /api/turn (SSE), chat/turn/memory persistence routes; serves

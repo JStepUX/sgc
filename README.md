@@ -59,6 +59,15 @@ fresh one. It edits that one reply only — later turns aren't regenerated — a
 touches no memory-retrieval invariant: retrieval stays deterministic math, Sal
 stays ephemeral.
 
+**Spontaneity (experimental, a separate axis).** When the recent conversation is
+*circling*, a deterministic detector (average pairwise TF-IDF cosine over the last
+few turns — no model) can fire a single one-turn creative **operator** into Sal's
+prompt to break the rut, surfaced as a dimmed `⟐ <Operator>` marker beneath the
+reply and a slack reading in the inspector. This is deliberate behavioral
+perturbation, *not* part of the memory thesis, and it keeps the invariants (pure-
+math trigger, ephemeral Sal, no extra API call). See
+`src/client/lib/spontaneity/README.md` for the design and trade-offs.
+
 ## Running it
 
 ```bash
