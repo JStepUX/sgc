@@ -94,33 +94,84 @@ describe('parseTurnResponse', () => {
     expect(summary?.persistent).toEqual(['mentioned </turn-summary> once']);
   });
 
-  it('does not treat a trailing JSON block with none of the known keys as a summary', () => {
-    // The block ends the response but carries no summary keys — it must not be
-    // swallowed or mistaken for the summary.
+  it('strips a trailing tagged JSON block even when it carries no known keys', () => {
+    // A JSON-bearing tagged block that isn't a summary is a bork (wrong keys),
+    // not prose — stripStreamingMeta already hid it mid-stream, so keeping it in
+    // the finalized text would pop it INTO view. Strip it; no summary.
     const raw = 'Here is the shape:\n<turn-summary>\n{"timeout": 30}\n</turn-summary>';
     const { displayText, summary } = parseTurnResponse(raw);
     expect(summary).toBeNull();
-    expect(displayText).toBe(raw);
+    expect(displayText).toBe('Here is the shape:');
   });
 
-  it('returns no summary when the trailing block is malformed JSON', () => {
+  // ---- Borked-block salvage: small local models truncate or malform the
+  // block; the raw leak used to need hand-deleting from the chat. ----
+
+  it('strips a closed block whose JSON is beyond repair (summary null)', () => {
     const raw = 'Answer.\n<turn-summary>\n{not valid json,,,}\n</turn-summary>';
     const { displayText, summary } = parseTurnResponse(raw);
     expect(summary).toBeNull();
-    expect(displayText).toBe(raw);
+    expect(displayText).toBe('Answer.');
   });
 
-  it('returns no summary when the opening tag is never closed', () => {
+  it('salvages a complete block whose closing tag never arrived', () => {
     const raw = 'Answer.\n<turn-summary>\n{"persistent":["x"]}';
     const { displayText, summary } = parseTurnResponse(raw);
-    expect(summary).toBeNull();
-    expect(displayText).toBe(raw);
+    expect(displayText).toBe('Answer.');
+    expect(summary?.persistent).toEqual(['x']);
   });
 
-  it('returns no summary when text follows the closing tag (not a clean trailing block)', () => {
+  it('strips the block but keeps prose on BOTH sides when text follows the closing tag', () => {
     const raw =
       'Answer.\n<turn-summary>\n{"persistent":["x"]}\n</turn-summary>\nand then more prose.';
-    const { summary } = parseTurnResponse(raw);
+    const { displayText, summary } = parseTurnResponse(raw);
+    expect(displayText).toBe('Answer.\n\nand then more prose.');
+    expect(summary?.persistent).toEqual(['x']);
+  });
+
+  it('salvages a block truncated mid-string (the token-cap bork, verbatim from the wild)', () => {
+    const raw =
+      'She slammed the door.\n<turn-summary> { "persistent": ["lives with Doug", "unemployed", "drinks beer", "uses \'trauma\' and \'mental health\'';
+    const { displayText, summary } = parseTurnResponse(raw);
+    expect(displayText).toBe('She slammed the door.');
+    expect(summary?.persistent).toEqual([
+      'lives with Doug',
+      'unemployed',
+      'drinks beer',
+      "uses 'trauma' and 'mental health'",
+    ]);
+  });
+
+  it('salvages the finished lists when truncation cut mid-key', () => {
+    const raw =
+      'Reply text.\n<turn-summary>\n{"persistent": ["lives with Doug"], "vol';
+    const { displayText, summary } = parseTurnResponse(raw);
+    expect(displayText).toBe('Reply text.');
+    expect(summary?.persistent).toEqual(['lives with Doug']);
+    expect(summary?.volatile).toEqual([]);
+  });
+
+  it('strips a block that truncated at the opening tag itself (nothing after it)', () => {
+    const raw = 'Reply text.\n<turn-summary>';
+    const { displayText, summary } = parseTurnResponse(raw);
+    expect(displayText).toBe('Reply text.');
+    expect(summary).toBeNull();
+  });
+
+  it('parses a block whose JSON was wrapped in a code fence despite instructions', () => {
+    const raw =
+      'Answer.\n<turn-summary>\n```json\n{"persistent":["x"],"volatile":[],"established_patterns":[]}\n```\n</turn-summary>';
+    const { displayText, summary } = parseTurnResponse(raw);
+    expect(displayText).toBe('Answer.');
+    expect(summary?.persistent).toEqual(['x']);
+  });
+
+  it('leaves a prose mention of the tag untouched when no JSON block ever opens', () => {
+    // The JSON-bearing guard: a mention followed by words is prose, not a block —
+    // the salvage path must not eat it.
+    const raw = 'Remember, I end every reply with a <turn-summary> block. Ask me anything.';
+    const { displayText, summary } = parseTurnResponse(raw);
+    expect(displayText).toBe(raw);
     expect(summary).toBeNull();
   });
 });
