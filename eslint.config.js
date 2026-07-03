@@ -86,6 +86,26 @@ export default [
     },
   },
   {
+    // Repo-level source files at the top of src/ (e.g. architecture.test.ts,
+    // the anti-god-object ratchet) — Node-side, no React. Without this block
+    // they'd fall through to the default espree parser and fail on TS syntax.
+    files: ['src/*.ts'],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: { ecmaVersion: 'latest', sourceType: 'module' },
+    },
+    plugins: { '@typescript-eslint': tseslint },
+    rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
+      ],
+      '@typescript-eslint/no-explicit-any': 'warn',
+      'no-debugger': 'error',
+      'no-console': 'off',
+    },
+  },
+  {
     // Test files — assertion libraries have legitimate reasons to use `any`.
     files: ['src/**/*.{test,spec}.{ts,tsx}', 'electron/**/*.{test,spec}.ts'],
     rules: {
