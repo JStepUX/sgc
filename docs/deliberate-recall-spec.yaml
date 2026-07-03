@@ -37,12 +37,12 @@ current_state:
   client_transport:
     file: src/client/lib/api.ts
     lines: 98-206               # runTurn POSTs {system, message, provider}, parses delta/done/error SSE
-  turn_loop_call_site:
-    file: src/client/SalienceGatedCognition.tsx
-    lines: 1279-1287            # const turnResult = await runTurn(systemPrompt, userInput, onDelta, provider)
-    streaming_state: lines 924-927 (isProcessing, streamingText) — null streamingText + isProcessing → dot-pulse loader at lines 1586-1600
-    turn_data: lines 1213-1230  # TurnData literal — gains recall fields
-    persist: lines 1324-1336    # inspectorJson = JSON.stringify(turnData) — recalls ride along free
+  turn_loop_call_site:          # re-anchored 2026-07-03: the live turn now lives in a hook
+    file: src/client/hooks/useTurnRunner.ts
+    lines: 170-177              # const turnResult = await runTurn(systemPrompt, userInput, onDelta, provider)
+    streaming_state: lines 29-31 (isProcessing, streamingText) — null streamingText + isProcessing → dot-pulse loader in SalienceGatedCognition.tsx 156-166
+    turn_data: lines 86-110     # TurnData literal — gains recall fields (interface: src/client/lib/turn-data.ts:26)
+    persist: lines 219-233      # inspectorJson = JSON.stringify(turnData) — recalls ride along free
   prompt_builder:
     file: src/client/lib/prompt.ts
     grep_block: lines 120-136   # fragment formatting — `[Turn N · when] User/Assistant:` — REUSE this exact format for tool results
@@ -245,10 +245,10 @@ design:
       time-score.ts forwards it onto ScoredResult.
     tests: tfidf.test.ts — matchedTerms contains the planted rare term for an exact-match query; empty for empty-overlap; capped at 3.
   state_and_ui:
-    file: src/client/SalienceGatedCognition.tsx
+    file: src/client/hooks/useTurnRunner.ts (state, returned beside streamingText) + src/client/SalienceGatedCognition.tsx (render)
     changes: |
       - turnStatus state: 'streaming' | 'remembering' | null (replaces nothing — sits beside
-        streamingText). The dot-pulse loader block (lines 1586-1600) additionally renders the
+        streamingText). The dot-pulse loader block (SalienceGatedCognition.tsx 156-166) additionally renders the
         quiet status line when turnStatus === 'remembering': the string "Remembering…" in the
         existing muted-meta style (font-mono text-[10.5px] tracking-wide text-fg-3, gentle
         opacity pulse). It appears UNDER any already-streamed round-1 text — the partial reply
@@ -298,8 +298,8 @@ build_sequence:
     target: src/client/lib/recall-loop.ts (+ recall-loop.test.ts)
     do: runTurnWithRecall with injected callTurn — tests cover - no-tool single round; one recall round; cap behavior (final round sent without tools); error propagation (D8); token summing; status callback ordering.
   - step: 8
-    target: src/client/SalienceGatedCognition.tsx
-    do: turnStatus state + "Remembering…" status line; processInput swap to runTurnWithRecall; TurnData.recalls + inspector "Deliberate recall" tile.
+    target: src/client/hooks/useTurnRunner.ts (+ the root's loader line, components/TurnInspector.tsx, lib/turn-data.ts)
+    do: turnStatus state + "Remembering…" status line; processInput swap to runTurnWithRecall; TurnData.recalls (lib/turn-data.ts) + inspector "Deliberate recall" tile (components/TurnInspector.tsx).
   - step: 9
     target: manual smoke
     do: |

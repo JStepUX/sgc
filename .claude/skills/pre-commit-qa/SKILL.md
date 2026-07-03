@@ -139,8 +139,8 @@ surprises.
 ## 6. Visual Verification (UI changes only)
 
 SGC *is* a UI — the live React + TypeScript app under `src/client/`
-(`SalienceGatedCognition.tsx` + `components/`; the frozen original artifact is
-`docs/phase-1-5-reference.jsx`). If the work touched components, styles, layout,
+(`SalienceGatedCognition.tsx` + `hooks/` + `components/`; the frozen original
+artifact is `docs/phase-1-5-reference.jsx`). If the work touched components, styles, layout,
 or user flows, visual verification is required.
 Automated checks catch logic; they do not catch layout shift, color rendering,
 or interaction feel.

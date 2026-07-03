@@ -36,7 +36,7 @@ Adding a manual ("timeless") memory to the *currently-loaded* chat updates
 inserted turn is retrievable immediately but only *appears* in the thread on the
 next load of that chat (where it shows as the oldest messages). This is
 intentional, not a bug: the editor mutation path (`resyncLiveChatLog` in
-`SalienceGatedCognition.tsx`) rebuilds only `chatLog`, deliberately leaving the
+`src/client/hooks/useChatSession.ts`) rebuilds only `chatLog`, deliberately leaving the
 ongoing visual conversation untouched so a memory isn't retroactively injected
 mid-scroll. SGC keeps `messages` (display) and `chatLog` (retrieval) as separate
 state; don't assume mutating one mirrors the other.
@@ -122,3 +122,13 @@ chain), not in any runtime dependency, and they predate recent feature work.
 breaking change) — don't run it. Adding `mermaid` (2026-06-02) pulled ~110
 transitive packages but introduced none of these. If a fresh `npm install` shows
 the same count, it's this, not something you broke.
+
+## This file is missing 8 early entries — deleted by an unrelated commit, recoverable (setup review, 2026-07-02)
+
+Commit `2b368d6` ("Wrap \"quotes\" in orange.", 2026-05-22) deleted 138 lines —
+8 of the 10 entries this file held at the time — with no mention in the commit
+message. Nothing here from before that date survived, so don't treat this file
+as complete for early-project gotchas (key handling, naming rules, dev-server
+shape). Recover the text with `git show 2b368d6~1:AGENTS.md`; triage notes for
+which entries are still accurate live in
+`docs/setup-process-review-2026-07.md` (§1). Delete this entry once restored.

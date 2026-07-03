@@ -85,11 +85,35 @@ growing transcript, no model carrying its own state). Two rules protect that:
 ### Project Structure
 
 ```
+src/
+  architecture.test.ts        ANTI-GOD-OBJECT RATCHET — per-file line budgets over src/ +
+                              electron/; a failure means "split the file", never "raise the budget"
 src/client/
   main.tsx                    React entry point — imports index.css
   index.css                   Tailwind v4 entry — design tokens (@theme), shadcn theme, aurora CSS
-  SalienceGatedCognition.tsx  the UI — main app + MemoryPanel / TurnInspector / TokenChart
+  SalienceGatedCognition.tsx  COMPOSITION ROOT only (~270 lines) — wires the hooks into the
+                              components + owns modal open/close flags; no domain logic
+  hooks/                      per-axis state hooks — namespaces over ONE shared session,
+                              not isolated stores (useChatSession exposes its setters)
+    useChatSession.ts         persistence axis: hydration, chat create/load/delete, per-chat
+                              memories (+ debounced sync), persona versions, the in-memory logs
+    useTurnRunner.ts          the live turn: tier assembly → single streamed model call →
+                              promote reply → persist pair (processInput moved here verbatim)
+    useResponseEditor.ts      edit/re-spin the latest reply (editTarget, respin, saveEdit)
+    useProvider.ts            /api/health reconcile, provider token, config-modal state
+    useAuroraPulse.ts         throttled aurora gate/typing/pulse signals
+    useRailCollapse.ts        context-rail collapse, persisted to localStorage
   components/
+    AuroraBackground.tsx      the warm field behind the glass (memoized; pulse re-key)
+    PhaseBar.tsx              title, provider chip, run-mode metadata, begin-again
+    ProviderChip.tsx          anchored popover to switch/configure the model backing Sal
+    MemoryPanel.tsx           Constitutional Memories editor (right rail)
+    TurnInspector.tsx         per-turn diagnostics: trace, grep matches, spontaneity, savings
+    TokenChart.tsx            payload-size-per-turn SVG bars (right rail)
+    AssistantMessage.tsx      Sal's reply — ReactMarkdown + summary line + spontaneity marker
+    UserPill.tsx              the user's centred pill
+    Composer.tsx              input row — owns its own keystroke-frequency state
+    rail-styles.ts            shared rail section-header class strings
     ChatHistoryModal.tsx      history list + (editor mode) the rail
     ChatMemoryEditor.tsx      per-turn cosine-grep gating editor (4-col card grid)
     ConfirmPersonaModal.tsx   per-chat persona (system prompt) + optional mask, set at "Begin again"
@@ -102,6 +126,9 @@ src/client/
     ui/                       shadcn/ui primitives (button, card)
   lib/
     types.ts                  shared domain types (ChatEntry, Memory)
+    turn-data.ts              TurnData (the per-turn inspector blob) + the tolerant
+                              inspector_json rehydration parsers (tested)
+    provider.ts               provider types/labels/order shared by chip + hook
     utils.ts                  cn() — Tailwind-aware class-name merge
     tfidf.ts                  the TF-IDF cosine engine ("Grepory") — pure, deterministic
     tfidf.test.ts             Vitest behavioral tests for the engine
@@ -159,7 +186,7 @@ retired.)
   visual language is the "Sal" design system — a warm near-black field.
 - **Server:** a thin Express proxy, **deliberately dumb** — it attaches the API
   key and forwards the request, with no memory logic server-side (all three
-  tiers are assembled in the browser, `SalienceGatedCognition.tsx` + `lib/`).
+  tiers are assembled in the browser — `hooks/useTurnRunner.ts` + `lib/`).
   `@anthropic-ai/sdk`, one route (`POST /api/turn`); model defaults to
   `claude-opus-4-7`, overridable via the `ANTHROPIC_MODEL` env var.
 - **Tests:** Vitest. The TF-IDF engine (`lib/tfidf.ts`) is pure logic and the
@@ -167,7 +194,9 @@ retired.)
   instrument: `lib/eval/` replays planted-fact fixtures through `searchScored`
   and ratchets recall@3 / MRR; `known-gap` probes document the synonymy limits
   and fail loudly if a change closes one (promote them to `pass` when that
-  happens). Turn-score changes must keep this suite green.
+  happens). Turn-score changes must keep this suite green. Structure has one
+  too: `src/architecture.test.ts` ratchets per-file line budgets (the
+  anti-god-object gate) — a failure means split the file, never raise its budget.
 - **Run it (web/dev):** `npm install`, then `cp .env.example .env` and add an
   `ANTHROPIC_API_KEY`, then `npm run dev`. That runs the Vite client (`:5555`)
   and the Express proxy (`:3000`) together via `concurrently`; Vite proxies
