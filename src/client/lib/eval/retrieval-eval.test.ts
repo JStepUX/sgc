@@ -22,7 +22,7 @@ import { recallAtK, mrr } from './metrics';
 import { PROBES, type Probe } from './probes';
 import { LOCAL_BUFFER_SIZE } from '../constants';
 
-// ---- Production defaults (mirror SalienceGatedCognition.tsx) ----
+// ---- Production defaults (mirror lib/turn-context.ts — assembleTurnContext's searchScored call) ----
 const PROD_EXCLUDE_LAST_N = LOCAL_BUFFER_SIZE; // 4
 const PROD_TOP_K          = 3;
 const PROD_THRESHOLD      = 0.08;

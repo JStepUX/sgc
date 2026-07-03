@@ -48,7 +48,7 @@ ordinary task turn can degrade Sal's usefulness/trustworthiness.
 ## Status: WIRED IN (live)
 
 `runSpontaneity` is called each live turn in
-`SalienceGatedCognition.tsx::processInput`, **before** `assembleTurnContext`.
+`hooks/useTurnRunner.ts::processInput`, **before** `assembleTurnContext`.
 The flow and where each concern lives:
 
 - **Decision + draw** happen in the caller (`processInput`), not in the pure

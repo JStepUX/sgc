@@ -39,8 +39,9 @@ export interface ChatEntry {
    * Epoch milliseconds at which this turn was created. Hydrated from
    * `turns.created_at` for persisted entries; stamped at `Date.now()` for
    * in-session pairs before they're saved. Required (not optional) so the
-   * compiler catches a missing stamp at every construction site — see
-   * SalienceGatedCognition.tsx hydration/load/append paths.
+   * compiler catches a missing stamp at every construction site — see the
+   * replayEntry helper (hooks/useChatSession.ts) and the live-turn append
+   * (hooks/useTurnRunner.ts).
    *
    * Consumed by the time scorer (lib/time-score.ts) as the second deterministic
    * dimension alongside the TF-IDF cosine grep, and by the prompt builder to
