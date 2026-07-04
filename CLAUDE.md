@@ -130,7 +130,10 @@ src/client/
                               inspector_json rehydration parsers (tested)
     provider.ts               provider types/labels/order shared by chip + hook
     utils.ts                  cn() — Tailwind-aware class-name merge
-    tfidf.ts                  the TF-IDF cosine engine ("Grepory") — pure, deterministic
+    stem.ts                   Porter-stemmer wrapper (npm `stemmer`, pinned) — the only file
+                              that imports the package; tokenize() imports only from here
+    tfidf.ts                  the TF-IDF cosine engine ("Grepory") — pure, deterministic;
+                              tokenize() = lowercase → stopwords → Porter stemming
     tfidf.test.ts             Vitest behavioral tests for the engine
     time-score.ts             time scorer + searchScored orchestrator (concept × time)
     turn-context.ts           assembleTurnContext() — deterministic per-turn tier assembly,

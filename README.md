@@ -16,7 +16,7 @@ reasoning instance:
 |------|-----------|------|
 | **Constitutional Memories** | Curated, durable facts about the user — plain text the user edits; not model-scored | in-prompt |
 | **Local Buffer** | The last 2 turns, verbatim | in-prompt |
-| **Cosine Grep ("Grepory")** | TF-IDF + cosine similarity over older history — pure math, no model; individual turns can be gated out of retrieval in the chat memory editor | 0 ms, 0 tokens |
+| **Cosine Grep ("Grepory")** | TF-IDF + cosine similarity over older history (Porter-stemmed tokens, so "needle" finds "needles") — pure math, no model; individual turns can be gated out of retrieval in the chat memory editor | 0 ms, 0 tokens |
 
 These feed **Sal**, an ephemeral reasoning instance that exists for exactly one
 turn and is then retired. Sal replies in natural language and emits a per-turn

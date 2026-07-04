@@ -2,7 +2,7 @@ spec: plug-in brains (persona knowledge packs — deterministic lexical retrieva
 status: proposed              # 2026-07-02 — raised with the developer and approved in-session ("I dig the hell out of the idea"); Phase 2a of the brains axis. Embedding retrieval (Phase 2b) is explicitly OUT of this spec.
 date: 2026-07-02
 depends_on:
-  - docs/stemming-spec.yaml            # land FIRST — the brain union index builds on tokenize(); baselining the brain eval probes against the final tokenizer avoids a mid-build ratchet re-baseline
+  - docs/ignored/stemming-spec.yaml    # LANDED 2026-07-03 — tokenize() now Porter-stems; the brain eval probes baseline against the final tokenizer
   - C:/projects/Atlantis-SGC           # sibling repo — the offline compiler. Contract is the brain-pack JSON below, nothing else crosses.
 goal: >
   Let a chat mount one or more "brains" — JSON packs of salience-annotated

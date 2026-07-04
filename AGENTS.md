@@ -132,3 +132,15 @@ as complete for early-project gotchas (key handling, naming rules, dev-server
 shape). Recover the text with `git show 2b368d6~1:AGENTS.md`; triage notes for
 which entries are still accurate live in
 `docs/setup-process-review-2026-07.md` (§1). Delete this entry once restored.
+
+## Post-stemming, probe-query "zero shared vocabulary" means zero shared STEMS (stemming, 2026-07-03)
+
+When Porter stemming landed in tokenize(), the known-gap probe
+`synonymy.boss-for-manager` flipped to passing — not because a synonym bridge
+appeared, but because its query word "approval" and the planted fact's
+"approved" both stem to `approv`. An inflection collision is an ordinary
+exact-term match now, so the pure-synonym rule (entry above) tightens: probe
+queries must share zero *stems* with the planted fact, not just zero surface
+words. Run the candidate query through `tokenize()` against the planted turn's
+tokens before declaring a gap. The flipped probe was repaired by swapping
+"approval" for "decision", keeping it an honest known-gap.

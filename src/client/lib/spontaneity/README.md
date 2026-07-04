@@ -99,3 +99,11 @@ There's no UI toggle. To silence it without removing code, raise
 `DEFAULT_SLACK_THRESHOLD` (0.3) is **provisional** — reasoned, not measured. Raw
 TF cosine between turns runs low; the right firing line needs real transcripts.
 Retune before trusting the default firing rate.
+
+Measured 2026-07-03, when Porter stemming landed in the shared tokenizer
+(stemming-spec D4): replaying the 9 dev chats in `data/sgc.db` (290 detector
+windows), mean window similarity rose 0.294 → 0.338 and firings at 0.3 went
+135 → 200. The dev chats are repetitive by design, so the absolute rates are
+inflated — but the threshold clearly sits in the fat of the distribution, where
+the stemming lift flips many windows. When the retune happens, it should be
+measured against post-stemming similarity.
