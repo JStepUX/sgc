@@ -43,6 +43,8 @@ import {
   type SaveTurnInput,
   type TurnActiveState,
 } from './db.js';
+import { getChatBrains as dbGetChatBrains } from './db-brains.js';
+import { registerBrainRoutes } from './brains-routes.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5555';
@@ -113,7 +115,16 @@ const providerModel: Record<ProviderId, string> = {
 
 const app = express();
 app.use(cors({ origin: CORS_ORIGIN }));
-app.use(express.json({ limit: '1mb' }));
+// One JSON limit for everything except brain-pack import: a knowledge pack is
+// a legitimately multi-MB blob, and a route-level parser can't raise a limit
+// the global parser already enforced — so the split happens here, once.
+const defaultJsonParser = express.json({ limit: '1mb' });
+const packJsonParser = express.json({ limit: '32mb' });
+app.use((req, res, next) =>
+  req.method === 'POST' && req.path === '/api/brains'
+    ? packJsonParser(req, res, next)
+    : defaultJsonParser(req, res, next),
+);
 
 // Report which providers are configured + their model labels so the header
 // picker can render and disable accordingly. `default` is the boot provider the
@@ -507,7 +518,9 @@ app.get('/api/chats/:id', (req, res) => {
       res.status(404).json({ error: 'Chat not found.' });
       return;
     }
-    res.json(chat);
+    // brainIds composed here (not in loadChat) so db.ts stays free of the
+    // brains concern — the wire payload is the contract, not the db helper.
+    res.json({ ...chat, brainIds: dbGetChatBrains(req.params.id) });
   } catch (err) {
     console.error('loadChat failed:', err);
     res.status(500).json({ error: 'Failed to load chat.' });
@@ -839,6 +852,11 @@ app.put('/api/memories', (req, res) => {
     res.status(500).json({ error: 'Failed to save memories.' });
   }
 });
+
+// Brain routes — knowledge packs, the knowledge axis. Split into their own
+// module (brains-routes.ts) by the anti-god-object ratchet: pack-file storage,
+// contract validation, and mount bindings all live there.
+registerBrainRoutes(app);
 
 // Serve the built client when it exists — i.e. after `npm run build`. This is
 // presence-based, not NODE_ENV-based: `npm start` then works without anyone

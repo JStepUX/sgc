@@ -6,7 +6,7 @@
 // the UI uses to load history on mount, save turns after they finish
 // streaming, and sync each chat's own (per-chat) memory set.
 
-import type { Memory } from './types';
+import type { BrainManifest, BrainPack, Memory } from './types';
 
 // ============================================================
 // SHAPES ON THE WIRE
@@ -56,6 +56,7 @@ interface ChatDetailWire {
   mask: string | null;
   memories: { id: string; text: string }[];
   versions: PromptVersion[];
+  brainIds?: string[];
 }
 
 export interface ChatDetail {
@@ -74,6 +75,8 @@ export interface ChatDetail {
   /** Edit history of the persona, newest-first. Empty when never edited (the UI
    *  synthesises a baseline from `persona`). versions[0] is the live prompt. */
   versions: PromptVersion[];
+  /** Ids of the knowledge packs this chat has mounted (the knowledge axis). */
+  brainIds: string[];
 }
 
 export interface SaveTurnArgs {
@@ -129,6 +132,8 @@ export async function loadChat(id: string): Promise<ChatDetail> {
     memories: wire.memories,
     // Tolerate an older server that predates versioning by defaulting to [].
     versions: wire.versions ?? [],
+    // Same tolerance for a server that predates the brains routes.
+    brainIds: wire.brainIds ?? [],
   };
 }
 
@@ -267,4 +272,40 @@ export function saveMemories(chatId: string, memories: Memory[]): Promise<{ ok: 
     method: 'PUT',
     body: JSON.stringify(args),
   });
+}
+
+// ============================================================
+// BRAINS — knowledge packs (the knowledge axis, lib/brains.ts).
+// The server stores/validates pack files; retrieval never happens
+// server-side, so these are pure plumbing like everything above.
+// ============================================================
+
+export function listBrains(): Promise<BrainManifest[]> {
+  return jsonFetch<BrainManifest[]>('/api/brains');
+}
+
+export function getBrain(id: string): Promise<BrainPack> {
+  return jsonFetch<BrainPack>(`/api/brains/${encodeURIComponent(id)}`);
+}
+
+// Import a pack (the parsed JSON of an Atlantis export). Same id overwrites —
+// that's the hand-edit-aliases-and-re-export flow. Returns the manifest.
+export function importBrain(pack: BrainPack): Promise<BrainManifest> {
+  return jsonFetch<BrainManifest>('/api/brains', {
+    method: 'POST',
+    body: JSON.stringify(pack),
+  });
+}
+
+// Delete a pack file; the server also removes its bindings across ALL chats.
+export function deleteBrain(id: string): Promise<{ ok: true }> {
+  return jsonFetch<{ ok: true }>(`/api/brains/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+// Replace a chat's mount set wholesale (PUT semantics).
+export function setChatBrains(chatId: string, brainIds: string[]): Promise<{ ok: true }> {
+  return jsonFetch<{ ok: true }>(
+    `/api/chats/${encodeURIComponent(chatId)}/brains`,
+    { method: 'PUT', body: JSON.stringify({ brainIds }) },
+  );
 }

@@ -10,12 +10,14 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 
 let dbmod: typeof import('./db');
+let brainsmod: typeof import('./db-brains');
 let seq = 0;
 const newChatId = () => `chat-${++seq}`;
 
 beforeAll(async () => {
   process.env.SGC_DB_PATH = ':memory:';
   dbmod = await import('./db');
+  brainsmod = await import('./db-brains');
 });
 
 describe('prompt versions', () => {
@@ -173,5 +175,58 @@ describe('updateTurnContent', () => {
     const memory = dbmod.loadChat(id)!.turns.find((t) => t.role === 'assistant' && t.timeless)!;
     expect(dbmod.updateTurnContent(id, memory.id, 'rewritten memory')).toBe(false);
     expect(dbmod.loadChat(id)!.turns.find((t) => t.id === memory.id)!.content).toBe('memory a');
+  });
+});
+
+describe('chat brains (mount bindings — db-brains.ts)', () => {
+  it('starts empty and round-trips a mount set (sorted, deduped)', () => {
+    const id = newChatId();
+    dbmod.createChat(id, null, null);
+    expect(brainsmod.getChatBrains(id)).toEqual([]);
+
+    brainsmod.setChatBrains(id, ['zeta-brain', 'alpha-brain', 'alpha-brain']);
+    expect(brainsmod.getChatBrains(id)).toEqual(['alpha-brain', 'zeta-brain']);
+  });
+
+  it('PUT semantics: setting replaces the whole mount set', () => {
+    const id = newChatId();
+    dbmod.createChat(id, null, null);
+    brainsmod.setChatBrains(id, ['a', 'b']);
+    brainsmod.setChatBrains(id, ['c']);
+    expect(brainsmod.getChatBrains(id)).toEqual(['c']);
+    brainsmod.setChatBrains(id, []);
+    expect(brainsmod.getChatBrains(id)).toEqual([]);
+  });
+
+  it('throws chat-not-found for a missing chat (mirrors saveMemories)', () => {
+    expect(() => brainsmod.setChatBrains('no-such-chat', ['a'])).toThrow(/chat not found/);
+  });
+
+  it('cascade, chat side: deleting a chat removes its bindings only', () => {
+    const doomed = newChatId();
+    const survivor = newChatId();
+    dbmod.createChat(doomed, null, null);
+    dbmod.createChat(survivor, null, null);
+    brainsmod.setChatBrains(doomed, ['shared-brain']);
+    brainsmod.setChatBrains(survivor, ['shared-brain']);
+
+    dbmod.deleteChat(doomed);
+    // Recreate the doomed id to prove its bindings are gone (not just orphaned).
+    dbmod.createChat(doomed, null, null);
+    expect(brainsmod.getChatBrains(doomed)).toEqual([]);
+    expect(brainsmod.getChatBrains(survivor)).toEqual(['shared-brain']);
+  });
+
+  it('cascade, brain side: deleting a brain removes its bindings across ALL chats', () => {
+    const one = newChatId();
+    const two = newChatId();
+    dbmod.createChat(one, null, null);
+    dbmod.createChat(two, null, null);
+    brainsmod.setChatBrains(one, ['doomed-brain', 'kept-brain']);
+    brainsmod.setChatBrains(two, ['doomed-brain']);
+
+    brainsmod.deleteBrainBindings('doomed-brain');
+    expect(brainsmod.getChatBrains(one)).toEqual(['kept-brain']);
+    expect(brainsmod.getChatBrains(two)).toEqual([]);
   });
 });

@@ -16,7 +16,10 @@ import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
-const DB_PATH = process.env.SGC_DB_PATH || resolve(process.cwd(), 'data', 'sgc.db');
+// Exported so the brains routes (index.ts) can derive their pack directory
+// from the same location — <dirname(DB_PATH)>/brains — meaning the Electron
+// shell needs no change (it already sets SGC_DB_PATH).
+export const DB_PATH = process.env.SGC_DB_PATH || resolve(process.cwd(), 'data', 'sgc.db');
 
 // Ensure the parent directory exists — better-sqlite3 won't create it.
 mkdirSync(dirname(DB_PATH), { recursive: true });
@@ -60,6 +63,17 @@ db.exec(`
     UNIQUE(chat_id, n)
   );
   CREATE INDEX IF NOT EXISTS idx_prompt_versions_chat ON prompt_versions(chat_id, n);
+
+  -- Which knowledge packs ("brains") a chat has mounted. The packs themselves
+  -- are FILES in <dirname(DB_PATH)>/brains/<id>.json (multi-MB read-mostly
+  -- blobs belong on the filesystem, not in rows) — SQLite stores only the
+  -- bindings. chat side cascades with the chat; the brain side has no FK (no
+  -- brains table exists) — deleteBrainBindings covers pack deletion.
+  CREATE TABLE IF NOT EXISTS chat_brains (
+    chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+    brain_id TEXT NOT NULL,
+    PRIMARY KEY (chat_id, brain_id)
+  );
 `);
 
 // Constitutional memories — plain durable facts, scoped per chat via chat_id
@@ -173,7 +187,11 @@ export interface ChatDetail {
   memories: MemoryRow[];
   /** Edit history of this chat's persona, newest-first. Empty for a chat whose
    *  prompt has never been edited (the client synthesises a baseline from
-   *  `persona`). The head (versions[0]) is the live prompt. */
+   *  `persona`). The head (versions[0]) is the live prompt.
+   *
+   *  NOTE: the wire payload of GET /api/chats/:id also carries `brainIds` —
+   *  composed in the route from db-brains.ts (getChatBrains), not here, so
+   *  this module stays free of the brains concern. */
   versions: PromptVersion[];
 }
 
