@@ -6,10 +6,14 @@
 // is deterministic arithmetic, not a model call. Every function here is pure
 // and side-effect-free — which is exactly why it is the prime test target
 // (see tfidf.test.ts).
+//
+// Tokenization ends in Porter stemming (lib/stem.ts — fixed 1980 suffix
+// rules, no data, no model), so inflection variants collide deterministically.
 // ============================================================
 
 import type { ChatEntry } from './types';
 import { LOCAL_BUFFER_SIZE } from './constants';
+import { stem } from './stem';
 
 /** A term-frequency (or TF-IDF) vector: term → weight. */
 export type TFVector = Record<string, number>;
@@ -44,14 +48,19 @@ const STOP_WORDS = new Set<string>([
   'because', 'good', 'give', 'most', 'think', 'over', 'such', 'much',
 ]);
 
-/** Lowercase, strip punctuation, drop short words and stop words. */
+/** Lowercase, strip punctuation, drop short words and stop words, Porter-stem.
+ * The stopword filter runs PRE-stem by design: re-filtering after stemming
+ * would silently drop content words whose stems collide with the stop list
+ * ("goodness" → "good"). Accepted edge: an inflected stopword form survives
+ * as its stem ("makes" → "make") — harmless, deterministic, IDF-dampened. */
 export function tokenize(text: string): string[] {
   return text
     .toLowerCase()
     .replace(/[^\w\s]/g, ' ')
     .split(/\s+/)
     .filter((t) => t.length > 2)
-    .filter((t) => !STOP_WORDS.has(t));
+    .filter((t) => !STOP_WORDS.has(t))
+    .map(stem);
 }
 
 /** Build a length-normalized term-frequency vector from tokens. */

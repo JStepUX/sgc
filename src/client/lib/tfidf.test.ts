@@ -18,12 +18,24 @@ describe('tokenize', () => {
   });
 
   it('drops words of 2 or fewer characters', () => {
-    expect(tokenize('a an the elephant')).toEqual(['elephant']);
+    // 'eleph' is the reference Porter output for 'elephant' — see stem.test.ts.
+    expect(tokenize('a an the elephant')).toEqual(['eleph']);
   });
 
   it('drops stop words', () => {
-    // "about" and "would" are stop words; "rainfall" survives.
-    expect(tokenize('about rainfall would')).toEqual(['rainfall']);
+    // "about" and "would" are stop words; "rainfall" survives (as its stem).
+    expect(tokenize('about rainfall would')).toEqual(['rainfal']);
+  });
+
+  it('Porter-stems tokens as the final step, colliding inflection variants', () => {
+    expect(tokenize('paint painted painting')).toEqual(['paint', 'paint', 'paint']);
+    expect(tokenize('needle needles')).toEqual(['needl', 'needl']);
+  });
+
+  it('filters stop words BEFORE stemming: an inflected stopword form survives as its stem', () => {
+    // 'make' is stopworded but 'makes' is not; it passes the pre-stem filter
+    // and stems to 'make'. The accepted D2 edge — deterministic, IDF-dampened.
+    expect(tokenize('makes')).toEqual(['make']);
   });
 
   it('returns an empty array for content-free input', () => {

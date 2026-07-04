@@ -23,6 +23,7 @@
 //   • timeless ranking
 //   • buffer exclusion
 //   • synonymy ledger (known-gap)
+//   • inflection ledger (pass + known-gap)
 // ============================================================
 
 import { FIXTURES } from './fixtures';
@@ -101,6 +102,16 @@ export interface Probe {
 // turn 6  entries [10,11] yoga / back
 // turn 7  entries [12,13] BUFFER: miso soup
 // turn 8  entries [14,15] BUFFER: miso paste
+
+// ---- inflection fixture turn map ----
+// turn 1  entries [0,1]   PLANTED: sewing needles (plural)
+// turn 2  entries [2,3]   monstera / leaves (filler)
+// turn 3  entries [4,5]   PLANTED: painted fence (verb form)
+// turn 4  entries [6,7]   espresso / descale (filler)
+// turn 5  entries [8,9]   PLANTED: ran / river (irregular)
+// turn 6  entries [10,11] guitar / chords (filler)
+// turn 7  entries [12,13] BUFFER: wine cellar
+// turn 8  entries [14,15] BUFFER: fresh pasta
 
 export const PROBES: Probe[] = [
 
@@ -310,10 +321,10 @@ export const PROBES: Probe[] = [
   {
     id: 'synonymy.boss-for-manager',
     fixture: 'synonymy',
-    query: 'boss supervisor workplace approval',
+    query: 'boss supervisor workplace decision',
     expectTurns: [3],
     expectation: 'known-gap',
-    note: "Planted fact uses 'manager'; query uses 'boss' and 'supervisor'. Synonym gap — no vocabulary bridge in TF-IDF. Gap closed → promote to 'pass'.",
+    note: "Planted fact uses 'manager'; query uses 'boss' and 'supervisor'. Synonym gap — no vocabulary bridge in TF-IDF. Gap closed → promote to 'pass'. (Query redesigned when Porter stemming landed: the original 'approval' collided with the planted 'approved' — both stem to 'approv' — an inflection match, not a synonym bridge. Zero-shared-vocabulary is measured on STEMS now.)",
   },
 
   {
@@ -323,5 +334,40 @@ export const PROBES: Probe[] = [
     expectTurns: [5],
     expectation: 'known-gap',
     note: "Planted fact uses 'Subaru'; query uses 'car' and 'vehicle'. TF-IDF has no brand-to-category bridge. Gap closed → promote to 'pass'.",
+  },
+
+  // ============================================================
+  // CATEGORY: inflection ledger
+  // What Porter stemming bought (regular inflection collides) and
+  // what it did not (irregular forms stay apart). The two pass-
+  // probes MISSED before stemming landed — that closure is what
+  // this category documents (stemming-spec D5).
+  // ============================================================
+
+  {
+    id: 'inflection.plural-needle',
+    fixture: 'inflection',
+    query: 'needle',
+    expectTurns: [1],
+    expectation: 'pass',
+    note: "Planted 'needles', probed 'needle' — both stem to 'needl'. Regular plural closed by Porter; the single shared stem carries the match (maximal IDF).",
+  },
+
+  {
+    id: 'inflection.verb-form-painting',
+    fixture: 'inflection',
+    query: 'painting',
+    expectTurns: [3],
+    expectation: 'pass',
+    note: "Planted 'painted', probed 'painting' — both stem to 'paint'. Regular verb inflection closed by Porter.",
+  },
+
+  {
+    id: 'inflection.irregular-running-for-ran',
+    fixture: 'inflection',
+    query: 'running',
+    expectTurns: [5],
+    expectation: 'known-gap',
+    note: "Planted 'ran', probed 'running' — 'ran' stems to 'ran', 'running' to 'run'. Porter is suffix arithmetic; irregular (ablaut) inflection has no suffix to strip. Gap closed → promote to 'pass' and investigate what added the bridge.",
   },
 ];

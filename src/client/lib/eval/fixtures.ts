@@ -15,7 +15,9 @@
 //     Distinctive low-frequency nouns carry facts; filler turns
 //     use vocabulary that is topically disjoint from planted facts
 //     so cross-contamination in IDF cannot accidentally inflate a
-//     wrong match.
+//     wrong match. tokenize() ends in Porter stemming, so
+//     disjointness is measured on STEMS, not surface forms —
+//     inflection variants of a planted word count as collisions.
 //   • Each user + assistant entry in a pair shares the same
 //     createdAt, matching production stamping behaviour.
 // ============================================================
@@ -372,13 +374,79 @@ const synonymyLog: ChatEntry[] = [
 ];
 
 // ============================================================
+// FIXTURE 6: inflection
+//
+// The inflection ledger (stemming-spec D5). Facts planted in one
+// inflected form, probed in another:
+//   "needles" → probed as "needle"   (regular plural — closed by Porter)
+//   "painted" → probed as "painting" (regular verb form — closed by Porter)
+//   "ran"     → probed as "running"  (irregular ablaut — Porter cannot
+//               bridge it; documented as known-gap)
+//
+// Probe queries share zero stems with the planted turns beyond the
+// inflection under test, and fillers are stem-disjoint from all
+// three probe queries.
+// ============================================================
+
+const inflectionLog: ChatEntry[] = [
+  // turn 1 – PLANTED (regular plural): needles
+  ...pair(
+    'I bought a set of sharp sewing needles from the fabric market.',
+    'Quality sewing needles stay sharp for years when kept dry and rust-free.',
+    daysAgo(30),
+  ),
+  // turn 2 – filler (disjoint: houseplants)
+  ...pair(
+    'Why do the leaves on my monstera keep turning yellow?',
+    'Yellow monstera leaves usually mean overwatering or poor drainage.',
+    daysAgo(25),
+  ),
+  // turn 3 – PLANTED (regular verb form): painted
+  ...pair(
+    'Last weekend I painted the garden fence a deep cedar shade.',
+    'Cedar shades weather nicely outdoors once the fence has a sealant coat.',
+    daysAgo(20),
+  ),
+  // turn 4 – filler (disjoint: espresso)
+  ...pair(
+    'How should I descale an espresso machine at home?',
+    'Flush a citric acid solution through the machine, then rinse it twice.',
+    daysAgo(15),
+  ),
+  // turn 5 – PLANTED (irregular verb): ran
+  ...pair(
+    'This morning I ran along the river path before sunrise.',
+    'An early start by the river must have been peaceful and quiet.',
+    daysAgo(10),
+  ),
+  // turn 6 – filler (disjoint: guitar)
+  ...pair(
+    'Which chords should a beginner learn first on the guitar?',
+    'Start with E minor, C major, G major, and D major open chords.',
+    daysAgo(5),
+  ),
+  // Buffer tail (2 filler turns — excluded by searchScored)
+  ...pair(
+    'What humidity level should a wine cellar maintain?',
+    'Aim for sixty to seventy percent relative humidity in a cellar.',
+    daysAgo(2),
+  ),
+  ...pair(
+    'How long does fresh pasta keep in the refrigerator?',
+    'Fresh pasta keeps for about two days when refrigerated.',
+    daysAgo(1),
+  ),
+];
+
+// ============================================================
 // EXPORT
 // ============================================================
 
 export const FIXTURES: Record<string, Fixture> = {
-  topical:  { name: 'topical',  log: topicalLog  },
-  temporal: { name: 'temporal', log: temporalLog  },
-  gated:    { name: 'gated',    log: gatedLog     },
-  timeless: { name: 'timeless', log: timelessLog  },
-  synonymy: { name: 'synonymy', log: synonymyLog  },
+  topical:    { name: 'topical',    log: topicalLog    },
+  temporal:   { name: 'temporal',   log: temporalLog   },
+  gated:      { name: 'gated',      log: gatedLog      },
+  timeless:   { name: 'timeless',   log: timelessLog   },
+  synonymy:   { name: 'synonymy',   log: synonymyLog   },
+  inflection: { name: 'inflection', log: inflectionLog },
 };

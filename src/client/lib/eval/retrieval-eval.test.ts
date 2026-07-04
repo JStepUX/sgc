@@ -30,8 +30,14 @@ const PROD_THRESHOLD      = 0.08;
 // ---- Ratchet baselines (set just below measured values at
 //      implementation time — see implementation_notes in spec) ----
 // Measured 2026-06-09: recall@3 = 1.000, MRR = 1.000 (14 pass-probes, all hit).
-// Ratchet set at 0.90 — allows one probe to regress (e.g. after engine tuning)
-// without failing the suite, but catches widespread regressions.
+// Measured 2026-07-03 (Porter stemming landed): recall@3 = 1.000, MRR = 0.969
+// over 16 pass-probes. The one rank slip: concept-rescue-kiln-terracotta's
+// expected turn now sits at rank 2 — the query token 'tile' also matches the
+// day-1 turn's 'tiling' post-stemming, and recency ranks that turn first. The
+// 30-day turn still surfaces via concept rescue; the probe's contract is
+// membership, so this is a documented shift, not a regression.
+// Ratchet stays at 0.90 — allows one probe to regress (e.g. after engine
+// tuning) without failing the suite, but catches widespread regressions.
 const RATCHET_RECALL_AT_3 = 0.90;
 const RATCHET_MRR         = 0.90;
 
