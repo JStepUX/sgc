@@ -1,6 +1,8 @@
 import type { SpontaneityInspector } from './spontaneity/engine';
 import { operatorLabel } from './spontaneity/flexDeck';
-import type { TurnSummary } from './types';
+import type { ChatEntry, TurnSummary } from './types';
+import type { ChatTurn } from './persistence';
+import { parseTurnResponse } from './turn-parser';
 
 // ============================================================
 // TURN DIAGNOSTICS TYPES
@@ -11,6 +13,16 @@ import type { TurnSummary } from './types';
 
 export interface GrepDetail {
   turnIndex: number;
+  score: number;
+  preview: string;
+}
+
+/** One retrieved knowledge fragment (the knowledge axis — lib/brains.ts),
+ * projected for the inspector's Knowledge tile. Mirrors GrepDetail. */
+export interface KnowledgeDetail {
+  brainName: string;
+  chunkId: string;
+  title: string;
   score: number;
   preview: string;
 }
@@ -45,11 +57,42 @@ export interface TurnData extends SpontaneityInspector {
    * persisted before this field existed don't carry it.
    */
   naiveTokens?: number;
+  /**
+   * Knowledge fragments retrieved from mounted brains this turn (the knowledge
+   * axis), for the inspector's Knowledge tile. null = brains mounted but
+   * nothing matched; optional because turns persisted before brains existed
+   * don't carry it. NOT part of the naive baseline (spec D7).
+   */
+  knowledgeDetails?: KnowledgeDetail[] | null;
 }
 
 export interface TokenHistoryEntry {
   turn: number;
   inputTokens: number;
+}
+
+/**
+ * Rebuild a ChatEntry from a persisted turn row — the ONE replay path shared by
+ * hydration, chat switch, and the memory-editor resync (hooks/useChatSession).
+ *
+ * Assistant content is passed back through parseTurnResponse so a legacy row
+ * whose stored text still carries a leaked <turn-summary> block (turns
+ * persisted before the parser learned to salvage borked blocks) renders — and
+ * enters the grep corpus — clean. Rows already clean pass through unchanged;
+ * the DB row itself is untouched (it heals on the next edit/save of that turn).
+ * User rows are always verbatim — they're the person's own words.
+ */
+export function replayEntry(t: ChatTurn): ChatEntry {
+  return {
+    role: t.role,
+    content: t.role === 'assistant' ? parseTurnResponse(t.content).displayText : t.content,
+    id: t.id,
+    active: t.active,
+    createdAt: t.createdAt,
+    timeless: t.timeless,
+    summary: summaryFromInspector(t.inspectorJson),
+    spontaneity: spontaneityFromInspector(t.inspectorJson),
+  };
 }
 
 /**

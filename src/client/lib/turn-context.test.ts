@@ -7,8 +7,9 @@
 
 import { describe, expect, it } from 'vitest';
 import { assembleTurnContext } from './turn-context';
+import { buildBrainIndex } from './brains';
 import { LOCAL_BUFFER_SIZE } from './constants';
-import type { ChatEntry, Memory } from './types';
+import type { BrainPack, ChatEntry, Memory } from './types';
 
 const HOUR = 3_600_000;
 const NOW = 1_700_000_000_000;
@@ -82,5 +83,64 @@ describe('assembleTurnContext', () => {
     // No directive → no block. (Re-spin passes the snapshotted directive here to
     // reproduce a turn; a fresh turn passes its draw. Either way it's caller-supplied.)
     expect(assembleTurnContext(base).systemPrompt).not.toContain('SPONTANEITY OPERATOR');
+  });
+});
+
+describe('assembleTurnContext — knowledge axis (mounted brains)', () => {
+  const pack: BrainPack = {
+    schema: 'sgc-brain/1',
+    id: 'glassblowing',
+    name: 'Glassblowing Notes',
+    description: 'Studio notes on working hot glass.',
+    version: '1.0',
+    built_at: '2026-07-04T00:00:00Z',
+    source: { tool: 'atlantis', schema: 'atlantis-salience-v1', stub: true },
+    chunks: [
+      {
+        id: 'glass_000',
+        title: 'Gathering from the Furnace',
+        text: 'Gathering molten glass onto the blowpipe requires steady rotation at the furnace mouth.',
+        summary: 'How to gather molten glass.',
+        topics: ['gathering'],
+        aliases: ['parison'],
+        source: { file: 'raw/glass.md', doc: 'glass-notes', position: 0 },
+        tokens: 20,
+      },
+    ],
+  };
+
+  const log = [
+    ...turnPair('an old exchange about travel plans', 'a travel reply', 40),
+    ...turnPair('filler one', 'filler reply one', 30),
+    ...turnPair('filler two', 'filler reply two', 20),
+  ];
+  const base = { query: 'molten glass on the blowpipe', priorLog: log, memories, persona: 'P', now: NOW, fetchedDocs: [], failedUrls: [] };
+
+  it('populates the knowledge block from the brain index (digest + matched fragment)', () => {
+    const { knowledge, systemPrompt } = assembleTurnContext({ ...base, brainIndex: buildBrainIndex([pack]) });
+    expect(knowledge).not.toBeNull();
+    expect(knowledge!.digests).toHaveLength(1);
+    expect(knowledge!.results.length).toBeGreaterThan(0);
+    expect(knowledge!.results[0].chunkId).toBe('glass_000');
+    expect(systemPrompt).toContain('PERSONA KNOWLEDGE');
+    expect(systemPrompt).toContain('Gathering from the Furnace');
+  });
+
+  it('returns knowledge: null (and no prompt tier) when nothing is mounted', () => {
+    for (const brainIndex of [undefined, null, buildBrainIndex([])]) {
+      const { knowledge, systemPrompt } = assembleTurnContext({ ...base, brainIndex });
+      expect(knowledge).toBeNull();
+      expect(systemPrompt).not.toContain('PERSONA KNOWLEDGE');
+    }
+  });
+
+  it('ISOLATION REGRESSION: grepResults are byte-identical with and without a mounted brain', () => {
+    // The knowledge axis must never touch the memory axis. Same query, same
+    // log, same instant — the memory grep's output must not move by one byte
+    // when a brain is mounted.
+    const without = assembleTurnContext(base);
+    const withBrain = assembleTurnContext({ ...base, brainIndex: buildBrainIndex([pack]) });
+    expect(JSON.stringify(withBrain.grepResults)).toBe(JSON.stringify(without.grepResults));
+    expect(withBrain.localBufferSize).toBe(without.localBufferSize);
   });
 });

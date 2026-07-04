@@ -19,6 +19,7 @@
 import type { ChatEntry, FetchedDoc, Memory } from './types';
 import { LOCAL_BUFFER_SIZE, SUMMARY_BUFFER_SIZE } from './constants';
 import { searchScored, type ScoredResult } from './time-score';
+import { searchBrains, type BrainIndex, type KnowledgeBlock } from './brains';
 import { buildPrompt } from './prompt';
 
 export interface TurnContextInput {
@@ -40,17 +41,27 @@ export interface TurnContextInput {
    * See lib/spontaneity/. Deliberately NOT folded into estimateNaiveContextTokens.
    */
   spontaneityDirective?: string | null;
+  /**
+   * The union index over this chat's mounted brains (the KNOWLEDGE axis —
+   * lib/brains.ts), or null/undefined when nothing is mounted. Caller-supplied
+   * like memories/persona: the re-spin passes the CURRENT mounts (spec D8 —
+   * packs aren't snapshotted per turn), so this joins the not-reconstructed
+   * list in the header comment.
+   */
+  brainIndex?: BrainIndex | null;
 }
 
 export interface TurnContextResult {
   systemPrompt: string;
   /** Empty when nothing fired. The caller maps these into TurnData diagnostics. */
   grepResults: ScoredResult[];
+  /** Digests + retrieved fragments for the mounted brains; null when none mounted. */
+  knowledge: KnowledgeBlock | null;
   localBufferSize: number;
 }
 
 export function assembleTurnContext(input: TurnContextInput): TurnContextResult {
-  const { query, priorLog, memories, persona, now, fetchedDocs, failedUrls, spontaneityDirective } = input;
+  const { query, priorLog, memories, persona, now, fetchedDocs, failedUrls, spontaneityDirective, brainIndex } = input;
 
   // ---- LOCAL BUFFER: last 2 turns (4 entries: user+assistant pairs) ----
   const localBuffer = priorLog.slice(-LOCAL_BUFFER_SIZE);
@@ -72,9 +83,19 @@ export function assembleTurnContext(input: TurnContextInput): TurnContextResult 
     threshold: 0.08,
   });
 
+  // ---- PERSONA KNOWLEDGE: the knowledge axis, separate from memory ----
+  // Same deterministic engine style over the mounted brains' union index
+  // (concept score only — knowledge is timeless, spec D4). Digests render
+  // whenever anything is mounted, even with zero hits (spec D10). The memory
+  // grep above is untouched by this: the two axes never share state.
+  const knowledge: KnowledgeBlock | null =
+    brainIndex && brainIndex.digests.length > 0
+      ? { digests: brainIndex.digests, results: searchBrains(query, brainIndex) }
+      : null;
+
   // ---- BUILD THE SINGLE-CALL PROMPT ----
   // `now` gives retrieved turns a relative-time prefix computed against the same
-  // reference the time scorer used; the distilled summary window is the final arg.
+  // reference the time scorer used; the distilled summary window follows it.
   const systemPrompt = buildPrompt(
     memories,
     localBuffer,
@@ -85,7 +106,8 @@ export function assembleTurnContext(input: TurnContextInput): TurnContextResult 
     now,
     summaryWindow,
     spontaneityDirective,
+    knowledge,
   );
 
-  return { systemPrompt, grepResults, localBufferSize: localBuffer.length };
+  return { systemPrompt, grepResults, knowledge, localBufferSize: localBuffer.length };
 }
