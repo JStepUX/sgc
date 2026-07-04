@@ -45,6 +45,16 @@ export const TurnInspector = memo(function TurnInspector({ turnData }: { turnDat
             ? `${turnData.grepMatches} match${turnData.grepMatches !== 1 ? 'es' : ''}`
             : 'no matches above threshold'}
         </li>
+        {turnData.knowledgeDetails && turnData.knowledgeDetails.length > 0 && (
+          // The knowledge axis (mounted brains). Line renders only when
+          // fragments actually retrieved — old turns predate the field, and
+          // a mounted-but-unmatched turn carries null (the digest still went
+          // to the prompt; that's a prompt fact, not a retrieval event).
+          <li className="flex items-center gap-2 font-mono text-[11px] tracking-[0.02em] text-fg-2">
+            <span className="size-[5px] shrink-0 rounded-full bg-ember" />
+            Knowledge: {turnData.knowledgeDetails.length} fragment{turnData.knowledgeDetails.length !== 1 ? 's' : ''}
+          </li>
+        )}
         {typeof turnData.spontaneitySimilarity === 'number' && (
           // Always-on slack reading — the calibration signal. Shown even when
           // nothing fired so the firing line (DEFAULT_SLACK_THRESHOLD) can be
@@ -70,6 +80,28 @@ export const TurnInspector = memo(function TurnInspector({ turnData }: { turnDat
               </div>
               <div className="overflow-hidden text-ellipsis whitespace-nowrap text-xs leading-[1.5] text-fg-2">
                 {g.preview}
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {turnData.knowledgeDetails && turnData.knowledgeDetails.length > 0 && (
+        <div className="mt-1 flex flex-col gap-2">
+          {turnData.knowledgeDetails.map((k, i) => (
+            // Same card idiom as a grep match — provenance line (brain ·
+            // document · score), then the fragment preview.
+            <Card
+              key={i}
+              className="gap-0 rounded-[4px_10px_10px_4px] border border-l-2 border-l-ember px-3 py-2.5 shadow-none"
+            >
+              <div className="mb-1 flex items-baseline gap-3 font-mono text-[10.5px] text-fg-3">
+                <span className="font-medium text-fg-1">{k.brainName}</span>
+                <span className="overflow-hidden text-ellipsis whitespace-nowrap">{k.title}</span>
+                <span className="shrink-0">score: {k.score.toFixed(3)}</span>
+              </div>
+              <div className="overflow-hidden text-ellipsis whitespace-nowrap text-xs leading-[1.5] text-fg-2">
+                {k.preview}
               </div>
             </Card>
           ))}

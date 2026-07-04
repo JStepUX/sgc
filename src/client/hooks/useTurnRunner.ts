@@ -37,7 +37,7 @@ export function useTurnRunner(
   const processInput = async (text: string) => {
     const {
       chatId, chatLog, memories, activePersona, hydrated, turnCount,
-      spontaneityStateRef,
+      brainIndex, spontaneityStateRef,
       setMessages, setChatLog, setTurnCount, setLatestTurn, setTokenHistory, setChats,
     } = session;
     const { provider, health } = providerState;
@@ -92,6 +92,7 @@ export function useTurnRunner(
       grepFired: false,
       grepMatches: 0,
       grepDetails: null,
+      knowledgeDetails: null,
       summary: null,
       // Spontaneity defaults — overwritten by the draw below (the reading is
       // recorded every turn; the operator fields only on a fire).
@@ -135,7 +136,7 @@ export function useTurnRunner(
       // re-spin editor reuses. `chatLog` here is everything PRIOR to this turn
       // (the new pair is appended further down), `turnStartedAt` is the single
       // reference instant for both the time scorer and the relative-time tags.
-      const { systemPrompt, grepResults, localBufferSize } = assembleTurnContext({
+      const { systemPrompt, grepResults, knowledge, localBufferSize } = assembleTurnContext({
         query: userInput,
         priorLog: chatLog,
         memories,
@@ -144,6 +145,10 @@ export function useTurnRunner(
         fetchedDocs,
         failedUrls,
         spontaneityDirective: spont.directive,
+        // The knowledge axis: the union index over this chat's mounted brains
+        // (null when none). Searched inside the assembler — still 0 ms, 0
+        // tokens, no model; the memory grep above it is untouched.
+        brainIndex,
       });
       turnData.localBufferSize = localBufferSize;
       if (grepResults.length > 0) {
@@ -155,6 +160,15 @@ export function useTurnRunner(
           // visible ranking matches what was actually used to retrieve.
           score: r.combinedScore,
           preview: r.userContent.slice(0, 80),
+        }));
+      }
+      if (knowledge && knowledge.results.length > 0) {
+        turnData.knowledgeDetails = knowledge.results.map((r) => ({
+          brainName: r.brainName,
+          chunkId: r.chunkId,
+          title: r.title,
+          score: r.score,
+          preview: r.text.slice(0, 80),
         }));
       }
 

@@ -29,7 +29,7 @@ export function useResponseEditor(
   saveEdit: (text: string, respin: RespinResult | null) => Promise<void>;
 } {
   const {
-    messages, chatLog, memories, activePersona, latestTurn, chatId,
+    messages, chatLog, memories, activePersona, latestTurn, chatId, brainIndex,
     setMessages, setChatLog, setLatestTurn, setChats,
   } = session;
   const { provider, health } = providerState;
@@ -94,6 +94,9 @@ export function useResponseEditor(
         // inspector) rather than rolling a fresh one. The pencil is latest-turn
         // only, so latestTurn is this turn's diagnostics. null → none fired.
         spontaneityDirective: latestTurn?.spontaneityDirective ?? null,
+        // CURRENT mounts, not a per-turn snapshot (spec D8) — same convention
+        // as memories/persona above; the modal copy says so.
+        brainIndex,
       });
 
       const confirmedProvider = health?.providers[provider]?.available ? provider : undefined;
@@ -112,7 +115,7 @@ export function useResponseEditor(
         elapsed: result.elapsed,
       };
     },
-    [editTarget, chatLog, memories, activePersona, health, provider, latestTurn],
+    [editTarget, chatLog, memories, activePersona, health, provider, latestTurn, brainIndex],
   );
 
   // Save the edited reply. Persist FIRST, then commit to state on success (a
@@ -137,6 +140,7 @@ export function useResponseEditor(
           grepFired: false,
           grepMatches: 0,
           grepDetails: null,
+          knowledgeDetails: null,
           summary: null,
           spontaneityFired: false,
           spontaneityOperatorId: null,

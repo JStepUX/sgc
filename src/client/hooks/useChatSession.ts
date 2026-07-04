@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import type { ChatEntry, Memory } from '../lib/types';
+import { useBrainMounts, type BrainMounts } from './useBrainMounts';
 import {
-  summaryFromInspector,
-  spontaneityFromInspector,
+  replayEntry,
   type TokenHistoryEntry,
   type TurnData,
 } from '../lib/turn-data';
-import { DEFAULT_PERSONA, parseTurnResponse } from '../lib/prompt';
+import { DEFAULT_PERSONA } from '../lib/prompt';
 import { lastFiredOperatorId, type SpontaneityState } from '../lib/spontaneity/engine';
 import {
   createChat as apiCreateChat,
@@ -16,7 +16,6 @@ import {
   saveMemories as apiSaveMemories,
   savePromptVersion as apiSavePromptVersion,
   type ChatSummary,
-  type ChatTurn,
   type PromptVersion,
   type TurnActiveState,
 } from '../lib/persistence';
@@ -32,30 +31,6 @@ import {
 // the response editor can patch the reply it edits.
 // ============================================================
 
-/**
- * Rebuild a ChatEntry from a persisted turn row — the ONE replay path shared by
- * hydration, chat switch, and the memory-editor resync.
- *
- * Assistant content is passed back through parseTurnResponse so a legacy row
- * whose stored text still carries a leaked <turn-summary> block (turns
- * persisted before the parser learned to salvage borked blocks) renders — and
- * enters the grep corpus — clean. Rows already clean pass through unchanged;
- * the DB row itself is untouched (it heals on the next edit/save of that turn).
- * User rows are always verbatim — they're the person's own words.
- */
-function replayEntry(t: ChatTurn): ChatEntry {
-  return {
-    role: t.role,
-    content: t.role === 'assistant' ? parseTurnResponse(t.content).displayText : t.content,
-    id: t.id,
-    active: t.active,
-    createdAt: t.createdAt,
-    timeless: t.timeless,
-    summary: summaryFromInspector(t.inspectorJson),
-    spontaneity: spontaneityFromInspector(t.inspectorJson),
-  };
-}
-
 export interface UseChatSessionOptions {
   /** Called when a new chat replaces the visible session (startNewChat) — the
    * root uses it to clear + refocus the composer's textarea. */
@@ -65,7 +40,10 @@ export interface UseChatSessionOptions {
   onChatSwitched: () => void;
 }
 
-export interface ChatSession {
+// The brains-axis surface (mountedBrains, brainIndex, setMountedBrainIds, and
+// the adopt/clear/bind plumbing the load paths use) rides in via BrainMounts —
+// see hooks/useBrainMounts.ts.
+export interface ChatSession extends BrainMounts {
   // --- state ---
   chatId: string | null;
   chats: ChatSummary[];
@@ -93,7 +71,7 @@ export interface ChatSession {
   addMemory: (text: string) => void;
   removeMemory: (id: string) => void;
   savePromptVersion: (text: string, baselineText: string) => Promise<void>;
-  startNewChat: (persona?: string, mask?: string) => Promise<void>;
+  startNewChat: (persona?: string, mask?: string, brainIds?: string[]) => Promise<void>;
   loadChat: (id: string) => Promise<void>;
   deleteChat: (id: string) => Promise<void>;
   onActiveTurnsChanged: (chatId: string, states: TurnActiveState[]) => void;
@@ -113,6 +91,11 @@ export function useChatSession({ onSessionReset, onChatSwitched }: UseChatSessio
   // mount-effect resolves it). `chats` is the summary list used by the modal.
   const [chatId, setChatId] = useState<string | null>(null);
   const [chats, setChats] = useState<ChatSummary[]>([]);
+  // The brains axis (mounted packs + union index) — its own per-axis hook;
+  // the load paths below call its adopt/clear/bind at the same sites where
+  // memories/persona swap.
+  const brainMounts = useBrainMounts(chatId);
+  const { adoptBrains, clearBrains, bindBrainsToNewChat } = brainMounts;
   // Per-chat persona + display-only mask for the active chat.
   // `activePersona` is the head of the per-turn system prompt (DEFAULT_PERSONA
   // when the chat carries none). `activeMask` is the author label shown on
@@ -179,6 +162,9 @@ export function useChatSession({ onSessionReset, onChatSwitched }: UseChatSessio
           setActivePersona(detail.persona?.trim() ? detail.persona : DEFAULT_PERSONA);
           setActiveMask(detail.mask ?? '');
           setPromptVersions(detail.versions);
+          // Restore the chat's mounted brains (packs fetched once, at load).
+          await adoptBrains(detail.brainIds);
+          if (cancelled) return;
           if (detail.latestInspector) {
             setLatestTurn(detail.latestInspector as TurnData);
           }
@@ -208,6 +194,8 @@ export function useChatSession({ onSessionReset, onChatSwitched }: UseChatSessio
       }
     })();
     return () => { cancelled = true; };
+    // adoptBrains is a stable callback from useBrainMounts (no deps of its own).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // --- Memory sync: persist the active chat's set whenever it changes,
@@ -290,7 +278,7 @@ export function useChatSession({ onSessionReset, onChatSwitched }: UseChatSessio
   // which supplies an edited persona/mask) and the delete-fallback path (which
   // passes nothing → default Sal). A null/blank persona is stored server-side as
   // NULL and resolves to DEFAULT_PERSONA at build time.
-  const startNewChat = useCallback(async (persona?: string, mask?: string) => {
+  const startNewChat = useCallback(async (persona?: string, mask?: string, brainIds?: string[]) => {
     // Flush any pending edit to the OUTGOING chat before we clear the set.
     // (flushPendingMemorySave reads chatIdRef synchronously, so it still sees the
     // outgoing id even though we null chatId on the next line.)
@@ -322,6 +310,9 @@ export function useChatSession({ onSessionReset, onChatSwitched }: UseChatSessio
     // A new chat has no prompt edit history yet — the editor synthesises a
     // baseline from the persona above until the first edit lands.
     setPromptVersions([]);
+    // Mounted brains reset with the session; the picker's choice (if any) is
+    // bound + loaded after the create resolves below.
+    clearBrains();
     // Clear + refocus the composer's textarea (it owns its own input state) —
     // the root supplies the bump.
     onSessionReset();
@@ -333,13 +324,16 @@ export function useChatSession({ onSessionReset, onChatSwitched }: UseChatSessio
       if (persona?.trim() && persona !== DEFAULT_PERSONA) args.persona = persona;
       if (resolvedMask) args.mask = resolvedMask;
       const created = await apiCreateChat(Object.keys(args).length ? args : undefined);
+      // Bind the picker's mount choice to the new chat, then load the packs so
+      // the FIRST turn already carries the knowledge tier (spec D6).
+      await bindBrainsToNewChat(created.id, brainIds ?? []);
       setChatId(created.id);
       const refreshed = await apiListChats();
       setChats(refreshed);
     } catch (err) {
       console.warn('createChat failed:', err);
     }
-  }, [flushPendingMemorySave, onSessionReset]);
+  }, [flushPendingMemorySave, onSessionReset, clearBrains, bindBrainsToNewChat]);
 
   // Load an existing chat from the history modal: fetch its turns, replay
   // them into the in-memory log + visible messages, restore the right-rail
@@ -352,6 +346,17 @@ export function useChatSession({ onSessionReset, onChatSwitched }: UseChatSessio
     // Flush any pending edit to the OUTGOING chat before we swap its set out —
     // otherwise a switch within the 250ms save debounce would drop the edit.
     flushPendingMemorySave();
+    // Null the active chat for the duration of the switch — same guard as
+    // startNewChat. The awaits below (chat detail, then brain packs) leave
+    // windows where the DESTINATION chat's state is already rendered; if
+    // chatId still pointed at the OUTGOING chat, a submit would persist a
+    // turn to it and the debounced memory save would reconcile the NEW
+    // chat's memory set into the OLD chat's scope (deleting its rows).
+    // "No active chat" until everything lands is the honest state — the
+    // composer and every chatId-scoped write already disable/throw on it.
+    // Restored on failure so a dropped fetch doesn't strand the session.
+    const outgoingId = chatId;
+    setChatId(null);
     try {
       const detail = await apiLoadChat(id);
       const replay: ChatEntry[] = detail.turns.map(replayEntry);
@@ -372,12 +377,18 @@ export function useChatSession({ onSessionReset, onChatSwitched }: UseChatSessio
       setActivePersona(detail.persona?.trim() ? detail.persona : DEFAULT_PERSONA);
       setActiveMask(detail.mask ?? '');
       setPromptVersions(detail.versions);
+      // Swap in this chat's mounted brains (packs fetched once, at load).
+      await adoptBrains(detail.brainIds);
       setChatId(id);
       onChatSwitched();
     } catch (err) {
+      // The failure path is apiLoadChat (adoptBrains never rejects — pack
+      // failures degrade per-pack). No destination state landed, so pointing
+      // chatId back at the outgoing chat restores a coherent session.
+      setChatId(outgoingId);
       console.warn('loadChat failed:', err);
     }
-  }, [chatId, flushPendingMemorySave, onChatSwitched]);
+  }, [chatId, flushPendingMemorySave, onChatSwitched, adoptBrains]);
 
   // Re-pull the edited chat and rebuild chatLog from it. Used by every memory-
   // editor mutation that the live grep must see immediately — gating turns,
@@ -454,6 +465,7 @@ export function useChatSession({ onSessionReset, onChatSwitched }: UseChatSessio
   }, [chatId, loadChat, startNewChat]);
 
   return {
+    ...brainMounts,
     chatId,
     chats,
     hydrated,

@@ -1,12 +1,22 @@
 import { memo, useState } from 'react';
 import { Plus } from 'lucide-react';
-import type { Memory } from '../lib/types';
+import type { BrainManifest, Memory } from '../lib/types';
+import { listBrains } from '../lib/persistence';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 
 // ============================================================
-// MEMORY PANEL — Constitutional Memories.
+// MEMORY PANEL — Constitutional Memories + the chat's mounted brains.
+// (Brains are the KNOWLEDGE axis — a separate section, not a memory tier.)
 // ============================================================
+
+/** Slim projection of a mounted pack for this panel's list. */
+export interface MountedBrainItem {
+  id: string;
+  name: string;
+  stub: boolean;
+  chunkCount: number;
+}
 
 interface MemoryPanelProps {
   memories: Memory[];
@@ -21,6 +31,13 @@ interface MemoryPanelProps {
   // Disabled until the active chat id is ready (pre-hydration / mid chat-swap /
   // hydration failure) — there'd be no chat to scope the edit to.
   promptEditorDisabled: boolean;
+  /** The active chat's mounted brains (mid-chat mount/unmount is deterministic
+   * curation, same class as turn gating — spec D6). */
+  mountedBrains: MountedBrainItem[];
+  onMountBrain: (id: string) => void;
+  onUnmountBrain: (id: string) => void;
+  /** Disabled while no chat is active (same gating as the prompt editor). */
+  brainsDisabled: boolean;
 }
 
 export const MemoryPanel = memo(function MemoryPanel({
@@ -31,8 +48,24 @@ export const MemoryPanel = memo(function MemoryPanel({
   promptVersionN,
   onOpenPromptEditor,
   promptEditorDisabled,
+  mountedBrains,
+  onMountBrain,
+  onUnmountBrain,
+  brainsDisabled,
 }: MemoryPanelProps) {
   const [newMemText, setNewMemText] = useState('');
+  // The mid-chat mount flow: "+ Mount" expands to the importable-pack list
+  // (fetched on expand, so a pack imported elsewhere shows up). null = closed.
+  const [mountablePacks, setMountablePacks] = useState<BrainManifest[] | null>(null);
+
+  const openMountList = async () => {
+    try {
+      setMountablePacks(await listBrains());
+    } catch (err) {
+      console.warn('listBrains failed:', err);
+      setMountablePacks([]);
+    }
+  };
 
   const submitNew = () => {
     if (newMemText.trim()) {
@@ -101,6 +134,97 @@ export const MemoryPanel = memo(function MemoryPanel({
           className="size-8 rounded-[10px] text-ember"
         ><Plus className="size-3.5" /></Button>
       </div>
+
+      {/* MOUNTED BRAINS — the knowledge axis. A separate section so the two
+          axes read as what they are: memories are about the person, brains are
+          reference material about the world. */}
+      <div className="mt-5 mb-1 flex items-center justify-between gap-2.5">
+        <span className="font-mono text-[11px] tracking-[0.18em] uppercase text-fg-3">
+          Mounted Brains
+        </span>
+        {mountablePacks === null ? (
+          <button
+            type="button"
+            onClick={() => void openMountList()}
+            disabled={brainsDisabled}
+            aria-label="Mount a knowledge pack on this chat"
+            className="shrink-0 whitespace-nowrap rounded-md border border-hairline-strong px-2.5 py-1.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-ember transition-colors hover:border-ember/60 hover:bg-ember/[0.08] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-hairline-strong disabled:hover:bg-transparent"
+          >
+            + Mount
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setMountablePacks(null)}
+            aria-label="Close the mount list"
+            className="shrink-0 whitespace-nowrap rounded-md border border-hairline-strong px-2.5 py-1.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-fg-3 transition-colors hover:border-ember/60"
+          >
+            Close
+          </button>
+        )}
+      </div>
+
+      {mountedBrains.length === 0 && mountablePacks === null && (
+        <p className="text-[11.5px] leading-[1.5] text-fg-4">
+          No brains mounted — this chat runs on memory alone.
+        </p>
+      )}
+
+      <div className="flex flex-col gap-2">
+        {mountedBrains.map((b) => (
+          <Card
+            key={b.id}
+            className="gap-0 rounded-[14px] border px-[14px] py-2.5 shadow-none"
+          >
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="flex min-w-0 items-baseline gap-2">
+                <span className="overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-medium text-fg-1">
+                  {b.name}
+                </span>
+                <span className="shrink-0 font-mono text-[9.5px] uppercase tracking-[0.1em] text-fg-4">
+                  {b.chunkCount} chunk{b.chunkCount !== 1 ? 's' : ''}
+                </span>
+              </span>
+              <button
+                className="cursor-pointer px-0.5 text-sm leading-none text-fg-4 transition-colors hover:text-danger"
+                onClick={() => onUnmountBrain(b.id)}
+                aria-label={`Unmount ${b.name}`}
+              >×</button>
+            </div>
+            {b.stub && (
+              <span className="mt-1 self-start rounded border border-hairline px-1 py-px font-mono text-[8.5px] uppercase tracking-[0.1em] text-fg-3">
+                model-free build
+              </span>
+            )}
+          </Card>
+        ))}
+      </div>
+
+      {mountablePacks !== null && (
+        <div className="flex flex-col gap-1.5">
+          {mountablePacks.filter((p) => !mountedBrains.some((m) => m.id === p.id)).length === 0 ? (
+            <p className="text-[11.5px] leading-[1.5] text-fg-4">
+              Nothing left to mount — import packs from the Begin-again dialog.
+            </p>
+          ) : (
+            mountablePacks
+              .filter((p) => !mountedBrains.some((m) => m.id === p.id))
+              .map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => { onMountBrain(p.id); setMountablePacks(null); }}
+                  className="flex items-baseline gap-2 rounded-[10px] border border-hairline bg-surface px-3 py-2 text-left transition-colors hover:border-ember/40"
+                >
+                  <span className="text-[12.5px] text-fg-1">{p.name}</span>
+                  <span className="font-mono text-[9.5px] uppercase tracking-[0.1em] text-fg-4">
+                    {p.chunkCount} chunk{p.chunkCount !== 1 ? 's' : ''}
+                  </span>
+                </button>
+              ))
+          )}
+        </div>
+      )}
     </section>
   );
 });

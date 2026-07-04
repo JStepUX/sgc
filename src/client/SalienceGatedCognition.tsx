@@ -83,15 +83,35 @@ export default function SalienceGatedCognition() {
   }, []);
 
   // Confirm from the persona modal: do the new-chat work with the chosen
-  // persona + mask, then close the modal. (startNewChat destructured so the
-  // dependency is the stable callback, not the per-render session object.)
-  const { startNewChat } = session;
+  // persona + mask + brains to mount, then close the modal. (startNewChat
+  // destructured so the dependency is the stable callback, not the per-render
+  // session object.)
+  const { startNewChat, setMountedBrainIds, mountedBrains } = session;
   const confirmPersona = useCallback(
-    async (persona: string, mask: string) => {
+    async (persona: string, mask: string, brainIds: string[]) => {
       setPersonaModalOpen(false);
-      await startNewChat(persona, mask);
+      await startNewChat(persona, mask, brainIds);
     },
     [startNewChat],
+  );
+
+  // Mid-chat mount/unmount (MemoryPanel's MOUNTED BRAINS section) — compute the
+  // next id set from the current mounts and persist-then-commit via the session.
+  const handleMountBrain = useCallback(
+    (id: string) => {
+      const ids = mountedBrains.map((p) => p.id);
+      if (!ids.includes(id)) {
+        setMountedBrainIds([...ids, id]).catch((err) => console.warn('mount failed:', err));
+      }
+    },
+    [mountedBrains, setMountedBrainIds],
+  );
+  const handleUnmountBrain = useCallback(
+    (id: string) => {
+      setMountedBrainIds(mountedBrains.map((p) => p.id).filter((x) => x !== id))
+        .catch((err) => console.warn('unmount failed:', err));
+    },
+    [mountedBrains, setMountedBrainIds],
   );
 
   return (
@@ -212,6 +232,15 @@ export default function SalienceGatedCognition() {
               promptVersionN={session.promptVersions.length > 0 ? session.promptVersions[0].n : 1}
               onOpenPromptEditor={handleOpenPromptEditor}
               promptEditorDisabled={!session.chatId}
+              mountedBrains={session.mountedBrains.map((p) => ({
+                id: p.id,
+                name: p.name,
+                stub: p.source.stub,
+                chunkCount: p.chunks.length,
+              }))}
+              onMountBrain={handleMountBrain}
+              onUnmountBrain={handleUnmountBrain}
+              brainsDisabled={!session.chatId}
             />
             <TurnInspector turnData={session.latestTurn} />
             <TokenChart tokenHistory={session.tokenHistory} />
