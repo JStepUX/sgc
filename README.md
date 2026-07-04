@@ -59,6 +59,20 @@ fresh one. It edits that one reply only — later turns aren't regenerated — a
 touches no memory-retrieval invariant: retrieval stays deterministic math, Sal
 stays ephemeral.
 
+**Plug-in brains (the knowledge axis).** A chat can mount **knowledge packs** —
+`sgc-brain/1` JSON files of document chunks compiled offline by the sibling
+Atlantis repo (`python -m atlantis export`; fully model-free `--stub` builds
+are first-class and badged in the UI). Mounted packs are searched each turn by
+the same deterministic TF-IDF cosine math as the grep — one union index across
+all mounts, client-side, 0 ms, 0 tokens — and the top chunks render as a
+PERSONA KNOWLEDGE prompt tier behind an always-present per-brain digest, so Sal
+can name what it *could* be asked even when nothing retrieves. Knowledge is
+reference material about the world, not memory of the person: packs are
+read-only, carry no embeddings (plain text + hand-editable `aliases`, the
+deterministic synonym bridge), and never touch the memory tiers. Mount at
+"Begin again" or mid-chat from the right rail; import packs from the same
+dialog.
+
 **Spontaneity (experimental, a separate axis).** When the recent conversation is
 *circling*, a deterministic detector (average pairwise TF-IDF cosine over the last
 few turns — no model) can fire a single one-turn creative **operator** into Sal's
@@ -99,7 +113,7 @@ needed.
 |---------|------|
 | `npm run dev` | Client + server, hot-reloading |
 | `npm run electron:dev` | The same dev stack plus an Electron window |
-| `npm test` | Vitest — TF-IDF engine, time scorer, retrieval eval probes, desktop config |
+| `npm test` | Vitest — TF-IDF engine, time scorer, retrieval + brain eval probes, desktop config |
 | `npm run typecheck` | `tsc` on client, server, and electron shell |
 | `npm run lint` | ESLint |
 | `npm run build` | Production build into `dist/` |

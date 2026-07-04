@@ -36,6 +36,22 @@ and handed to one ephemeral reasoning instance:
    recency scorer (its time score is pinned to 1.0). Still pure curation, no
    model: timeless cards have no gate toggle, only a delete control.
 
+Alongside the memory tiers sits a separate **knowledge axis** — "plug-in
+brains": JSON packs of document chunks compiled offline by the sibling
+Atlantis repo (`C:/projects/Atlantis-SGC`, `python -m atlantis export`),
+imported into SGC and mounted per chat. Each turn, the mounted packs' **union
+TF-IDF index** (`lib/brains.ts` — same tokenizer/cosine primitives as
+Grepory, one shared IDF per spec D3) is searched client-side and the top
+chunks render as a PERSONA KNOWLEDGE prompt tier, behind an always-present
+per-brain digest so Sal knows what it *could* be asked (D10). Knowledge is
+**reference material about the world, not memory of the person**: packs are
+read-only at runtime, carry no embeddings (lexical fields only — text,
+summary, topics, and hand-editable `aliases`, the deterministic synonym
+bridge), and never touch `searchScored` — an isolation regression pins the
+memory grep byte-identical with and without mounts. Embedding retrieval for
+brains is Phase 2b: a separate raise that must beat this lexical baseline on
+the brain eval probes first.
+
 These feed **Sal**, an ephemeral reasoning instance that exists for exactly one
 turn, then is retired — it has no memory of prior turns. Sal responds in natural
 language, then emits a `<turn-summary>` block: a fresh per-turn observation in
@@ -97,6 +113,8 @@ src/client/
                               not isolated stores (useChatSession exposes its setters)
     useChatSession.ts         persistence axis: hydration, chat create/load/delete, per-chat
                               memories (+ debounced sync), persona versions, the in-memory logs
+    useBrainMounts.ts         knowledge axis: the active chat's mounted packs + the ONE union
+                              index (composed by useChatSession; adopt/clear/bind at load sites)
     useTurnRunner.ts          the live turn: tier assembly → single streamed model call →
                               promote reply → persist pair (processInput moved here verbatim)
     useResponseEditor.ts      edit/re-spin the latest reply (editTarget, respin, saveEdit)
@@ -107,7 +125,7 @@ src/client/
     AuroraBackground.tsx      the warm field behind the glass (memoized; pulse re-key)
     PhaseBar.tsx              title, provider chip, run-mode metadata, begin-again
     ProviderChip.tsx          anchored popover to switch/configure the model backing Sal
-    MemoryPanel.tsx           Constitutional Memories editor (right rail)
+    MemoryPanel.tsx           Constitutional Memories editor + MOUNTED BRAINS section (right rail)
     TurnInspector.tsx         per-turn diagnostics: trace, grep matches, spontaneity, savings
     TokenChart.tsx            payload-size-per-turn SVG bars (right rail)
     AssistantMessage.tsx      Sal's reply — ReactMarkdown + summary line + spontaneity marker
@@ -116,7 +134,8 @@ src/client/
     rail-styles.ts            shared rail section-header class strings
     ChatHistoryModal.tsx      history list + (editor mode) the rail
     ChatMemoryEditor.tsx      per-turn cosine-grep gating editor (4-col card grid)
-    ConfirmPersonaModal.tsx   per-chat persona (system prompt) + optional mask, set at "Begin again"
+    ConfirmPersonaModal.tsx   per-chat persona (system prompt) + optional mask + brain mount
+                              picker (incl. pack import), set at "Begin again"
     PromptEditorModal.tsx     edit THIS chat's persona mid-chat, forward-only version history
     EditResponseModal.tsx     edit the latest assistant reply — manual rewrite or "re-spin"
                               (re-run the model with this turn's history; current memories/persona)
@@ -135,14 +154,21 @@ src/client/
     tfidf.ts                  the TF-IDF cosine engine ("Grepory") — pure, deterministic;
                               tokenize() = lowercase → stopwords → Porter stemming
     tfidf.test.ts             Vitest behavioral tests for the engine
+    brains.ts                 the knowledge axis: union index over mounted packs + digests +
+                              searchBrains (composes tfidf.ts primitives; never touches the
+                              memory grep — see the isolation regression in turn-context.test.ts)
     time-score.ts             time scorer + searchScored orchestrator (concept × time)
     turn-context.ts           assembleTurnContext() — deterministic per-turn tier assembly,
                               shared by the live turn and the response editor's re-spin
-    prompt.ts                 system-prompt builder + response parser
+    prompt.ts                 system-prompt builder (memory tiers + PERSONA KNOWLEDGE)
+    turn-parser.ts            response parser: <turn-summary> split + streaming strip
+                              (re-exported from prompt.ts for existing importers)
     api.ts                    runTurn() — POSTs to /api/turn
     desktop.ts                typed guard for window.sgcDesktop (Electron bridge; web → absent)
     eval/                     retrieval eval harness — planted-fact fixtures + probes
-                              replayed through searchScored, ratcheted recall@3 / MRR
+                              replayed through searchScored, ratcheted recall@3 / MRR;
+                              brain-eval.test.ts runs the same ledger over searchBrains +
+                              the committed Atlantis fixture pack (fixtures/brain-fixture.json)
     spontaneity/              SEPARATE AXIS, not memory: a deterministic slack detector
                               (TF-IDF reuse) + operator deck that injects a one-turn
                               creative directive when the conversation circles. Wired into
@@ -152,8 +178,13 @@ src/server/
   index.ts                    Express server — holds the provider keys/URLs; /api/health,
                               /api/turn (SSE), chat/turn/memory persistence routes; serves
                               dist/client when built. Reads ALL config from env once at boot.
-  db.ts                       SQLite persistence (better-sqlite3) — chats/turns/memories,
-                              schema + pure helpers; SGC_DB_PATH overrides the ./data default
+  db.ts                       SQLite persistence (better-sqlite3) — chats/turns/memories +
+                              the chat_brains DDL, schema + pure helpers; SGC_DB_PATH
+                              overrides the ./data default
+  db-brains.ts                the (chat_id, brain_id) mount-binding helpers
+  brains-routes.ts            knowledge-pack routes — import/list/get/delete pack FILES in
+                              <dirname(DB_PATH)>/brains (SGC_BRAINS_DIR overrides) + the
+                              per-chat mount PUT; validates sgc-brain/1, never searches
   providers.ts                per-turn provider registry/resolver (anthropic | openai "LOCAL")
 electron/                     Windows desktop shell — supervises, never thinks
   main.ts                     window + IPC; packaged: fork server, load ITS origin; dev: load :5555
