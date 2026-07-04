@@ -1,0 +1,168 @@
+{
+  "schema": "sgc-brain/1",
+  "id": "brain-fixture",
+  "name": "Fixture Corpus",
+  "description": "Three-document stub-built test corpus: kimura grip mechanics, Minnesota facts, herbed couscous. Hand-authored aliases on each document's intro chunk.",
+  "version": "1.0",
+  "built_at": "2026-07-04T21:13:59Z",
+  "source": {
+    "tool": "atlantis",
+    "schema": "atlantis-salience-v1",
+    "stub": true
+  },
+  "chunks": [
+    {
+      "id": "couscous-recipe_000",
+      "title": "Simple Herbed Couscous",
+      "text": "Couscous is a North African staple made from steamed semolina. This quick version\nis ready in about ten minutes and pairs with almost anything.\n\n- 1 cup couscous\n- 1 cup boiling water or stock\n- 2 tablespoons olive oil\n- A handful of chopped parsley and mint\n- Salt and lemon juice to taste",
+      "summary": "Couscous is a North African staple made from steamed semolina.",
+      "topics": [
+        "simple-herbed-couscous",
+        "couscous",
+        "cup"
+      ],
+      "aliases": [
+        "maftoul",
+        "ptitim"
+      ],
+      "source": {
+        "file": "tests/fixtures/couscous-recipe.md",
+        "doc": "couscous-recipe",
+        "position": 0
+      },
+      "tokens": 72
+    },
+    {
+      "id": "couscous-recipe_001",
+      "title": "Simple Herbed Couscous",
+      "text": "Place the couscous in a bowl and pour the boiling stock over it. Cover immediately\nand let it sit undisturbed for five minutes. The grains absorb the liquid and\nsteam in their own heat.\n\nFluff with a fork to separate the grains, then fold in the olive oil, herbs, salt,\nand a squeeze of lemon. Serve warm or at room temperature.",
+      "summary": "Place the couscous in a bowl and pour the boiling stock over it.",
+      "topics": [
+        "method",
+        "grains",
+        "place"
+      ],
+      "aliases": [],
+      "source": {
+        "file": "tests/fixtures/couscous-recipe.md",
+        "doc": "couscous-recipe",
+        "position": 1
+      },
+      "tokens": 82
+    },
+    {
+      "id": "kimura-grip-mechanics_000",
+      "title": "Kimura Grip Mechanics from Closed Guard",
+      "text": "The kimura, also called the double wristlock, is a shoulder lock attacked from\nmany positions. From closed guard it begins with wrist control on the opponent's\nposting arm.",
+      "summary": "The kimura, also called the double wristlock, is a shoulder lock attacked from\nmany positions.",
+      "topics": [
+        "kimura-grip-mechanics-from-closed-guard",
+        "kimura",
+        "called"
+      ],
+      "aliases": [
+        "ude-garami",
+        "hammerlock"
+      ],
+      "source": {
+        "file": "tests/fixtures/kimura-grip-mechanics.md",
+        "doc": "kimura-grip-mechanics",
+        "position": 0
+      },
+      "tokens": 43
+    },
+    {
+      "id": "kimura-grip-mechanics_001",
+      "title": "Kimura Grip Mechanics from Closed Guard",
+      "text": "When the opponent answers the phone to defend the kimura, the critical mechanic\nis driving your elbow toward their far hip rather than trying to muscle the arm\nbackward. Muscling the arm fights their entire body; the elbow drive isolates the\nshoulder joint and removes their leverage.\n\nEstablish the figure-four grip first. Your near hand grips their wrist, your far\nhand threads under their arm and grips your own wrist. This is the control frame.",
+      "summary": "When the opponent answers the phone to defend the kimura, the critical mechanic\nis driving your elbow toward their far hip rather than trying to muscle the arm\nbackward.",
+      "topics": [
+        "breaking-the-grip",
+        "arm",
+        "elbow"
+      ],
+      "aliases": [],
+      "source": {
+        "file": "tests/fixtures/kimura-grip-mechanics.md",
+        "doc": "kimura-grip-mechanics",
+        "position": 1
+      },
+      "tokens": 112
+    },
+    {
+      "id": "kimura-grip-mechanics_002",
+      "title": "Kimura Grip Mechanics from Closed Guard",
+      "text": "Rotate their forearm toward the back of their head while keeping your elbows\ntight. Hip escape slightly to create the angle. The finish is slow and positional,\nnever a jerk.",
+      "summary": "Rotate their forearm toward the back of their head while keeping your elbows\ntight.",
+      "topics": [
+        "finishing",
+        "rotate",
+        "forearm"
+      ],
+      "aliases": [],
+      "source": {
+        "file": "tests/fixtures/kimura-grip-mechanics.md",
+        "doc": "kimura-grip-mechanics",
+        "position": 2
+      },
+      "tokens": 43
+    },
+    {
+      "id": "minnesota-facts_000",
+      "title": "Minnesota Facts",
+      "text": "Minnesota is a state in the upper midwestern United States. Its largest city is\nMinneapolis, which together with the neighboring capital, Saint Paul, forms the\nTwin Cities metropolitan area.",
+      "summary": "Minnesota is a state in the upper midwestern United States.",
+      "topics": [
+        "minnesota-facts",
+        "minnesota",
+        "state"
+      ],
+      "aliases": [
+        "gopher-state",
+        "l-etoile-du-nord"
+      ],
+      "source": {
+        "file": "tests/fixtures/minnesota-facts.md",
+        "doc": "minnesota-facts",
+        "position": 0
+      },
+      "tokens": 48
+    },
+    {
+      "id": "minnesota-facts_001",
+      "title": "Minnesota Facts",
+      "text": "Minnesota is known as the Land of 10,000 Lakes. The actual count of lakes ten\nacres or larger is closer to 11,842. The Mississippi River begins at Lake Itasca\nin the northern part of the state.",
+      "summary": "Minnesota is known as the Land of 10,000 Lakes.",
+      "topics": [
+        "geography",
+        "lakes",
+        "minnesota"
+      ],
+      "aliases": [],
+      "source": {
+        "file": "tests/fixtures/minnesota-facts.md",
+        "doc": "minnesota-facts",
+        "position": 1
+      },
+      "tokens": 48
+    },
+    {
+      "id": "minnesota-facts_002",
+      "title": "Minnesota Facts",
+      "text": "Minnesota winters are long and cold. International Falls, on the Canadian border,\nis often the coldest spot in the lower 48 states and bills itself as the Icebox\nof the Nation.",
+      "summary": "Minnesota winters are long and cold.",
+      "topics": [
+        "climate",
+        "minnesota",
+        "winters"
+      ],
+      "aliases": [],
+      "source": {
+        "file": "tests/fixtures/minnesota-facts.md",
+        "doc": "minnesota-facts",
+        "position": 2
+      },
+      "tokens": 44
+    }
+  ]
+}

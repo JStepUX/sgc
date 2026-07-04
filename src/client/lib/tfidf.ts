@@ -93,8 +93,10 @@ export function cosineSimilarity(vecA: TFVector, vecB: TFVector): number {
   return dot / (Math.sqrt(magA) * Math.sqrt(magB));
 }
 
-/** IDF computed across all turn-documents in the searchable log. */
-export function computeIDF(turnDocs: TurnDoc[]): IDFMap {
+/** IDF computed across a document collection. Only `tokens` is consulted —
+ * the structural param type lets other deterministic collections (the brain
+ * union index in lib/brains.ts) share the same arithmetic. */
+export function computeIDF(turnDocs: { tokens: string[] }[]): IDFMap {
   const df: Record<string, number> = {};
   const N = turnDocs.length || 1;
   for (const doc of turnDocs) {

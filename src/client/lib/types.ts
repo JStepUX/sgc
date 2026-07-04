@@ -102,3 +102,51 @@ export interface FetchedDoc {
   text: string;
   truncated: boolean;
 }
+
+/**
+ * One chunk of a knowledge pack (the KNOWLEDGE axis — separate from the three
+ * memory tiers). `text` is what Sal sees when the chunk retrieves; `summary`,
+ * `topics`, and `aliases` are retrieval surface only (indexed, never rendered).
+ * `aliases` is THE load-bearing field: a hand-editable synonym bridge across
+ * the author gap — the corpus author's vocabulary is not the query author's.
+ */
+export interface BrainChunk {
+  id: string;
+  title: string;
+  text: string;
+  summary: string;
+  topics: string[];
+  aliases: string[];
+  source: { file: string; doc: string; position: number };
+  /** Build-time token estimate — inspector display only. */
+  tokens: number;
+}
+
+/**
+ * A knowledge pack compiled offline by Atlantis (`python -m atlantis export`)
+ * and imported into SGC as a mountable "brain". Plain text + lexical metadata
+ * only — embeddings never cross this contract; runtime retrieval over chunks
+ * is the same deterministic TF-IDF cosine math as the memory grep.
+ * `source.stub` is true for fully model-free builds (surfaced in the UI).
+ */
+export interface BrainPack {
+  schema: 'sgc-brain/1';
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  built_at: string;
+  source: { tool: string; schema: string; stub: boolean };
+  chunks: BrainChunk[];
+}
+
+/** The list-route projection of a pack — everything but the chunks. */
+export interface BrainManifest {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  built_at: string;
+  stub: boolean;
+  chunkCount: number;
+}

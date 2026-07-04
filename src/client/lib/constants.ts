@@ -27,3 +27,17 @@ export const LOCAL_BUFFER_SIZE = 4;
  * tail at near-zero token cost (a summary is a few lines; a raw turn is not).
  */
 export const SUMMARY_BUFFER_SIZE = 4;
+
+/**
+ * Knowledge-tier retrieval knobs (lib/brains.ts). Same default gate as the
+ * memory grep (cosineSearch's topK/threshold) but deliberately independent
+ * knobs — the knowledge axis tunes without touching the memory axis.
+ */
+export const BRAIN_TOP_K = 3;
+export const BRAIN_SCORE_THRESHOLD = 0.08;
+
+/**
+ * Per-brain cap on the always-present digest line (characters), so a fat brain
+ * cannot flood the PERSONA KNOWLEDGE tier with its own table of contents.
+ */
+export const BRAIN_DIGEST_CHAR_CAP = 600;
