@@ -144,3 +144,13 @@ queries must share zero *stems* with the planted fact, not just zero surface
 words. Run the candidate query through `tokenize()` against the planted turn's
 tokens before declaring a gap. The flipped probe was repaired by swapping
 "approval" for "decision", keeping it an honest known-gap.
+
+## docs/ignored/ is gitignore-matched — an unstaged spec archive silently drops (plugin-brains landing, 2026-07-04)
+
+`.gitignore` line 52 ignores `docs/ignored/`, yet the archived specs there ARE
+tracked: `git mv` stages the destination even into an ignored directory. The
+trap: if that staged rename is later unstaged (e.g. to split commits during
+QA), a plain `git add docs/` will NOT re-stage the file — the archive lands as
+a pure delete and the spec quietly becomes untracked on disk. Re-add with
+`git add -f docs/ignored/<spec>.yaml`. Check `git ls-files docs/ignored/`
+against the directory listing when landing an archival.
