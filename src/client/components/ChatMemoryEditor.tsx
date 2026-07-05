@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Search, Trash2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ToggleSwitch } from '@/components/ui/toggle-switch';
 import {
   addManualTurn as apiAddManualTurn,
   deleteManualTurn as apiDeleteManualTurn,
@@ -586,7 +587,11 @@ function TurnCard({ turn, ordinal, selectMode, selected, onToggle, onSelect, onD
             ✓
           </span>
         ) : (
-          <TurnToggle on={turn.active} onClick={onToggle} />
+          <ToggleSwitch
+            on={turn.active}
+            onClick={onToggle}
+            ariaLabel={turn.active ? 'Retrievable — switch off' : 'Gated off — switch on'}
+          />
         )}
       </div>
       <div
@@ -618,36 +623,6 @@ function TurnDelete({ onClick }: { onClick: () => void }) {
       className="flex size-[22px] shrink-0 items-center justify-center rounded-full border border-hairline-strong bg-surface-thin/60 text-fg-3 transition-colors hover:border-danger hover:text-danger"
     >
       <Trash2 className="size-[12px]" />
-    </button>
-  );
-}
-
-// ============================================================
-// TURN TOGGLE — the per-card pill switch. Ember when on.
-// ============================================================
-
-function TurnToggle({ on, onClick }: { on: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      role="switch"
-      aria-checked={on}
-      aria-label={on ? 'Retrievable — switch off' : 'Gated off — switch on'}
-      className={cn(
-        'relative h-[18px] w-[32px] shrink-0 rounded-full border transition-colors',
-        on ? 'border-ember bg-ember/80' : 'border-hairline-strong bg-surface-strong',
-      )}
-    >
-      <span
-        className={cn(
-          'absolute top-1/2 size-[12px] -translate-y-1/2 rounded-full transition-all',
-          on ? 'left-[16px] bg-bone' : 'left-[2px] bg-fg-3',
-        )}
-      />
     </button>
   );
 }
