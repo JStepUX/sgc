@@ -190,9 +190,16 @@ electron/                     Windows desktop shell — supervises, never thinks
   main.ts                     window + IPC; packaged: fork server, load ITS origin; dev: load :5555
   serverManager.ts            fork (utilityProcess) + health poll + restart-on-config-change;
                               persists serverPort so the origin/localStorage survive relaunches
-  config.ts                   sgc-config.json read/merge/atomic-write + env mapping (+ tests)
+  config.ts                   sgc-config.json read/merge/atomic-write + env mapping (+ tests);
+                              holds the seededBrains ledger (stock-brain tombstones)
+  stock-brains.ts             pre-fork stock-brain seeding — copies bundled packs into the
+                              brains dir iff ledger[id] != pack.version (electron-free, + tests)
   preload.ts                  contextBridge → window.sgcDesktop (redacted state, whitelisted patches)
+resources/stock-brains/       committed sgc-brain/1 packs shipped in the installer via
+                              electron-builder extraResources (content rules in its README)
 scripts/dist-win.mjs          electron-builder wrapper — restores the Node ABI in a finally
+scripts/seed-dev-brains.mjs   `npm run seed:dev` — copies stock packs into ./data/brains
+                              (dev never auto-seeds; ledgerless dumb copy)
 docs/
   phase-1-5-reference.jsx     frozen original single-file artifact
   *-spec.yaml                 implementation specs (YAML — see "Spec format" below)
@@ -243,6 +250,12 @@ retired.)
   (`http://127.0.0.1:<persisted port>`), and applies provider-config changes
   (the chip's ProviderConfigModal → `%APPDATA%\sgc\sgc-config.json`) by
   restarting that fork — the server still reads env once at boot, unchanged.
+  Before the fork, main seeds the bundled **stock brains**
+  (`resources/stock-brains/*.json`, shipped beside the app via extraResources)
+  into `<userData>/data/brains`, gated by the `seededBrains` ledger in
+  sgc-config.json — copy iff `ledger[id] != pack.version`, so a user-deleted
+  stock brain stays deleted and a version bump re-seeds on upgrade. Dev never
+  auto-seeds; `npm run seed:dev` is the explicit equivalent.
 - **Key handling:** the API key lives *only* on the server (web: `.env`;
   desktop: `sgc-config.json` in userData, plaintext by decision D2, handed to
   the fork as env). The browser/renderer calls `/api/turn` and never touches

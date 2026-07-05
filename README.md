@@ -107,7 +107,10 @@ supervised child process and configures both providers from the UI — click an
 unconfigured provider in the header chip (or the gear on a configured one) to
 set the Anthropic key / local base URL, model, and max tokens. Config lives in
 `%APPDATA%\sgc\sgc-config.json`; saving restarts the embedded server. No `.env`
-needed.
+needed. The installer also ships **stock brains** — curated knowledge packs
+(starting with the collected poems of Edgar Allan Poe) seeded into your brains
+directory on first boot and offered in the Begin-again picker; delete one and
+it stays deleted.
 
 | Command | Does |
 |---------|------|
@@ -125,6 +128,7 @@ needed.
 src/client/    React + TypeScript UI; lib/ holds the memory-architecture logic
 src/server/    Express server — provider keys/URLs, /api/turn (SSE), SQLite persistence
 electron/      Windows desktop shell — forks the server, supervises, never thinks
+resources/     stock brains — sgc-brain/1 packs bundled into the installer
 docs/          phase-1-5-reference.jsx (frozen original artifact) + changelogs
 scripts/agent/ Bash utilities for codebase recon and checks
 .claude/       Agents, skills, and the pre-commit QA gate

@@ -1,0 +1,55 @@
+spec: stock brains (ship curated knowledge packs in the Electron installer, seeded on boot)
+status: landed                # 2026-07-04 — steps 2-5,7 complete; step 1 partial (1 of 3-5 packs: edgar-allan-poe); step 6's interactive install checklist pending developer
+date: 2026-07-04
+depends_on: docs/ignored/plugin-brains-spec.yaml   # landed 2026-07-04 — packs, routes, picker UI all exist
+
+goal: >
+  Bundle a handful of pre-built sgc-brain/1 packs in the packaged desktop app
+  and seed them into the user's brains directory on boot, so a fresh install
+  offers mountable brains in the Begin-again picker with zero setup. Toggling
+  is the EXISTING per-chat mount UI — this spec adds only authoring, bundling,
+  and seeding.
+
+invariant_check:
+  server_stays_dumb: no server changes. The brains routes already list whatever files exist in <dirname(DB_PATH)>/brains; seeding just puts files there before the server boots.
+  electron_supervises_never_thinks: seeding is a file copy in the Electron main process (serverManager, pre-fork) — no reasoning, no model, no new IPC surface.
+  no_model_at_runtime: packs are ordinary sgc-brain/1 lexical packs; retrieval unchanged.
+  user_sovereignty: a deleted stock brain STAYS deleted (seeded-ledger tombstone), and users can re-import any time via the picker's Import pack flow.
+
+resolved_decisions:
+  - id: D1-extraResources-plus-seed
+    decision: packs ship via electron-builder extraResources (resources/stock-brains/*.json in the repo → resources/stock-brains/ beside the packaged app); on boot, Electron copies each into <userData>/data/brains/ unless tombstoned/current per D2.
+    rationale: pointing SGC_BRAINS_DIR at a read-only resources dir would need multi-dir server support and break imports; copy-on-boot keeps one writable dir and zero server changes.
+  - id: D2-seeded-ledger
+    decision: sgc-config.json gains seededBrains: { <packId>: <version> }. Seed a pack iff ledger[id] != pack.version. Record after copy. Never re-copy when ledger matches — so user deletions persist; bumping a pack's `version` re-seeds on upgrade (overwrite-by-id, same as import).
+    rationale: seed-if-missing without a ledger resurrects deleted brains every launch; the ledger is the tombstone. config.ts already owns atomic read/merge/write of sgc-config.json.
+  - id: D3-packs-in-git
+    decision: pack JSONs are committed at resources/stock-brains/; their Atlantis archive bundles (sources + chunks + provenance, from `export --archive`) are retained by the developer OUTSIDE the repo.
+    rationale: packs are the shippable artifact and belong in version control; multi-MB source bundles do not. Keep each pack modest (target < ~500KB) — they ride in the NSIS installer.
+  - id: D4-content
+    decision: 3-5 fun, broadly shareable topics chosen by the developer; public-domain / self-authored content only (never the internal BOPD KB). Gemma-enriched builds preferred (richer aliases); stub builds acceptable and already badged "model-free build" by the picker.
+    rationale: stock brains are a demo surface — alias quality is the visible difference between "party trick" and "it actually knows".
+  - id: D5-dev-mode
+    decision: dev (npm run dev) does not auto-seed; a trivial npm script (copy resources/stock-brains → ./data/brains) covers local testing.
+    rationale: dev already has hand-imported packs; silent seeding into the dev DB dir would surprise.
+
+current_state:                # file anchors — verify line numbers at implementation time
+  brains_dir_derivation: src/server/brains-routes.ts — BRAINS_DIR = SGC_BRAINS_DIR || <dirname(DB_PATH)>/brains; mkdir on registerBrainRoutes.
+  desktop_db_path: electron/serverManager.ts — already sets SGC_DB_PATH into userData when forking the packaged server (plugin-brains D5 relied on this; no change landed there).
+  config_store: electron/config.ts — sgc-config.json read/merge/atomic-write + env mapping (+ tests). seededBrains ledger lands here.
+  packaging: scripts/dist-win.mjs + electron-builder config in package.json — add extraResources entry.
+  picker_ui: src/client/components/ConfirmPersonaModal.tsx + MemoryPanel.tsx — no changes needed; lists whatever GET /api/brains returns.
+
+build_steps:
+  - 1: 'Author packs (Atlantis loop, per-brain config or archive-cleared Data dirs); land JSONs at resources/stock-brains/.'
+  - 2: 'electron-builder extraResources: ["resources/stock-brains/**"] (package.json "build" block); confirm path via process.resourcesPath in packaged app.'
+  - 3: 'electron/config.ts: seededBrains ledger (type, default {}, merge semantics) + tests.'
+  - 4: 'electron/serverManager.ts: seedStockBrains(resourcesDir, brainsDir, ledger) — copy-if-version-differs, update ledger via config.ts atomic write; call before fork. Unit-testable pure helper + thin call site.'
+  - 5: 'npm run seed:dev script (copy stock brains into ./data/brains) for dev-mode testing.'
+  - 6: 'Verify: packaged install on a clean userData → brains appear in picker with badges; delete one → relaunch → stays deleted; bump a pack version → relaunch → re-seeded. Plus npm test / typecheck / lint; architecture ratchet unaffected.'
+  - 7: 'Docs: CLAUDE.md (electron section + project structure), README desktop note, changelog; archive this spec.'
+
+out_of_scope:
+  - persona-preset bundles (a persona auto-mounting specific brains) — separate raise if wanted
+  - in-app brain store / remote pack downloads
+  - auto-mounting stock brains on new chats (mounting stays an explicit user toggle)
