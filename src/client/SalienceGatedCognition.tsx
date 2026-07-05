@@ -12,6 +12,7 @@ import { AssistantMessage } from './components/AssistantMessage';
 import { UserPill } from './components/UserPill';
 import { Composer } from './components/Composer';
 import { ChatHistoryModal } from './components/ChatHistoryModal';
+import { BrainManagerModal } from './components/BrainManagerModal';
 import { ConfirmPersonaModal } from './components/ConfirmPersonaModal';
 import { PromptEditorModal } from './components/PromptEditorModal';
 import { ProviderConfigModal } from './components/ProviderConfigModal';
@@ -42,6 +43,7 @@ export default function SalienceGatedCognition() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [personaModalOpen, setPersonaModalOpen] = useState(false);
   const [promptEditorOpen, setPromptEditorOpen] = useState(false);
+  const [brainManagerOpen, setBrainManagerOpen] = useState(false);
 
   // Composer reset signal: bumped after a successful submit (and after a chat
   // reset) to clear + refocus the textarea inside Composer. Owned here because
@@ -54,6 +56,8 @@ export default function SalienceGatedCognition() {
   const handleToggleHistory = useCallback(() => setHistoryOpen((o) => !o), []);
   const handleCloseHistory = useCallback(() => setHistoryOpen(false), []);
   const handleOpenPromptEditor = useCallback(() => setPromptEditorOpen(true), []);
+  const handleOpenBrainManager = useCallback(() => setBrainManagerOpen(true), []);
+  const handleCloseBrainManager = useCallback(() => setBrainManagerOpen(false), []);
 
   // --- The axes (see each hook's header for its contract) ---
   const aurora = useAuroraPulse();
@@ -86,32 +90,13 @@ export default function SalienceGatedCognition() {
   // persona + mask + brains to mount, then close the modal. (startNewChat
   // destructured so the dependency is the stable callback, not the per-render
   // session object.)
-  const { startNewChat, setMountedBrainIds, mountedBrains } = session;
+  const { startNewChat } = session;
   const confirmPersona = useCallback(
     async (persona: string, mask: string, brainIds: string[]) => {
       setPersonaModalOpen(false);
       await startNewChat(persona, mask, brainIds);
     },
     [startNewChat],
-  );
-
-  // Mid-chat mount/unmount (MemoryPanel's MOUNTED BRAINS section) — compute the
-  // next id set from the current mounts and persist-then-commit via the session.
-  const handleMountBrain = useCallback(
-    (id: string) => {
-      const ids = mountedBrains.map((p) => p.id);
-      if (!ids.includes(id)) {
-        setMountedBrainIds([...ids, id]).catch((err) => console.warn('mount failed:', err));
-      }
-    },
-    [mountedBrains, setMountedBrainIds],
-  );
-  const handleUnmountBrain = useCallback(
-    (id: string) => {
-      setMountedBrainIds(mountedBrains.map((p) => p.id).filter((x) => x !== id))
-        .catch((err) => console.warn('unmount failed:', err));
-    },
-    [mountedBrains, setMountedBrainIds],
   );
 
   return (
@@ -238,8 +223,7 @@ export default function SalienceGatedCognition() {
                 stub: p.source.stub,
                 chunkCount: p.chunks.length,
               }))}
-              onMountBrain={handleMountBrain}
-              onUnmountBrain={handleUnmountBrain}
+              onOpenBrainManager={handleOpenBrainManager}
               brainsDisabled={!session.chatId}
             />
             <TurnInspector turnData={session.latestTurn} />
@@ -266,6 +250,13 @@ export default function SalienceGatedCognition() {
         defaultPersona={DEFAULT_PERSONA}
         onConfirm={confirmPersona}
         onCancel={() => setPersonaModalOpen(false)}
+      />
+
+      <BrainManagerModal
+        open={brainManagerOpen}
+        onClose={handleCloseBrainManager}
+        mountedBrainIds={session.mountedBrains.map((p) => p.id)}
+        onSetMounted={session.setMountedBrainIds}
       />
 
       <PromptEditorModal

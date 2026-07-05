@@ -41,8 +41,10 @@ export interface BrainMounts {
   bindBrainsToNewChat: (newChatId: string, brainIds: string[]) => Promise<void>;
   /** Replace the ACTIVE chat's mount set (mid-chat mount/unmount — spec D6:
    * deterministic curation, same class as turn gating). Persist-first, so the
-   * UI never shows a mount the server doesn't hold. */
-  setMountedBrainIds: (brainIds: string[]) => Promise<void>;
+   * UI never shows a mount the server doesn't hold. Ids in `refreshIds` are
+   * refetched even when already loaded — the re-import flow overwrites a pack
+   * in place, and plain reuse-by-id would keep serving the stale chunks. */
+  setMountedBrainIds: (brainIds: string[], refreshIds?: string[]) => Promise<void>;
 }
 
 export function useBrainMounts(chatId: string | null): BrainMounts {
@@ -67,15 +69,22 @@ export function useBrainMounts(chatId: string | null): BrainMounts {
     setMountedBrains(await loadBrainPacks(brainIds));
   }, []);
 
-  // Packs already loaded are reused; only new ids fetch. Errors propagate to
-  // the caller (the MemoryPanel surfaces them via the root's catch).
+  // Packs already loaded are reused (unless named in refreshIds); only new
+  // ids fetch. Errors propagate to the caller (the Brain Manager surfaces
+  // them inline). Input is deduped to mirror the server's PK collapse — a
+  // sloppy caller must not be able to mount the same pack twice into the
+  // union index.
   const setMountedBrainIds = useCallback(
-    async (brainIds: string[]) => {
+    async (brainIds: string[], refreshIds: string[] = []) => {
       if (!chatId) throw new Error('No active chat yet — wait a moment and try again.');
-      await apiSetChatBrains(chatId, brainIds);
-      const have = new Map(mountedBrains.map((p) => [p.id, p]));
-      const kept = brainIds.filter((id) => have.has(id)).map((id) => have.get(id)!);
-      const missing = brainIds.filter((id) => !have.has(id));
+      const ids = [...new Set(brainIds)];
+      await apiSetChatBrains(chatId, ids);
+      const refresh = new Set(refreshIds);
+      const have = new Map(
+        mountedBrains.filter((p) => !refresh.has(p.id)).map((p) => [p.id, p]),
+      );
+      const kept = ids.filter((id) => have.has(id)).map((id) => have.get(id)!);
+      const missing = ids.filter((id) => !have.has(id));
       const fetched = missing.length > 0 ? await loadBrainPacks(missing) : [];
       setMountedBrains([...kept, ...fetched]);
     },
