@@ -1,6 +1,6 @@
 {
   "name": "sgc",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "description": "Salience-Gated Cognition — a tiered-memory conversational architecture prototype.",
@@ -17,6 +17,7 @@
     "electron:build": "npm run build && npm run build:electron",
     "dist:win": "npm run electron:build && node scripts/dist-win.mjs",
     "rebuild:electron": "electron-rebuild -f -w better-sqlite3",
+    "seed:dev": "node scripts/seed-dev-brains.mjs",
     "rebuild:node": "npm rebuild better-sqlite3",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -35,6 +36,15 @@
       "dist/server/**",
       "dist/client/**",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/stock-brains",
+        "to": "stock-brains",
+        "filter": [
+          "*.json"
+        ]
+      }
     ],
     "asar": true,
     "asarUnpack": [

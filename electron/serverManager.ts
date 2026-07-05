@@ -10,9 +10,10 @@
 import { app, utilityProcess } from 'electron';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
-import { createWriteStream, mkdirSync, type WriteStream } from 'node:fs';
+import { createWriteStream, existsSync, mkdirSync, type WriteStream } from 'node:fs';
 import path from 'node:path';
 import { configToEnv, readConfig, writeConfig } from './config';
+import { seedStockBrains } from './stock-brains';
 
 export interface ServerHandle {
   port: number;
@@ -194,6 +195,30 @@ function buildServerEnv(port: number): Record<string, string> {
   return env;
 }
 
+// --- stock brains -----------------------------------------------------------
+
+/** Pre-fork stock-brain seeding (stock-brains spec D1/D2). Copies bundled
+ *  packs (extraResources → <resourcesPath>/stock-brains) into the same brains
+ *  dir the server derives from SGC_DB_PATH — <userData>/data/brains, i.e.
+ *  <dirname(DB_PATH)>/brains; keep in lockstep with buildServerEnv. Packaged
+ *  only (D5 — dev uses `npm run seed:dev`). Supervision, not thinking: a
+ *  seeding failure logs and boots anyway; unledgered copies retry next launch. */
+function seedStockBrainsPreFork(): void {
+  if (!app.isPackaged) return;
+  const stockDir = path.join(process.resourcesPath, 'stock-brains');
+  if (!existsSync(stockDir)) return;
+  try {
+    const brainsDir = path.join(app.getPath('userData'), 'data', 'brains');
+    const result = seedStockBrains(stockDir, brainsDir, readConfig().seededBrains ?? {});
+    if (result.seeded.length > 0) {
+      writeConfig({ seededBrains: result.ledger });
+      console.log(`stock brains seeded: ${result.seeded.join(', ')}`);
+    }
+  } catch (err) {
+    console.error('stock-brain seeding failed (booting anyway):', err);
+  }
+}
+
 // --- health ----------------------------------------------------------------
 
 async function waitForHealth(port: number): Promise<void> {
@@ -245,8 +270,10 @@ async function startAttempt(port: number): Promise<ServerHandle> {
   return { port, pid: proc.pid };
 }
 
-/** resolvePort → fork → waitForHealth. Retries (fresh port) on failure. */
+/** seed stock brains → resolvePort → fork → waitForHealth. Retries (fresh
+ *  port) on failure. */
 export async function start(): Promise<ServerHandle> {
+  seedStockBrainsPreFork();
   let lastError: unknown = null;
   for (let attempt = 0; attempt < START_ATTEMPTS; attempt++) {
     const port = await resolvePort(attempt > 0);

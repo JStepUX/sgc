@@ -48,6 +48,12 @@ describe('readConfig', () => {
     writeConfig({ anthropicApiKey: 'test-anthropic-key', serverPort: 4242 });
     expect(readConfig()).toEqual({ anthropicApiKey: 'test-anthropic-key', serverPort: 4242 });
   });
+
+  it('round-trips the seededBrains ledger (whole-record replace on write)', () => {
+    writeConfig({ seededBrains: { 'stock-pack': '1.0' } });
+    writeConfig({ seededBrains: { 'stock-pack': '1.1', 'other-pack': '1.0' } });
+    expect(readConfig().seededBrains).toEqual({ 'stock-pack': '1.1', 'other-pack': '1.0' });
+  });
 });
 
 describe('writeConfig', () => {
@@ -119,18 +125,23 @@ describe('configToEnv', () => {
     expect(Object.keys(env)).not.toContain('PORT');
   });
 
+  it('EXCLUDES seededBrains — a main-process ledger, not server config', () => {
+    expect(configToEnv({ seededBrains: { 'stock-pack': '1.0' } })).toEqual({});
+  });
+
   it('maps llmMaxTokens → LLM_MAX_TOKENS (the D5 gap this spec closes)', () => {
     expect(configToEnv({ llmMaxTokens: 2048 })).toEqual({ LLM_MAX_TOKENS: '2048' });
   });
 });
 
 describe('whitelistPatch', () => {
-  it('drops llmProvider, serverPort, and unknown keys', () => {
+  it('drops llmProvider, serverPort, seededBrains, and unknown keys', () => {
     expect(
       whitelistPatch({
         anthropicApiKey: 'test-anthropic-key',
         llmProvider: 'openai',
         serverPort: 1337,
+        seededBrains: { evil: 'resurrect' },
         __proto__pollution: 'x',
         nodeIntegration: true,
       }),

@@ -24,6 +24,11 @@ export interface SgcConfig {
   /** Persisted by serverManager so the origin (and the renderer's
    *  per-origin localStorage) stays stable across launches. */
   serverPort?: number;
+  /** Stock-brain seeding ledger (stock-brains spec D2): packId → the pack
+   *  version last seeded into <userData>/data/brains. The tombstone that keeps
+   *  a user-deleted stock brain deleted. Written by serverManager pre-fork;
+   *  never renderer-settable and never forwarded to the server env. */
+  seededBrains?: Record<string, string>;
 }
 
 /** The renderer-settable subset (whitelisted in main, not just typed —
