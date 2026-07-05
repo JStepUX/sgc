@@ -125,7 +125,8 @@ src/client/
     AuroraBackground.tsx      the warm field behind the glass (memoized; pulse re-key)
     PhaseBar.tsx              title, provider chip, run-mode metadata, begin-again
     ProviderChip.tsx          anchored popover to switch/configure the model backing Sal
-    MemoryPanel.tsx           Constitutional Memories editor + MOUNTED BRAINS section (right rail)
+    MemoryPanel.tsx           Constitutional Memories editor + a compact MOUNTED BRAINS summary
+                              (right rail) whose "Manage" button opens BrainManagerModal
     TurnInspector.tsx         per-turn diagnostics: trace, grep matches, spontaneity, savings
     TokenChart.tsx            payload-size-per-turn SVG bars (right rail)
     AssistantMessage.tsx      Sal's reply — ReactMarkdown + summary line + spontaneity marker
@@ -134,15 +135,19 @@ src/client/
     rail-styles.ts            shared rail section-header class strings
     ChatHistoryModal.tsx      history list + (editor mode) the rail
     ChatMemoryEditor.tsx      per-turn cosine-grep gating editor (4-col card grid)
+    BrainManagerModal.tsx     knowledge-pack lifecycle: import/mount-toggle/delete-with-confirm,
+                              opened from MemoryPanel's mounted-brains summary
     ConfirmPersonaModal.tsx   per-chat persona (system prompt) + optional mask + brain mount
-                              picker (incl. pack import), set at "Begin again"
+                              picker (incl. pack import), set at "Begin again" — a separate flow
+                              from BrainManagerModal (binds before a chat id exists)
     PromptEditorModal.tsx     edit THIS chat's persona mid-chat, forward-only version history
     EditResponseModal.tsx     edit the latest assistant reply — manual rewrite or "re-spin"
                               (re-run the model with this turn's history; current memories/persona)
     ProviderConfigModal.tsx   configure either provider from the chip (desktop saves via the
                               Electron bridge → server restart; web mode shows .env guidance)
     MermaidBlock.tsx          lazy-loaded mermaid code blocks → themed SVG; streaming-gated, code-block fallback
-    ui/                       shadcn/ui primitives (button, card)
+    ui/                       shadcn/ui primitives (button, card) + toggle-switch.tsx (the
+                              shared ToggleSwitch, extracted from ChatMemoryEditor's turn gate)
   lib/
     types.ts                  shared domain types (ChatEntry, Memory)
     turn-data.ts              TurnData (the per-turn inspector blob) + the tolerant

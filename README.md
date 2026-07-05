@@ -70,8 +70,9 @@ can name what it *could* be asked even when nothing retrieves. Knowledge is
 reference material about the world, not memory of the person: packs are
 read-only, carry no embeddings (plain text + hand-editable `aliases`, the
 deterministic synonym bridge), and never touch the memory tiers. Mount at
-"Begin again" or mid-chat from the right rail; import packs from the same
-dialog.
+"Begin again" (which can also import packs), or mid-chat via the right rail's
+**Brain Manager** — one modal owning the whole pack lifecycle: import,
+per-pack mount toggles, and delete (for all chats, behind a confirm).
 
 **Spontaneity (experimental, a separate axis).** When the recent conversation is
 *circling*, a deterministic detector (average pairwise TF-IDF cosine over the last
@@ -108,9 +109,9 @@ unconfigured provider in the header chip (or the gear on a configured one) to
 set the Anthropic key / local base URL, model, and max tokens. Config lives in
 `%APPDATA%\sgc\sgc-config.json`; saving restarts the embedded server. No `.env`
 needed. The installer also ships **stock brains** — curated knowledge packs
-(starting with the collected poems of Edgar Allan Poe) seeded into your brains
-directory on first boot and offered in the Begin-again picker; delete one and
-it stays deleted.
+(the collected poems of Edgar Allan Poe; a world-knowledge almanac) seeded into
+your brains directory on first boot and offered in the Begin-again picker and
+the Brain Manager; delete one and it stays deleted.
 
 | Command | Does |
 |---------|------|
