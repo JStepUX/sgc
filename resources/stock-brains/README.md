@@ -6,9 +6,11 @@ Committed `sgc-brain/1` knowledge packs that ship inside the Windows installer
 - **What belongs here:** the pack **JSONs only** (D3). Each pack's Atlantis
   archive bundle (sources + chunks + provenance, from `export --archive`) stays
   with the developer OUTSIDE this repo.
-- **Content rules (D4):** 3–5 fun, broadly shareable topics; public-domain or
-  self-authored content only — never the internal BOPD KB. Prefer
-  Gemma-enriched builds (richer aliases); keep each pack under ~500 KB.
+- **Content rules (D4):** a handful of fun, broadly shareable topics;
+  public-domain or self-authored content only — never the internal BOPD KB.
+  Prefer Gemma-enriched builds (richer aliases). Size is an INSTALLER budget,
+  not a per-pack cap: keep the set's total under ~2 MB (one large pack is
+  fine if the total stays sane).
 - **How they ship (D1):** electron-builder `extraResources` copies `*.json`
   here → `<resourcesPath>/stock-brains/` beside the packaged app. On boot,
   the Electron main process seeds them into `<userData>/data/brains/` gated by
