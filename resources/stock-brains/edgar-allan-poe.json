@@ -1,0 +1,2257 @@
+{
+  "schema": "sgc-brain/1",
+  "id": "edgar-allan-poe",
+  "name": "Edgar Allan Poe",
+  "description": "The complete poems of Edgar Allan Poe (public domain): The Raven, Annabel Lee, The Bells, Ulalume, Lenore, Eldorado, Al Aaraaf, Israfel, and the verse drama Politian. Gothic poetry and fiction — verse to quote and discuss, not facts about the world.",
+  "version": "1.0",
+  "built_at": "2026-07-05T03:49:28Z",
+  "source": {
+    "tool": "atlantis",
+    "schema": "atlantis-salience-v1",
+    "stub": false
+  },
+  "chunks": [
+    {
+      "id": "edgar-allan-poe_000",
+      "title": "Edgar Allan Poe",
+      "text": "THE RAVEN.\n\nOnce upon a midnight dreary, while I pondered, weak and weary,\nOver many a quaint and curious volume of forgotten lore—\nWhile I nodded, nearly napping, suddenly there came a tapping,\nAs of some one gently rapping, rapping at my chamber door.\n“’Tis some visitor,” I muttered, “tapping at my chamber door—\nOnly this and nothing more.”\n\nAh, distinctly I remember it was in the bleak December,\nAnd each separate dying ember wrought its ghost upon the floor.\nEagerly I wished the morrow;—vainly I had sought to borrow\nFrom my books surcease of sorrow—sorrow for the lost Lenore—\nFor the rare and radiant maiden whom the angels name Lenore—\nNameless here for evermore.\n\nAnd the silken sad uncertain rustling of each purple curtain\nThrilled me—filled me with fantastic terrors never felt before:\nSo that now, to still the beating of my heart, I stood repeating,\n“’Tis some visitor entreating entrance at my chamber door—\nSome late visitor entreating entrance at my chamber door;\nThis it is and nothing more.”",
+      "summary": "The opening stanzas of Edgar Allan Poe's poem 'The Raven,' describing a weary narrator's experience during a bleak December midnight.",
+      "topics": [
+        "the-raven",
+        "gothic-poetry",
+        "american-literature",
+        "poetry"
+      ],
+      "aliases": [
+        "the-lost-lenore",
+        "Lenore"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 0
+      },
+      "tokens": 253
+    },
+    {
+      "id": "edgar-allan-poe_001",
+      "title": "Edgar Allan Poe",
+      "text": "Presently my soul grew stronger; hesitating then no longer,\n“Sir,” said I, “or Madam, truly your forgiveness I implore;\nBut the fact is I was napping, and so gently you came rapping,\nAnd so faintly you came tapping, tapping at my chamber door,\nThat I scarce was sure I heard you”—here I opened wide the door;\nDarkness there and nothing more.\n\nDeep into that darkness peering, long I stood there wondering,\nfearing,\nDoubting, dreaming dreams no mortals ever dared to dream before;\nBut the silence was unbroken, and the stillness gave no token,\nAnd the only word there spoken was the whispered word, “Lenore!”\nThis I whispered, and an echo murmured back the word, “Lenore!”—\nMerely this and nothing more.\n\nBack into the chamber turning, all my soul within me burning,\nSoon again I heard a tapping something louder than before.\n“Surely,” said I, “surely that is something at my window lattice;\nLet me see, then, what thereat is, and this mystery explore—\nLet my heart be still a moment, and this mystery explore;—\n’Tis the wind and nothing more.”",
+      "summary": "A narrator responds to a mysterious tapping at their door, finds only darkness, and then hears a louder tapping at their window lattice.",
+      "topics": [
+        "mystery",
+        "gothic-horror",
+        "poetry",
+        "literature"
+      ],
+      "aliases": [
+        "the-raven",
+        "Edgar Allan Poe poem"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 1
+      },
+      "tokens": 261
+    },
+    {
+      "id": "edgar-allan-poe_002",
+      "title": "Edgar Allan Poe",
+      "text": "Open here I flung the shutter, when, with many a flirt and flutter,\nIn there stepped a stately Raven of the saintly days of yore.\nNot the least obeisance made he; not a minute stopped or stayed he;\nBut, with mien of lord or lady, perched above my chamber door—\nPerched upon a bust of Pallas just above my chamber door—\nPerched, and sat, and nothing more.\n\nThen this ebony bird beguiling my sad fancy into smiling,\nBy the grave and stern decorum of the countenance it wore,\n“Though thy crest be shorn and shaven, thou,” I said, “art sure no\ncraven,\nGhastly grim and ancient Raven wandering from the Nightly shore—\nTell me what thy lordly name is on the Night’s Plutonian shore!”\nQuoth the Raven, “Nevermore.”\n\nMuch I marveled this ungainly fowl to hear discourse so plainly,\nThough its answer little meaning—little relevancy bore;\nFor we cannot help agreeing that no living human being\nEver yet was blessed with seeing bird above his chamber door—\nBird or beast upon the sculptured bust above his chamber door,\nWith such name as “Nevermore.”",
+      "summary": "A narrator describes the entrance of a stately raven into their chamber, where the bird perches on a bust of Pallas and responds to an inquiry with the word 'Nevermore'.",
+      "topics": [
+        "the-raven",
+        "supernatural-encounter",
+        "gothic-literature",
+        "poetry"
+      ],
+      "aliases": [
+        "the-raven",
+        "ungainly fowl",
+        "pallas",
+        "bust of Pallas"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 2
+      },
+      "tokens": 260
+    },
+    {
+      "id": "edgar-allan-poe_003",
+      "title": "Edgar Allan Poe",
+      "text": "But the Raven, sitting lonely on that placid bust, spoke only\nThat one word, as if his soul in that one word he did outpour.\nNothing farther then he uttered; not a feather then he fluttered—\nTill I scarcely more than muttered, “Other friends have flown before—\nOn the morrow _he_ will leave me, as my Hopes have flown before.”\nThen the bird said, “Nevermore.”\n\nStartled at the stillness broken by reply so aptly spoken,\n“Doubtless,” said I, “what it utters is its only stock and store,\nCaught from some unhappy master whom unmerciful Disaster\nFollowed fast and followed faster till his songs one burden bore—\nTill the dirges of his Hope that melancholy burden bore\nOf ‘Never—nevermore.’”\n\nBut the Raven still beguiling all my sad soul into smiling,\nStraight I wheeled a cushioned seat in front of bird and bust and\ndoor;\nThen, upon the velvet sinking, I betook myself to linking\nFancy unto fancy, thinking what this ominous bird of yore—\nWhat this grim, ungainly, ghastly, gaunt, and ominous bird of yore\nMeant in croaking “Nevermore.”",
+      "summary": "The narrator interacts with a raven that repeatedly utters the word 'Nevermore,' leading him to speculate on the bird's origin and contemplate its ominous meaning.",
+      "topics": [
+        "the-raven",
+        "melancholy",
+        "gothic-poetry",
+        "american-literature"
+      ],
+      "aliases": [
+        "the-bird",
+        "the raven",
+        "the-prophet",
+        "the raven"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 3
+      },
+      "tokens": 259
+    },
+    {
+      "id": "edgar-allan-poe_004",
+      "title": "Edgar Allan Poe",
+      "text": "This I sat engaged in guessing, but no syllable expressing\nTo the fowl whose fiery eyes now burned into my bosom’s core;\nThis and more I sat divining, with my head at ease reclining\nOn the cushion’s velvet lining that the lamp-light gloated o’er,\nBut whose velvet violet lining with the lamp-light gloating o’er\n_She_ shall press, ah, nevermore!\n\nThen, methought, the air grew denser, perfumed from an unseen censer\nSwung by Seraphim whose foot-falls tinkled on the tufted floor.\n“Wretch,” I cried, “thy God hath lent thee—by these angels he hath\nsent thee\nRespite—respite and nepenthe from thy memories of Lenore!\nQuaff, oh quaff this kind nepenthe and forget this lost Lenore!”\nQuoth the Raven, “Nevermore.”\n\n“Prophet!” said I, “thing of evil!—prophet still, if bird or devil!—\nWhether Tempter sent, or whether tempest tossed thee here ashore,\nDesolate yet all undaunted, on this desert land enchanted—\nOn this home by Horror haunted—tell me truly, I implore—\nIs there—_is_ there balm in Gilead?—tell me—tell me, I\nimplore!”\nQuoth the Raven, “Nevermore.”",
+      "summary": "The narrator experiences a hallucinatory or spiritual vision involving angels and a censer, while desperately questioning the Raven about relief from his grief for Lenore.",
+      "topics": [
+        "grief-and-loss",
+        "lenore",
+        "the-raven",
+        "gothic-literature",
+        "poetry"
+      ],
+      "aliases": [
+        "the-bird",
+        "the raven",
+        "balm-in-gilead",
+        "relief from suffering",
+        "nepenthe",
+        "forgetfulness drug"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 4
+      },
+      "tokens": 264
+    },
+    {
+      "id": "edgar-allan-poe_005",
+      "title": "Edgar Allan Poe",
+      "text": "“Prophet!” said I, “thing of evil—prophet still, if bird or devil!\nBy that heaven that bends above us—by that God we both adore—\nTell this soul with sorrow laden if, within the distant Aidenn,\nIt shall clasp a sainted maiden whom the Angels name Lenore—\nClasp a rare and radiant maiden whom the angels name Lenore.”\nQuoth the Raven, “Nevermore.”\n\n“Be that word our sign of parting, bird or fiend!” I shrieked,\nupstarting—\n“Get thee back into the tempest and the Night’s Plutonian shore!\nLeave no black plume as a token of that lie thy soul hath spoken!\nLeave my loneliness unbroken!—quit the bust above my door!\nTake thy beak from out my heart, and take thy form from off my door!”\nQuoth the Raven, “Nevermore.”\n\nAnd the Raven, never flitting, still is sitting, still is sitting\nOn the pallid bust of Pallas just above my chamber door;\nAnd his eyes have all the seeming of a demon’s that is dreaming,\nAnd the lamp-light o’er him streaming throws his shadow on the floor;\nAnd my soul from out that shadow that lies floating on the floor\nShall be lifted—nevermore!\nLENORE.\n\nAh, broken is the golden bowl! the spirit flown for ever!\nLet the bell toll!—a saintly soul floats on the Stygian river;\nAnd, Guy De Vere, hast _thou_ no tear?—weep now or never more!",
+      "summary": "The climactic conclusion of a poem where a narrator confronts a raven about his lost love, Lenore, only to be met with eternal despair.",
+      "topics": [
+        "lenore",
+        "the-raven",
+        "grief",
+        "gothic-literature",
+        "poetry"
+      ],
+      "aliases": [
+        "the-raven",
+        "the-bird",
+        "aidenn",
+        "eden",
+        "nights-plutonian-shore",
+        "the-underworld"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 5
+      },
+      "tokens": 314
+    },
+    {
+      "id": "edgar-allan-poe_006",
+      "title": "Edgar Allan Poe",
+      "text": "See! on yon drear and rigid bier low lies thy love, Lenore!\nCome! let the burial rite be read—the funeral song be sung!—\nAn anthem for the queenliest dead that ever died so young—\nA dirge for her the doubly dead in that she died so young.\n\nWretches! ye loved her for her wealth and hated her for her pride,\nAnd when she fell in feeble health, ye blessed her—that she died!\nHow _shall_ the ritual, then, be read?—-the requiem how be\nsung\nBy you—by yours, the evil eye,—by yours, the slanderous tongue\nThat did to death the innocence that died, and died so young?\n\n_Peccavimus_; but rave not thus! and let a Sabbath song\nGo up to God so solemnly the dead may feel no wrong!\nThe sweet Lenore hath “gone before,” with Hope, that flew beside,\nLeaving thee wild for the dear child that should have been thy\nbride—\nFor her, the fair and _débonnaire_, that now so lowly lies,\nThe life upon her yellow hair, but not within her eyes—\nThe life still there, upon her hair—the death upon her eyes.",
+      "summary": "A poetic lamentation for a deceased woman named Lenore, mourning her youth and criticizing the hypocrisy of those who envied her wealth and pride.",
+      "topics": [
+        "lenore",
+        "mourning",
+        "poetry",
+        "literature"
+      ],
+      "aliases": [
+        "lenore",
+        "the queenliest dead",
+        "funeral-song",
+        "anthem"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 6
+      },
+      "tokens": 248
+    },
+    {
+      "id": "edgar-allan-poe_007",
+      "title": "Edgar Allan Poe",
+      "text": "“Avaunt! to-night my heart is light. No dirge will I upraise,\nBut waft the angel on her flight with a pæan of old days!\nLet _no_ bell toll!—lest her sweet soul, amid its hallowed\nmirth,\nShould catch the note, as it doth float up from the damnèd Earth.\nTo friends above, from fiends below, the indignant ghost is riven—\nFrom Hell unto a high estate far up within the Heaven—\nFrom grief and groan, to a golden throne, beside the King of Heaven.”\nA VALENTINE.",
+      "summary": "A poetic excerpt expressing a celebratory shift from mourning to joy, celebrating a soul's ascent from Hell to Heaven.",
+      "topics": [
+        "spiritual-ascension",
+        "poetic-verse",
+        "afterlife",
+        "literature"
+      ],
+      "aliases": [
+        "pan",
+        "hymn of praise",
+        "dirge",
+        "funeral song"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 7
+      },
+      "tokens": 114
+    },
+    {
+      "id": "edgar-allan-poe_008",
+      "title": "Edgar Allan Poe",
+      "text": "For her this rhyme is penned, whose luminous eyes,\nBrightly expressive as the twins of Lœda,\nShall find her own sweet name, that, nestling lies\nUpon the page enwrapped from every reader.\nSearch narrowly the lines!—they hold a treasure\nDivine—a talisman—an amulet\nThat must be worn _at heart_. Search well the measure—\nThe words—the syllables! Do not forget\nThe trivialest point, or you may lose your labour!\nAnd yet there is in this no Gordian knot\nWhich one might not undo without a sabre,\nIf one could merely comprehend the plot.\nEnwritten upon the leaf where now are peering\nEyes’ scintillating soul, there lie _perdus_\nThree eloquent words oft uttered in the hearing\nOf poets, by poets—as the name is a poet’s, too.\nIts letters, although naturally lying\nLike the knight Pinto—Mendez Ferdinando—\nStill form a synonym for Truth.—Cease trying!\nYou will not read the riddle, though you do the best you\n_can_ do.\n\nType of the antique Rome! Rich reliquary\nOf lofty contemplation left to Time\nBy buried centuries of pomp and power!\nAt length—at length—after so many days\nOf weary pilgrimage and burning thirst,\n(Thirst for the springs of lore that in thee lie,)\nI kneel, an altered and an humble man,\nAmid thy shadows, and so drink within\nMy very soul thy grandeur, gloom, and glory!",
+      "summary": "The narrator describes a poetic riddle involving a hidden name and a treasure of words, followed by a transition to a reverent reflection on the grandeur of ancient Rome.",
+      "topics": [
+        "literary-riddles",
+        "poetic-structure",
+        "ancient-rome",
+        "classical-literature",
+        "romanticism"
+      ],
+      "aliases": [
+        "hidden-name",
+        "talisman",
+        "ancient-civilization",
+        "antique Rome"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 8
+      },
+      "tokens": 320
+    },
+    {
+      "id": "edgar-allan-poe_009",
+      "title": "Edgar Allan Poe",
+      "text": "Vastness! and Age! and Memories of Eld!\nSilence! and Desolation! and dim Night!\nI feel ye now—I feel ye in your strength—\nO spells more sure than e’er Judæan king\nTaught in the gardens of Gethsemane!\nO charms more potent than the rapt Chaldee\nEver drew down from out the quiet stars!\n\nHere, where a hero fell, a column falls!\nHere, where the mimic eagle glared in gold,\nA midnight vigil holds the swarthy bat!\nHere, where the dames of Rome their gilded hair\nWaved to the wind, now wave the reed and thistle!\nHere, where on golden throne the monarch lolled,\nGlides, spectre-like, unto his marble home,\nLit by the wan light of the hornèd moon,\nThe swift and silent lizard of the stones!\n\nBut stay! these walls—these ivy-clad arcades—\nThese mouldering plinths—these sad and blackened shafts—\nThese vague entablatures—this crumbling frieze—\nThese shattered cornices—this wreck—this ruin—\nThese stones—alas! these grey stones—are they all—\nAll of the famed and the colossal left\nBy the corrosive Hours to Fate and me?",
+      "summary": "A poetic lamentation describing the decay and desolation of ancient ruins, contrasting former grandeur with current ruinous states.",
+      "topics": [
+        "ruins",
+        "decay",
+        "poetry",
+        "literature"
+      ],
+      "aliases": [
+        "ruination",
+        "wreck",
+        "antiquity",
+        "age"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 9
+      },
+      "tokens": 253
+    },
+    {
+      "id": "edgar-allan-poe_010",
+      "title": "Edgar Allan Poe",
+      "text": "“Not all”—the Echoes answer me—“not all!\nProphetic sounds and loud arise for ever\nFrom us, and from all Ruin, unto the wise,\nAs melody from Memnon to the Sun.\nWe rule the hearts of mightiest men—we rule\nWith a despotic sway all giant minds.\nWe are not impotent—we pallid stones.\nNot all our power is gone—not all our fame—\nNot all the magic of our high renown—\nNot all the wonder that encircles us—\nNot all the mysteries that in us lie—\nNot all the memories that hang upon\nAnd cling around about us as a garment,\nClothing us in a robe of more than glory.”\nTO —— ——.",
+      "summary": "A poetic dialogue where 'the Echoes' assert their enduring influence and mystical power over great minds and history.",
+      "topics": [
+        "the-echoes",
+        "eternal-influence",
+        "poetry",
+        "literature"
+      ],
+      "aliases": [
+        "the-echoes",
+        "personified-sounds"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 10
+      },
+      "tokens": 146
+    },
+    {
+      "id": "edgar-allan-poe_011",
+      "title": "Edgar Allan Poe",
+      "text": "Not long ago, the writer of these lines,\nIn the mad pride of intellectuality,\nMaintained “the power of words”—denied that ever\nA thought arose within the human brain\nBeyond the utterance of the human tongue:\nAnd now, as if in mockery of that boast,\nTwo words—two foreign soft dissyllables—\nItalian tones, made only to be murmured\nBy angels dreaming in the moon-lit “dew\nThat hangs like chains of pearl on Hermon hill,”—\nHave stirred from out the abysses of his heart,\nUnthought-like thoughts that are the souls of thought,\nRicher, far wilder, far diviner visions\nThan even the seraph harper, Israfel,\n(Who has “the sweetest voice of all God’s creatures,”)\nCould hope to utter. And I! my spells are broken.\nThe pen falls powerless from my shivering hand.\nWith thy dear name as text, though bidden by thee,\nI cannot write—I cannot speak or think—\nAlas, I cannot feel; for ’tis not feeling,\nThis standing motionless upon the golden\nThreshold of the wide-open gate of dreams,\nGazing, entranced, adown the gorgeous vista,\nAnd thrilling as I see, upon the right,\nUpon the left, and all the way along,\nAmid unpurpled vapours, far away\nTo where the prospect terminates—_thee only_.\nTO HELEN.",
+      "summary": "The narrator describes a profound shift from intellectualizing language to being overwhelmed by the divine, emotional power of a specific name (Helen).",
+      "topics": [
+        "ineffability",
+        "poetic-inspiration",
+        "romantic-obsession",
+        "literary-theory",
+        "poetry"
+      ],
+      "aliases": [
+        "the-power-of-words",
+        "linguistic determinism",
+        "israfel",
+        "angel of music"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 11
+      },
+      "tokens": 296
+    },
+    {
+      "id": "edgar-allan-poe_012",
+      "title": "Edgar Allan Poe",
+      "text": "I saw thee once—once only—years ago:\nI must not say _how_ many—but _not_ many.\nIt was a July midnight; and from out\nA full-orbed moon, that, like thine own soul, soaring,\nSought a precipitate pathway up through heaven,\nThere fell a silvery-silken veil of light,\nWith quietude, and sultriness, and slumber,\nUpon the upturn’d faces of a thousand\nRoses that grew in an enchanted garden,\nWhere no wind dared to stir, unless on tiptoe—\nFell on the upturn’d faces of these roses,\nThat gave out, in return for the love-light,\nTheir odorous souls in an ecstatic death—\nFell on the upturn’d faces of these roses\nThat smiled and died in this parterre, enchanted\nBy thee, and by the poetry of thy presence.\n\nClad all in white, upon a violet bank\nI saw thee half reclining; while the moon\nFell on the upturn’d faces of the roses,\nAnd on thine own, upturn’d—alas, in sorrow!",
+      "summary": "A poetic recollection of a single encounter on a July midnight in an enchanted garden, characterized by moonlight and dying roses.",
+      "topics": [
+        "enchanted-garden",
+        "moonlight",
+        "romantic-longing",
+        "poetry",
+        "literature"
+      ],
+      "aliases": [
+        "parterre",
+        "enchanted garden"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 12
+      },
+      "tokens": 215
+    },
+    {
+      "id": "edgar-allan-poe_013",
+      "title": "Edgar Allan Poe",
+      "text": "Was it not Fate, that, on this July midnight—\nWas it not Fate (whose name is also Sorrow)\nThat bade me pause before that garden-gate,\nTo breathe the incense of those slumbering roses?\nNo footstep stirred: the hated world all slept,\nSave only thee and me. (Oh, Heaven!—oh, God!\nHow my heart beats in coupling those two words!)\nSave only thee and me. I paused—I looked—\nAnd in an instant all things disappeared.\n(Ah, bear in mind this garden was enchanted!)\n\nThe pearly lustre of the moon went out:\nThe mossy banks and the meandering paths,\nThe happy flowers and the repining trees,\nWere seen no more: the very roses’ odours\nDied in the arms of the adoring airs.\n\nAll—all expired save thee—save less than thou:\nSave only the divine light in thine eyes—\nSave but the soul in thine uplifted eyes.\nI saw but them—they were the world to me.\nI saw but them—saw only them for hours—\nSaw only them until the moon went down.\nWhat wild heart-histories seemed to lie enwritten\nUpon those crystalline, celestial spheres!\nHow dark a woe! yet how sublime a hope!\nHow silently serene a sea of pride!\nHow daring an ambition! yet how deep—\nHow fathomless a capacity for love!",
+      "summary": "A poetic account of a speaker experiencing a mystical or supernatural moment in an enchanted garden at midnight, focused on the intense emotional connection to a loved one.",
+      "topics": [
+        "supernatural-romance",
+        "enchanted-gardens",
+        "gothic-poetry",
+        "romanticism"
+      ],
+      "aliases": [
+        "gothic-literature",
+        "Edgar Allan Poe"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 13
+      },
+      "tokens": 289
+    },
+    {
+      "id": "edgar-allan-poe_014",
+      "title": "Edgar Allan Poe",
+      "text": "But now, at length, dear Dian sank from sight,\nInto a western couch of thunder-cloud;\nAnd thou, a ghost, amid the entombing trees\nDidst glide away. _Only thine eyes remained._\nThey _would not_ go—they never yet have gone.\nLighting my lonely pathway home that night,\n_They_ have not left me (as my hopes have) since.\nThey follow me—they lead me through the years.\nThey are my ministers—yet I their slave.\nTheir office is to illumine and enkindle—\nMy duty, _to be saved_ by their bright light,\nAnd purified in their electric fire,\nAnd sanctified in their elysian fire.\nThey fill my soul with Beauty (which is Hope),\nAnd are far up in heaven—the stars I kneel to\nIn the sad, silent watches of my night;\nWhile even in the meridian glare of day\nI see them still—two sweetly scintillant\nVenuses, unextinguished by the sun!\nAN ENIGMA.",
+      "summary": "A poetic passage describing the enduring, haunting influence of a loved one's eyes, which the speaker compares to stars that provide spiritual guidance and light.",
+      "topics": [
+        "eyes",
+        "spiritual-guidance",
+        "grief",
+        "poetry",
+        "literature"
+      ],
+      "aliases": [
+        "venuses",
+        "eyes",
+        "ministers",
+        "guiding stars"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 14
+      },
+      "tokens": 207
+    },
+    {
+      "id": "edgar-allan-poe_015",
+      "title": "Edgar Allan Poe",
+      "text": "Seldom we find,” says Solomon Don Dunce,\n”Half an idea in the profoundest sonnet.\nThrough all the flimsy things we see at once\nAs easily as through a Naples bonnet—\nTrash of all trash!—how _can_ a lady don it?\nYet heavier far than your Petrarchan stuff—\nOwl-downy nonsense that the faintest puff\nTwirls into trunk-paper the while you con it.”\nAnd, veritably, Sol is right enough.\nThe general tuckermanities are arrant\nBubbles—ephemeral and _so_ transparent—\nBut _this_ is, now,—you may depend upon it—\nStable, opaque, immortal—all by dint\nOf the dear names that lie concealed within ’t.\nULALUME.\n\nThe skies they were ashen and sober;\nThe leaves they were crisped and sere—\nThe leaves they were withering and sere;\nIt was night in the lonesome October\nOf my most immemorial year;\nIt was hard by the dim lake of Auber,\nIn the misty mid region of Weir—\nIt was down by the dank tarn of Auber,\nIn the ghoul-haunted woodland of Weir.",
+      "summary": "A poetic commentary on the quality of literature followed by the opening stanzas of the poem 'Ulalume,' establishing a somber, autumnal setting.",
+      "topics": [
+        "ulalume",
+        "literary-criticism",
+        "gothic-poetry",
+        "american-literature"
+      ],
+      "aliases": [
+        "edgar-allan-poe",
+        "Poe"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 15
+      },
+      "tokens": 232
+    },
+    {
+      "id": "edgar-allan-poe_016",
+      "title": "Edgar Allan Poe",
+      "text": "Here once, through an alley Titanic,\nOf cypress, I roamed with my Soul—\nOf cypress, with Pysche, my Soul.\nThese were days when my heart was volcanic\nAs the scoriac rivers that roll—\nAs the lavas that restlessly roll\nTheir sulphurous currents down Yaanek\nIn the ultimate climes of the pole—\nThat groan as they roll down Mount Yaanek\nIn the realms of the boreal pole.\n\nOur talk had been serious and sober,\nBut our thoughts they were palsied and sere—\nOur memories were treacherous and sere—\nFor we knew not the month was October,\nAnd we marked not the night of the year—\n(Ah, night of all nights in the year!)\nWe noted not the dim lake of Auber—\n(Though once we had journeyed down here)—\nRemembered not the dank tarn of Auber,\nNor the ghoul-haunted woodland of Weir.\n\nAnd now, as the night was senescent\nAnd star-dials pointed to morn—\nAs the star-dials hinted of morn—\nAt the end of our path a liquescent\nAnd nebulous lustre was born,\nOut of which a miraculous crescent\nArose with a duplicate horn—\nAstarte’s bediamonded crescent\nDistinct with its duplicate horn.",
+      "summary": "A poetic account of a soul's journey through a landscape of cypress and volcanic imagery, transitioning from a state of memory loss to the appearance of a crescent moon.",
+      "topics": [
+        "poetic-landscape",
+        "memory-and-loss",
+        "romanticism",
+        "literature"
+      ],
+      "aliases": [
+        "astarte-s-crescent",
+        "duplicate horn moon",
+        "the-pole",
+        "boreal pole"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 16
+      },
+      "tokens": 266
+    },
+    {
+      "id": "edgar-allan-poe_017",
+      "title": "Edgar Allan Poe",
+      "text": "And I said—“She is warmer than Dian:\nShe rolls through an ether of sighs—\nShe revels in a region of sighs:\nShe has seen that the tears are not dry on\nThese cheeks, where the worm never dies,\nAnd has come past the stars of the Lion\nTo point us the path to the skies—\nTo the Lethean peace of the skies—\nCome up, in despite of the Lion,\nTo shine on us with her bright eyes—\nCome up through the lair of the Lion,\nWith love in her luminous eyes.”\n\nBut Pysche, uplifting her finger,\nSaid—“Sadly this star I mistrust—\nHer pallor I strangely mistrust:—\nOh, hasten!—oh, let us not linger!\nOh, fly! let us fly!—for we must.”\nIn terror she spoke, letting sink her\nWings until they trailed in the dust—\nIn agony sobbed, letting sink her\nPlumes till they trailed in the dust—\nTill they sorrowfully trailed in the dust.\n\nI replied—“This is nothing but dreaming:\nLet us on by this tremulous light!\nLet us bathe in this crystalline light!\nIts Sybilic splendour is beaming\nWith Hope and in Beauty to-night:—\nSee!—it flickers up the sky through the night!\nAh, we safely may trust to its gleaming,\nAnd be sure it will lead us aright—\nWe safely may trust to a gleaming\nThat cannot but guide us aright,\nSince it flickers up to Heaven through the night.”",
+      "summary": "A dialogue between two characters regarding a celestial sign, where one expresses hope in a guiding light while Psyche expresses terror and mistrust of a star.",
+      "topics": [
+        "celestial-omens",
+        "mythological-dialogue",
+        "poetry",
+        "literature"
+      ],
+      "aliases": [
+        "psyche",
+        "the female character",
+        "lethean-peace",
+        "oblivion"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 17
+      },
+      "tokens": 308
+    },
+    {
+      "id": "edgar-allan-poe_018",
+      "title": "Edgar Allan Poe",
+      "text": "Thus I pacified Psyche and kissed her,\nAnd tempted her out of her gloom—\nAnd conquered her scruples and gloom;\nAnd we passed to the end of the vista,\nBut were stopped by the door of a tomb—\nBy the door of a legended tomb;\nAnd I said—“What is written, sweet sister,\nOn the door of this legended tomb?”\nShe replied—“Ulalume—Ulalume—\n’Tis the vault of thy lost Ulalume!”\n\nThen my heart it grew ashen and sober\nAs the leaves that were crisped and sere—\nAs the leaves that were withering and sere,\nAnd I cried—“It was surely October\nOn _this_ very night of last year\nThat I journeyed—I journeyed down here—\nThat I brought a dread burden down here—\nOn this night of all nights in the year,\nAh, what demon has tempted me here?\nWell I know, now, this dim lake of Auber—\nThis misty mid region of Weir—\nWell I know, now, this dank tarn of Auber,\nThis ghoul-haunted woodland of Weir.”\nTO ——.\n\nI heed not that my earthly lot\nHath—little of Earth in it—\nThat years of love have been forgot\nIn the hatred of a minute:—\nI mourn not that the desolate\nAre happier, sweet, than I,\nBut that _you_ sorrow for _my_ fate\nWho am a passer by.\n\nTO MY MOTHER.",
+      "summary": "An excerpt from Edgar Allan Poe's poem 'Ulalume' depicting a speaker's encounter with a personified Psyche at a tomb, leading to a realization of grief and loss.",
+      "topics": [
+        "ulalume",
+        "grief",
+        "dark-romanticism",
+        "poetry"
+      ],
+      "aliases": [
+        "dark-romantic-poetry",
+        "Ulalume",
+        "psychological-allegory",
+        "Psyche"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 18
+      },
+      "tokens": 289
+    },
+    {
+      "id": "edgar-allan-poe_019",
+      "title": "Edgar Allan Poe",
+      "text": "Because I feel that, in the heavens above,\nThe angels, whispering to one another,\nCan find, among their burning terms of love,\nNone so devotional as that of “Mother,”\nTherefore by that dear name I long have called you—\nYou who are more than mother unto me,\nAnd fill my heart of hearts, where Death installed you\nIn setting my Virginia’s spirit free.\nMy mother—my own mother, who died early,\nWas but the mother of myself; but you\nAre mother to the one I loved so dearly,\nAnd thus are dearer than the mother I knew\nBy that infinity with which my wife\nWas dearer to my soul than its soul-life.\nTHE BELLS.\n\nI.\n\nHear the sledges with the bells—\nSilver bells!\nWhat a world of merriment their melody foretells!\nHow they tinkle, tinkle, tinkle,\nIn the icy air of night!\nWhile the stars that oversprinkle\nAll the heavens, seem to twinkle\nWith a crystalline delight;\nKeeping time, time, time,\nIn a sort of Runic rhyme,\nTo the tintinabulation that so musically wells\nFrom the bells, bells, bells, bells,\nBells, bells, bells—\nFrom the jingling and the tinkling of the bells.\n\nII.",
+      "summary": "A poetic passage expressing deep devotion to a maternal figure, followed by the opening stanzas of the poem 'The Bells'.",
+      "topics": [
+        "the-bells",
+        "maternal-devotion",
+        "poetry",
+        "american-literature",
+        "gothic-literature"
+      ],
+      "aliases": [
+        "tintinnabulation",
+        "ringing of bells",
+        "virginia",
+        "Poe's wife"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 19
+      },
+      "tokens": 267
+    },
+    {
+      "id": "edgar-allan-poe_020",
+      "title": "Edgar Allan Poe",
+      "text": "Hear the mellow wedding bells,\nGolden bells!\nWhat a world of happiness their harmony foretells!\nThrough the balmy air of night\nHow they ring out their delight!\nFrom the molten-golden notes,\nAnd all in tune,\nWhat a liquid ditty floats\nTo the turtle-dove that listens, while she gloats\nOn the moon!\nOh, from out the sounding cells,\nWhat a gush of euphony voluminously wells!\nHow it swells!\nHow it dwells\nOn the Future! how it tells\nOf the rapture that impels\nTo the swinging and the ringing\nOf the bells, bells, bells,\nOf the bells, bells, bells, bells,\nBells, bells, bells—\nTo the rhyming and the chiming of the bells!\nIII.",
+      "summary": "An excerpt from a poem describing the joyful, rhythmic, and harmonious sound of wedding bells under a moonlit sky.",
+      "topics": [
+        "wedding-bells",
+        "euphony",
+        "poetry",
+        "literature"
+      ],
+      "aliases": [
+        "bells",
+        "chiming",
+        "euphony",
+        "harmony"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 20
+      },
+      "tokens": 156
+    },
+    {
+      "id": "edgar-allan-poe_021",
+      "title": "Edgar Allan Poe",
+      "text": "Hear the loud alarum bells—\nBrazen bells!\nWhat a tale of terror now their turbulency tells!\nIn the startled ear of night\nHow they scream out their affright!\nToo much horrified to speak,\nThey can only shriek, shriek,\nOut of tune,\nIn a clamorous appealing to the mercy of the fire,\nIn a mad expostulation with the deaf and frantic fire.\nLeaping higher, higher, higher,\nWith a desperate desire,\nAnd a resolute endeavour,\nNow—now to sit or never,\nBy the side of the pale-faced moon.\nOh, the bells, bells, bells!\nWhat a tale their terror tells\nOf Despair!\nHow they clang, and clash, and roar!\nWhat a horror they outpour\nOn the besom of the palpitating air!\nYet the ear it fully knows,\nBy the twanging,\nAnd the clanging,\nHow the danger ebbs and flows;\nYet the ear distinctly tells,\nIn the jangling,\nAnd the wrangling,\nHow the danger sinks and swells,\nBy the sinking or the swelling in the anger of the bells—\nOf the bells—\nOf the bells, bells, bells, bells,\nBells, bells, bells—\nIn the clamour and the clangour of the bells!\nIV.",
+      "summary": "A poetic excerpt describing the terrifying, rhythmic sound of alarm bells during a fire, personifying the bells and the flames.",
+      "topics": [
+        "alarm-bells",
+        "fire-emergency",
+        "gothic-poetry",
+        "literature"
+      ],
+      "aliases": [
+        "the-bells",
+        "the poem being excerpted"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 21
+      },
+      "tokens": 256
+    },
+    {
+      "id": "edgar-allan-poe_022",
+      "title": "Edgar Allan Poe",
+      "text": "Hear the tolling of the bells—\nIron bells!\nWhat a world of solemn thought their monody compels!\nIn the silence of the night,\nHow we shiver with affright\nAt the melancholy menace of their tone!\nFor every sound that floats\nFrom the rust within their throats\nIs a groan.\nAnd the people—ah, the people—\nThey that dwell up in the steeple,\nAll alone,\nAnd who tolling, tolling, tolling,\nIn that muffled monotone,\nFeel a glory in so rolling\nOn the human heart a stone—\nThey are neither man nor woman—\nThey are neither brute nor human—\nThey are Ghouls:\nAnd their king it is who tolls;\nAnd he rolls, rolls, rolls,\nRolls\nA pæan from the bells!\nAnd his merry bosom swells\nWith the pæan of the bells!\nAnd he dances, and he yells;\nKeeping time, time, time,\nIn a sort of Runic rhyme,\nTo the pæan of the bells—\nOf the bells:\nKeeping time, time, time,\nIn a sort of Runic rhyme,\nTo the throbbing of the bells—\nOf the bells, bells, bells—\nTo the sobbing of the bells;\nKeeping time, time, time,\nAs he knells, knells, knells,\nIn a happy Runic rhyme,\nTo the rolling of the bells—\nOf the bells, bells, bells—\nTo the tolling of the bells,\nOf the bells, bells, bells, bells—\nBells, bells, bells—\nTo the moaning and the groaning of the bells.\nTHE CONQUEROR WORM.",
+      "summary": "A rhythmic, macabre poem describing the tolling of iron bells and the supernatural ghouls who ring them.",
+      "topics": [
+        "the-bells",
+        "ghouls",
+        "gothic-poetry",
+        "dark-romanticism"
+      ],
+      "aliases": [
+        "the-bells",
+        "The Bells",
+        "ghouls",
+        "supernatural beings"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 22
+      },
+      "tokens": 309
+    },
+    {
+      "id": "edgar-allan-poe_023",
+      "title": "Edgar Allan Poe",
+      "text": "Lo! ’tis a gala night\nWithin the lonesome latter years!\nAn angel throng, bewinged, bedight\nIn veils, and drowned in tears,\nSit in a theatre, to see\nA play of hopes and fears,\nWhile the orchestra breathes fitfully\nThe music of the spheres.\n\nMimes, in the form of God on high,\nMutter and mumble low,\nAnd hither and thither fly—\nMere puppets they, who come and go\nAt bidding of vast formless things\nThat shift the scenery to and fro,\nFlapping from out their Condor wings\nInvisible Woe!\n\nThat motley drama—oh, be sure\nIt shall not be forgot!\nWith its Phantom chased for evermore,\nBy a crowd that seize it not,\nThrough a circle that ever returneth in\nTo the self-same spot,\nAnd much of Madness, and more of Sin,\nAnd Horror the soul of the plot.\n\nBut see, amid the mimic rout\nA crawling shape intrude!\nA blood-red thing that writhes from out\nThe scenic solitude!\nIt writhes!—it writhes!—with mortal pangs\nThe mimes become its food,\nAnd the angels sob at vermin fangs\nIn human gore imbued.\n\nOut—out are the lights—out all!\nAnd, over each quivering form,\nThe curtain, a funeral pall,\nComes down with the rush of a storm,\nAnd the angels, all pallid and wan,\nUprising, unveiling, affirm\nThat the play is the tragedy “Man,”\nAnd its hero the Conqueror Worm.\nANNABEL LEE.",
+      "summary": "A poetic allegory describing a theatrical performance of human existence, where mimes represent gods and the play concludes with the 'Conqueror Worm' consuming the actors.",
+      "topics": [
+        "conqueror-worm",
+        "human-existence",
+        "existential-tragedy",
+        "gothic-poetry"
+      ],
+      "aliases": [
+        "the-play-of-man",
+        "the tragedy Man",
+        "the-conqueror-worm",
+        "the blood-red thing"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 23
+      },
+      "tokens": 314
+    },
+    {
+      "id": "edgar-allan-poe_024",
+      "title": "Edgar Allan Poe",
+      "text": "It was many and many a year ago,\nIn a kingdom by the sea,\nThat a maiden there lived whom you may know\nBy the name of ANNABEL LEE;\nAnd this maiden she lived with no other thought\nThan to love and be loved by me.\n\n_I_ was a child and _she_ was a child,\nIn this kingdom by the sea:\nBut we loved with a love that was more than love—\nI and my ANNABEL LEE;\nWith a love that the winged seraphs of heaven\nCoveted her and me.\n\nAnd this was the reason that, long ago,\nIn this kingdom by the sea,\nA wind blew out of a cloud, chilling\nMy beautiful ANNABEL LEE;\nSo that her high-born kinsman came\nAnd bore her away from me,\nTo shut her up in a sepulchre\nIn this kingdom by the sea.\n\nThe angels, not half so happy in heaven,\nWent envying her and me—\nYes!—that was the reason (as all men know,\nIn this kingdom by the sea)\nThat the wind came out of the cloud by night,\nChilling and killing my ANNABEL LEE.\n\nBut our love it was stronger by far than the love\nOf those who were older than we—\nOf many far wiser than we—\nAnd neither the angels in heaven above,\nNor the demons down under the sea,\nCan ever dissever my soul from the soul\nOf the beautiful ANNABEL LEE:",
+      "summary": "The poem recounts a tragic tale of two young lovers in a kingdom by the sea whose intense love envied the angels, leading to the death of Annabel Lee.",
+      "topics": [
+        "annabel-lee",
+        "star-crossed-lovers",
+        "gothic-poetry",
+        "romanticism"
+      ],
+      "aliases": [
+        "annabel-lee",
+        "the maiden",
+        "sepulchre",
+        "tomb"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 24
+      },
+      "tokens": 307
+    },
+    {
+      "id": "edgar-allan-poe_025",
+      "title": "Edgar Allan Poe",
+      "text": "For the moon never beams, without bringing me dreams\nOf the beautiful ANNABEL LEE;\nAnd the stars never rise, but I feel the bright eyes\nOf the beautiful ANNABEL LEE;\nAnd so, all the night-tide, I lie down by the side\nOf my darling—my darling—my life and my bride,\nIn the sepulchre there by the sea,\nIn her tomb by the sounding sea.\nTHE VALLEY OF UNREST.\n\nOnce it smiled a silent dell\nWhere the people did not dwell;\nThey had gone unto the wars,\nTrusting to the mild-eyed stars,\nNightly, from their azure towers,\nTo keep watch above the flowers,\nIn the midst of which all day\nThe red sun-light lazily lay.\n_Now_ each visitor shall confess\nThe sad valley’s restlessness.\nNothing there is motionless—\nNothing save the airs that brood\nOver the magic solitude.\nAh, by no wind are stirred those trees\nThat palpitate like the chill seas\nAround the misty Hebrides!\nAh, by no wind those clouds are driven\nThat rustle through the unquiet heaven\nUneasily, from morn till even,\nOver the violets there that lie\nIn myriad types of the human eye—\nOver the lilies there that wave\nAnd weep above a nameless grave!\nThey wave:—from out their fragrant tops\nEternal dews come down in drops.\nThey weep:—from off their delicate stems\nPerennial tears descend in gems.\nISRAFEL.",
+      "summary": "Excerpts from Edgar Allan Poe's poems 'Annabel Lee', 'The Valley of Unrest', and 'Israfel', featuring themes of lost love, mourning, and melancholic landscapes.",
+      "topics": [
+        "annabel-lee",
+        "the-valley-of-unrest",
+        "israfel",
+        "edgar-allan-poe",
+        "american-literature",
+        "romanticism"
+      ],
+      "aliases": [
+        "poe-poetry",
+        "Edgar Allan Poe",
+        "gothic-literature",
+        "romanticism"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 25
+      },
+      "tokens": 313
+    },
+    {
+      "id": "edgar-allan-poe_026",
+      "title": "Edgar Allan Poe",
+      "text": "In heaven a spirit doth dwell\n“Whose heart-strings are a lute;”\nNone sing so wildly well\nAs the angel Israfel,\nAnd the giddy stars (so legends tell)\nCeasing their hymns, attend the spell\nOf his voice, all mute.\n\nTottering above\nIn her highest noon,\nThe enamoured moon\nBlushes with love,\nWhile, to listen, the red levin\n(With the rapid Pleiads, even,\nWhich were seven)\nPauses in heaven.\n\nAnd they say (the starry choir\nAnd the other listening things)\nThat Israfeli’s fire\nIs owing to that lyre\nBy which he sits and sings—\nThe trembling living wire\nOf those unusual strings.\n\nBut the skies that angel trod,\nWhere deep thoughts are a duty—\nWhere Love’s a grown-up God—\nWhere the Houri glances are\nImbued with all the beauty\nWhich we worship in a star.\n\nTherefore, thou art not wrong,\nIsrafeli, who despisest\nAn unimpassioned song;\nTo thee the laurels belong,\nBest bard, because the wisest!\nMerrily live, and long!\n\nThe ecstasies above\nWith thy burning measures suit—\nThy grief, thy joy, thy hate, thy love,\nWith the fervour of thy lute—\nWell may the stars be mute!\n\nYes, heaven is thine; but this\nIs a world of sweets and sours;\nOur flowers are merely—flowers,\nAnd the shadow of thy perfect bliss\nIs the sunshine of ours.",
+      "summary": "A poetic tribute to the angel Israfel, describing his celestial music and the profound emotional intensity that distinguishes the divine realm from the human world.",
+      "topics": [
+        "israfel",
+        "celestial-music",
+        "divine-vs-mortal-existence",
+        "poetry",
+        "literature"
+      ],
+      "aliases": [
+        "angel-of-music",
+        "Israfel",
+        "the-bard",
+        "Israfel"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 26
+      },
+      "tokens": 304
+    },
+    {
+      "id": "edgar-allan-poe_027",
+      "title": "Edgar Allan Poe",
+      "text": "If I could dwell\nWhere Israfel\nHath dwelt, and he where I,\nHe might not sing so wildly well\nA mortal melody,\nWhile a bolder note than this might swell\nFrom my lyre within the sky.\n\nThere are some qualities—some incorporate things,\nThat have a double life, which thus is made\nA type of that twin entity which springs\nFrom matter and light, evinced in solid and shade.\nThere is a two-fold _Silence_—sea and shore—\nBody and soul. One dwells in lonely places,\nNewly with grass o’ergrown; some solemn graces,\nSome human memories and tearful lore,\nRender him terrorless: his name’s “No More.”\nHe is the corporate Silence: dread him not!\nNo power hath he of evil in himself;\nBut should some urgent fate (untimely lot!)\nBring thee to meet his shadow (nameless elf,\nThat haunteth the lone regions where hath trod\nNo foot of man), commend thyself to God!\nTO ZANTE.",
+      "summary": "A poetic passage exploring themes of celestial music, the duality of existence (matter and light, body and soul), and the personification of a 'two-fold Silence'.",
+      "topics": [
+        "duality-of-existence",
+        "celestial-music",
+        "personification-of-silence",
+        "metaphysics",
+        "poetry"
+      ],
+      "aliases": [
+        "israfel",
+        "the angel of music",
+        "no-more",
+        "the corporate Silence"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 27
+      },
+      "tokens": 214
+    },
+    {
+      "id": "edgar-allan-poe_028",
+      "title": "Edgar Allan Poe",
+      "text": "Fair isle, that from the fairest of all flowers,\nThy gentlest of all gentle names dost take!\nHow many memories of what radiant hours\nAt sight of thee and thine at once awake!\nHow many scenes of what departed bliss!\nHow many thoughts of what entombèd hopes!\nHow many visions of a maiden that is\nNo more—no more upon thy verdant slopes!\n_No more!_ alas, that magical sad sound\nTransforming all! Thy charms shall please _no more_—\nThy memory _no more_! Accursèd ground\nHenceforth I hold thy flower-enamelled shore,\nO hyacinthine isle! O purple Zante!\n“Isola d’oro! Fior di Levante!”\nTO F——S S. O——D.\n\nThou wouldst be loved?—then let thy heart\nFrom its present pathway part not!\nBeing everything which now thou art,\nBe nothing which thou art not.\nSo with the world thy gentle ways,\nThy grace, thy more than beauty,\nShall be an endless theme of praise,\nAnd love—a simple duty.\nBRIDAL BALLAD.\n\nThe ring is on my hand,\nAnd the wreath is on my brow;\nSatins and jewels grand\nAre all at my command,\nAnd I am happy now.\n\nAnd my lord he loves me well;\nBut, when first he breathed his vow,\nI felt my bosom swell—\nFor the words rang as a knell,\nAnd the voice seemed _his_ who fell\nIn the battle down the dell,\nAnd who is happy now.",
+      "summary": "A collection of poetic excerpts including a lament for a lost isle and a maiden, a moralistic verse on being true to oneself, and a ballad about a bride haunted by the memory of a fallen lover.",
+      "topics": [
+        "romantic-melancholy",
+        "loss-and-grief",
+        "poetry",
+        "literature"
+      ],
+      "aliases": [
+        "zante",
+        "Ionian Islands",
+        "isola-doro",
+        "Golden Island",
+        "fior-di-levante",
+        "Flower of the East"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 28
+      },
+      "tokens": 304
+    },
+    {
+      "id": "edgar-allan-poe_029",
+      "title": "Edgar Allan Poe",
+      "text": "But he spoke to reassure me,\nAnd he kissed my pallid brow,\nWhile a reverie came o’er me,\nAnd to the church-yard bore me,\nAnd I sighed to him before me,\nThinking him dead D’Elormie,\n“Oh, I am happy now!”\n\nAnd thus the words were spoken,\nAnd thus the plighted vow;\nAnd though my faith be broken,\nAnd though my heart be broken,\nBehold the golden token\nThat _proves_ me happy now!\n\nWould God I could awaken!\nFor I dream I know not how,\nAnd my soul is sorely shaken\nLest an evil step be taken,—\nLest the dead who is forsaken\nMay not be happy now.\nTHE HAUNTED PALACE.\n\nIn the greenest of our valleys\nBy good angels tenanted,\nOnce a fair and stately palace—\nRadiant palace—reared its head.\nIn the monarch Thought’s dominion—\nIt stood there!\nNever seraph spread a pinion\nOver fabric half so fair!\n\nBanners yellow, glorious, golden,\nOn its roof did float and flow,\n(This—all this—was in the olden\nTime long ago,)\nAnd every gentle air that dallied,\nIn that sweet day,\nAlong the ramparts plumed and pallid,\nA wingèd odour went away.",
+      "summary": "The text contains the concluding stanzas of one poem followed by the opening stanzas of 'The Haunted Palace,' transitioning from themes of grief and dreams to a description of a majestic, celestial palace.",
+      "topics": [
+        "the-haunted-palace",
+        "poetic-verse",
+        "gothic-literature",
+        "american-literature"
+      ],
+      "aliases": [
+        "edgar-allan-poe-poetry",
+        "The Haunted Palace"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 29
+      },
+      "tokens": 255
+    },
+    {
+      "id": "edgar-allan-poe_030",
+      "title": "Edgar Allan Poe",
+      "text": "Wanderers in that happy valley,\nThrough two luminous windows, saw\nSpirits moving musically,\nTo a lute’s well-tunèd law,\nRound about a throne where, sitting\n(Porphyrogene!)\nIn state his glory well befitting,\nThe ruler of the realm was seen.\n\nAnd all with pearl and ruby glowing\nWas the fair palace-door,\nThrough which came flowing, flowing, flowing,\nAnd sparkling evermore,\nA troop of Echoes, whose sweet duty\nWas but to sing,\nIn voices of surpassing beauty,\nThe wit and wisdom of their king.\n\nBut evil things, in robes of sorrow,\nAssailed the monarch’s high estate.\n(Ah, let us mourn!—for never morrow\nShall dawn upon him desolate!)\nAnd round about his home, the glory\nThat blushed and bloomed\nIs but a dim-remembered story\nOf the old time entombed.\n\nAnd travellers now, within that valley,\nThrough the red-litten windows see\nVast forms, that move fantastically\nTo a discordant melody,\nWhile, like a ghastly rapid river,\nThrough the pale door\nA hideous throng rush out for ever\nAnd laugh—but smile no more.\nEULALIE.\n\nI dwelt alone\nIn a world of moan,\nAnd my soul was a stagnant tide,\nTill the fair and gentle Eulalie became my blushing bride—\nTill the yellow-haired young Eulalie became my smiling bride.",
+      "summary": "A poetic account describing the transition of a mystical realm from a state of musical glory and light to one of sorrow, discord, and darkness, followed by a personal reflection on the speaker's loneliness and marriage to Eulalie.",
+      "topics": [
+        "eulalie",
+        "poetic-narrative",
+        "romantic-poetry",
+        "literature"
+      ],
+      "aliases": [
+        "edgar-allan-poe",
+        "Poe"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 30
+      },
+      "tokens": 301
+    },
+    {
+      "id": "edgar-allan-poe_031",
+      "title": "Edgar Allan Poe",
+      "text": "Ah, less—less bright\nThe stars of the night\nThan the eyes of the radiant girl!\nAnd never a flake\nThat the vapour can make\nWith the moon-tints of purple and pearl,\nCan vie with the modest Eulalie’s most unregarded curl—\nCan compare with the bright-eyed Eulalie’s most humble and careless\ncurl.\n\nNow Doubt—now Pain\nCome never again,\nFor her soul gives me sigh for sigh,\nAnd all day long\nShines, bright and strong,\nAstarté within the sky,\nWhile ever to her dear Eulalie upturns her matron eye—\nWhile ever to her young Eulalie upturns her violet eye.\nTO F——.\n\nBeloved! amid the earnest woes\nThat crowd around my earthly path—\n(Drear path, alas! where grows\nNot even one lonely rose)—\nMy soul at least a solace hath\nIn dreams of thee, and therein knows\nAn Eden of bland repose.\n\nAnd thus thy memory is to me\nLike some enchanted far-off isle\nIn some tumultuous sea—\nSome ocean throbbing far and free\nWith storms—but where meanwhile\nSerenest skies continually\nJust o’er that one bright island smile.\nTO ONE IN PARADISE.\n\nThou wast that all to me, love,\nFor which my soul did pine—\nA green isle in the sea, love,\nA fountain and a shrine,\nAll wreathed with fairy fruits and flowers,\nAnd all the flowers were mine.",
+      "summary": "A collection of poetic verses expressing intense romantic longing, comparing a beloved woman to celestial bodies and a serene island amidst a stormy sea.",
+      "topics": [
+        "romantic-longing",
+        "eulalie",
+        "poetry",
+        "romanticism"
+      ],
+      "aliases": [
+        "eulalie",
+        "the radiant girl",
+        "astarte",
+        "the goddess of love"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 31
+      },
+      "tokens": 301
+    },
+    {
+      "id": "edgar-allan-poe_032",
+      "title": "Edgar Allan Poe",
+      "text": "Ah, dream too bright to last!\nAh, starry Hope! that didst arise\nBut to be overcast!\nA voice from out the Future cries,\n“On! on!”—but o’er the Past\n(Dim gulf!) my spirit hovering lies\nMute, motionless, aghast!\n\nFor, alas! alas! with me\nThe light of Life is o’er!\n“No more—no more—no more—”\n(Such language holds the solemn sea\nTo the sands upon the shore)\nShall bloom the thunder-blasted tree,\nOr the stricken eagle soar!\n\nAnd all my days are trances,\nAnd all my nightly dreams\nAre where thy dark eye glances,\nAnd where thy footstep gleams—\nIn what ethereal dances,\nBy what eternal streams.\nDREAM-LAND.\n\nBy a route obscure and lonely,\nHaunted by ill angels only,\nWhere an Eidolon, named Night,\nOn a black throne reigns upright,\nI have reached these lands but newly\nFrom an ultimate dim Thule—\nFrom a wild weird clime that lieth, sublime,\nOut of SPACE—out of TIME.",
+      "summary": "A poetic expression of grief, loss, and the transition into a surreal, timeless realm known as Dream-Land.",
+      "topics": [
+        "dream-land",
+        "grief",
+        "existential-despair",
+        "poetry",
+        "romanticism"
+      ],
+      "aliases": [
+        "dream-land",
+        "the afterlife",
+        "eidolon",
+        "phantom"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 32
+      },
+      "tokens": 215
+    },
+    {
+      "id": "edgar-allan-poe_033",
+      "title": "Edgar Allan Poe",
+      "text": "Bottomless vales and boundless floods,\nAnd chasms, and caves, and Titan woods,\nWith forms that no man can discover\nFor the dews that drip all over;\nMountains toppling evermore\nInto seas without a shore;\nSeas that restlessly aspire,\nSurging, unto skies of fire;\nLakes that endlessly outspread\nTheir lone waters—lone and dead,—\nTheir still waters—still and chilly\nWith the snows of the lolling lily.\nBy the lakes that thus outspread\nTheir lone waters, lone and dead,—\nTheir sad waters, sad and chilly\nWith the snows of the lolling lily,—\nBy the mountains—near the river\nMurmuring lowly, murmuring ever,—\nBy the grey woods,—by the swamp\nWhere the toad and the newt encamp,—\nBy the dismal tarns and pools\nWhere dwell the Ghouls,—\nBy each spot the most unholy —\nIn each nook most melancholy,—\nThere the traveller meets aghast\nSheeted Memories of the Past—\nShrouded forms that start and sigh\nAs they pass the wanderer by—\nWhite-robed forms of friends long given,\nIn agony, to the Earth—and Heaven.\nFor the heart whose woes are legion\n’Tis a peaceful, soothing region—\nFor the spirit that walks in shadow\n’Tis—oh, ’tis an Eldorado!\nBut the traveller, travelling through it,\nMay not—dare not openly view it;\nNever its mysteries are exposed\nTo the weak human eye unclosed;\nSo wills its King, who hath forbid\nThe uplifting of the fringed lid;\nAnd thus the sad Soul that here passes\nBeholds it but through darkened glasses.",
+      "summary": "A poetic description of a desolate, supernatural landscape where the deceased appear as ghostly memories to a traveler.",
+      "topics": [
+        "supernatural-landscapes",
+        "gothic-poetry",
+        "death-and-memory",
+        "literature",
+        "art"
+      ],
+      "aliases": [
+        "gothic-horror",
+        "gothic",
+        "the-afterlife",
+        "Eldorado"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 33
+      },
+      "tokens": 353
+    },
+    {
+      "id": "edgar-allan-poe_034",
+      "title": "Edgar Allan Poe",
+      "text": "By a route obscure and lonely,\nHaunted by ill angels only,\nWhere an Eidolon, named NIGHT,\nOn a black throne reigns upright,\nI have wandered home but newly\nFrom this ultimate dim Thule.\n\nHYMN.\n\nAt morn—at noon—at twilight dim—\nMaria! thou hast heard my hymn!\nIn joy and woe—in good and ill—\nMother of God, be with me still!\nWhen the Hours flew brightly by,\nAnd not a cloud obscured the sky,\nMy soul, lest it should truant be,\nThy grace did guide to thine and thee;\nNow, when storms of Fate o’ercast\nDarkly my Present and my Past,\nLet my Future radiant shine\nWith sweet hopes of thee and thine!\nTHE SLEEPER.\n\nAt midnight, in the month of June,\nI stand beneath the mystic moon.\nAn opiate vapour, dewy, dim,\nExhales from out her golden rim,\nAnd, softly dripping, drop by drop,\nUpon the quiet mountain top,\nSteals drowsily and musically\nInto the universal valley.\nThe rosemary nods upon the grave;\nThe lily lolls upon the wave;\nWrapping the fog about its breast,\nThe ruin moulders into rest;\nLooking like Lethe, see! the lake\nA conscious slumber seems to take,\nAnd would not, for the world, awake.\nAll Beauty sleeps!—and lo! where lies\n(Her casement open to the skies)\nIrene, with her Destinies!",
+      "summary": "A collection of poetic excerpts including fragments of 'Ulalume', 'Hymn', and 'The Sleeper', characterized by gothic themes of darkness, divinity, and slumber.",
+      "topics": [
+        "gothic-poetry",
+        "edgar-allan-poe",
+        "dark-romanticism",
+        "literature"
+      ],
+      "aliases": [
+        "the-sleeper",
+        "The Sleeper",
+        "ulalume",
+        "By a route obscure and lonely..."
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 34
+      },
+      "tokens": 298
+    },
+    {
+      "id": "edgar-allan-poe_035",
+      "title": "Edgar Allan Poe",
+      "text": "Oh, lady bright! can it be right—\nThis window open to the night?\nThe wanton airs, from the tree-top,\nLaughingly through the lattice drop—\nThe bodiless airs, a wizard rout,\nFlit through thy chamber in and out,\nAnd wave the curtain canopy\nSo fitfully—so fearfully—\nAbove the close and fringed lid\n’Neath which thy slumb’ring soul lies hid,\nThat, o’er the floor and down the wall,\nLike ghosts the shadows rise and fall!\nOh, lady dear, hast thou no fear?\nWhy and what art thou dreaming here?\nSure thou art come o’er far-off seas,\nA wonder to these garden trees!\nStrange is thy pallor! strange thy dress!\nStrange, above all, thy length of tress,\nAnd this all solemn silentness!\n\nThe lady sleeps. Oh, may her sleep,\nWhich is enduring, so be deep!\nHeaven have her in its sacred keep!\nThis chamber changed for one more holy,\nThis bed for one more melancholy,\nI pray to God that she may lie\nFor ever with unopened eye,\nWhile the dim sheeted ghosts go by!",
+      "summary": "A poetic account describing a speaker observing a sleeping woman in a room disturbed by wind and shadows, expressing a sense of melancholy and prayer for her eternal rest.",
+      "topics": [
+        "gothic-poetry",
+        "death-and-mourning",
+        "romanticism",
+        "literature"
+      ],
+      "aliases": [
+        "gothic-literature",
+        "dark romanticism"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 35
+      },
+      "tokens": 236
+    },
+    {
+      "id": "edgar-allan-poe_036",
+      "title": "Edgar Allan Poe",
+      "text": "My love, she sleeps! Oh, may her sleep\nAs it is lasting, so be deep!\nSoft may the worms about her creep!\nFar in the forest, dim and old,\nFor her may some tall vault unfold—\nSome vault that oft hath flung its black\nAnd winged panels fluttering back,\nTriumphant, o’er the crested palls,\nOf her grand family funerals—\nSome sepulchre, remote, alone,\nAgainst whose portal she hath thrown,\nIn childhood, many an idle stone—\nSome tomb from out whose sounding door\nShe ne’er shall force an echo more,\nThrilling to think, poor child of sin!\nIt was the dead who groaned within.\n\nFOR ANNIE.\n\nThank Heaven! the crisis—\nThe danger is past,\nAnd the lingering illness\nIs over at last—\nAnd the fever called “Living”\nIs conquered at last.\n\nSadly, I know\nI am shorn of my strength,\nAnd no muscle I move\nAs I lie at full length—\nBut no matter!—I feel\nI am better at length.\n\nAnd I rest so composedly,\nNow, in my bed,\nThat any beholder\nMight fancy me dead—\nMight start at beholding me,\nThinking me dead.\n\nThe moaning and groaning,\nThe sighing and sobbing,\nAre quieted now,\nWith that horrible throbbing\nAt heart:—ah, that horrible,\nHorrible throbbing!",
+      "summary": "A poetic sequence transitioning from a dark, morbid meditation on a lover's death and burial to a relief-filled poem titled 'FOR ANNIE' regarding the end of a feverish crisis.",
+      "topics": [
+        "death-and-mourning",
+        "grief",
+        "poetry",
+        "gothic-literature"
+      ],
+      "aliases": [
+        "sepulchre",
+        "tomb",
+        "vault",
+        "burial chamber"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 36
+      },
+      "tokens": 282
+    },
+    {
+      "id": "edgar-allan-poe_037",
+      "title": "Edgar Allan Poe",
+      "text": "The sickness—the nausea—\nThe pitiless pain—\nHave ceased, with the fever\nThat maddened my brain—\nWith the fever called “Living”\nThat burned in my brain.\n\nAnd oh! of all tortures\n_That_ torture the worst\nHas abated—the terrible\nTorture of thirst\nFor the naphthaline river\nOf Passion accurst:—\nI have drunk of a water\nThat quenches all thirst:—\n\nOf a water that flows,\nWith a lullaby sound,\nFrom a spring but a very few\nFeet under ground—\nFrom a cavern not very far\nDown under ground.\n\nAnd ah! let it never\nBe foolishly said\nThat my room it is gloomy\nAnd narrow my bed;\nFor man never slept\nIn a different bed—\nAnd, to _sleep_, you must slumber\nIn just such a bed.\n\nMy tantalized spirit\nHere blandly reposes,\nForgetting, or never\nRegretting its roses—\nIts old agitations\nOf myrtles and roses:\n\nFor now, while so quietly\nLying, it fancies\nA holier odour\nAbout it, of pansies—\nA rosemary odour,\nCommingled with pansies—\nWith rue and the beautiful\nPuritan pansies.\n\nAnd so it lies happily,\nBathing in many\nA dream of the truth\nAnd the beauty of Annie—\nDrowned in a bath\nOf the tresses of Annie.\n\nShe tenderly kissed me,\nShe fondly caressed,\nAnd then I fell gently\nTo sleep on her breast—\nDeeply to sleep\nFrom the heaven of her breast.",
+      "summary": "A poetic account of a speaker finding peace in death, transitioning from the feverish agony of life to a tranquil sleep amidst memories of a lost loved one, Annie.",
+      "topics": [
+        "death-and-afterlife",
+        "grief-and-mourning",
+        "romantic-tragedy",
+        "poetry"
+      ],
+      "aliases": [
+        "the-speaker",
+        "the narrator",
+        "annie",
+        "annabel-lee"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 37
+      },
+      "tokens": 307
+    },
+    {
+      "id": "edgar-allan-poe_038",
+      "title": "Edgar Allan Poe",
+      "text": "When the light was extinguished,\nShe covered me warm,\nAnd she prayed to the angels\nTo keep me from harm—\nTo the queen of the angels\nTo shield me from harm.\n\nAnd I lie so composedly,\nNow, in my bed,\n(Knowing her love)\nThat you fancy me dead—\nAnd I rest so contentedly,\nNow in my bed,\n(With her love at my breast)\nThat you fancy me dead—\nThat you shudder to look at me,\nThinking me dead:—\n\nBut my heart it is brighter\nThan all of the many\nStars in the sky,\nFor it sparkles with Annie—\nIt glows with the light\nOf the love of my Annie—\nWith the thought of the light\nOf the eyes of my Annie.\nELDORADO.\n\nGaily bedight,\nA gallant knight,\nIn sunshine and in shadow,\nHad journeyed long,\nSinging a song,\nIn search of Eldorado.\n\nBut he grew old—\nThis knight so bold—\nAnd o’er his heart a shadow\nFell as he found\nNo spot of ground\nThat looked like Eldorado.\n\nAnd, as his strength\nFailed him at length,\nHe met a pilgrim shadow—\n“Shadow,” said he,\n“Where can it be—\nThis land of Eldorado?”\n\n“Over the Mountains\nOf the Moon,\nDown the Valley of the Shadow,\nRide, boldly ride,”\nThe shade replied,—\n“If you seek for Eldorado!”\nA DREAM WITHIN A DREAM.",
+      "summary": "A collection of poetic verses including excerpts from 'Annabel Lee', 'Eldorado', and the beginning of 'A Dream Within a Dream'.",
+      "topics": [
+        "annabel-lee",
+        "eldorado",
+        "a-dream-within-a-dream",
+        "edgar-allan-poe",
+        "american-literature",
+        "poetry"
+      ],
+      "aliases": [
+        "annabel-lee-poem",
+        "Annabel Lee",
+        "the-knight-of-eldorado",
+        "Eldorado"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 38
+      },
+      "tokens": 287
+    },
+    {
+      "id": "edgar-allan-poe_039",
+      "title": "Edgar Allan Poe",
+      "text": "Take this kiss upon the brow!\nAnd, in parting from you now,\nThus much let me avow—\nYou are not wrong, who deem\nThat my days have been a dream;\nYet if hope has flown away\nIn a night, or in a day,\nIn a vision, or in none,\nIs it therefore the less _gone_?\n_All_ that we see or seem\nIs but a dream within a dream.\n\nI stand amid the roar\nOf a surf-tormented shore,\nAnd I hold within my hand\nGrains of the golden sand—\nHow few! yet how they creep\nThrough my fingers to the deep,\nWhile I weep—while I weep!\nO God! can I not grasp\nThem with a tighter clasp?\nO God! can I not save\n_One_ from the pitiless wave?\nIs _all_ that we see or seem\nBut a dream within a dream?\nTHE CITY IN THE SEA.\n\nLo! Death has reared himself a throne\nIn a strange city lying alone\nFar down within the dim West,\nWhere the good and the bad and the worst and the best\nHave gone to their eternal rest.\nThere shrines and palaces and towers\n(Time-eaten towers that tremble not!)\nResemble nothing that is ours.\nAround, by lifting winds forgot,\nResignedly beneath the sky\nThe melancholy waters lie.",
+      "summary": "A collection of poetic verses exploring themes of loss, the ephemeral nature of reality, and the inevitability of death through dream-like imagery and maritime metaphors.",
+      "topics": [
+        "existential-dread",
+        "dream-vs-reality",
+        "mortality",
+        "romantic-poetry",
+        "literature"
+      ],
+      "aliases": [
+        "a-dream-within-a-dream",
+        "dream within a dream",
+        "the-city-in-the-sea",
+        "the city in the sea"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 39
+      },
+      "tokens": 276
+    },
+    {
+      "id": "edgar-allan-poe_040",
+      "title": "Edgar Allan Poe",
+      "text": "No rays from the holy heaven come down\nOn the long night-time of that town;\nBut light from out the lurid sea\nStreams up the turrets silently—\nGleams up the pinnacles far and free—\nUp domes—up spires—up kingly halls—\nUp fanes—up Babylon-like walls—\nUp shadowy long-forgotten bowers\nOf sculptured ivy and stone flowers—\nUp many and many a marvellous shrine\nWhose wreathèd friezes intertwine\nThe viol, the violet, and the vine.\nResignedly beneath the sky\nThe melancholy waters lie.\nSo blend the turrets and shadows there\nThat all seem pendulous in air,\nWhile from a proud tower in the town\nDeath looks gigantically down.\n\nThere open fanes and gaping graves\nYawn level with the luminous waves;\nBut not the riches there that lie\nIn each idol’s diamond eye—\nNot the gaily-jewelled dead\nTempt the waters from their bed;\nFor no ripples curl, alas!\nAlong that wilderness of glass—\nNo swellings tell that winds may be\nUpon some far-off happier sea—\nNo heavings hint that winds have been\nOn seas less hideously serene.",
+      "summary": "A poetic description of a dark, eerie town where light emanates from a luminous, motionless sea rather than the sky, creating a sense of deathly stillness.",
+      "topics": [
+        "eerie-townscape",
+        "gothic-atmosphere",
+        "poetry",
+        "literature"
+      ],
+      "aliases": [
+        "gothic-poetry",
+        "the text provided",
+        "macabre-verse",
+        "the text provided"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 40
+      },
+      "tokens": 252
+    },
+    {
+      "id": "edgar-allan-poe_041",
+      "title": "Edgar Allan Poe",
+      "text": "But lo, a stir is in the air!\nThe wave—there is a movement there!\nAs if the towers had thrust aside,\nIn slightly sinking, the dull tide—\nAs if their tops had feebly given\nA void within the filmy heaven.\nThe waves have now a redder glow—\nThe hours are breathing faint and low—\nAnd when, amid no earthly moans,\nDown, down that town shall settle hence,\nHell, rising from a thousand thrones,\nShall do it reverence.\n\nSCENES FROM “POLITIAN;”\n\nAN UNPUBLISHED DRAMA.\nI.\n\nROME.—_A Hall in a Palace._ ALESSANDRA _and_ CASTIGLIONE.\n\nALESSANDRA.\nThou art sad, Castiglione.\n\nCASTIGLIONE.\nSad!—not I.\nOh, I’m the happiest, happiest man in Rome!\nA few days more, thou knowest, my Alessandra,\nWill make thee mine. Oh, I am very happy!\n\nALESSANDRA.\nMethinks thou hast a singular way of showing\nThy happiness!—what ails thee, cousin of mine?\nWhy didst thou sigh so deeply?\n\nCASTIGLIONE.\nDid I sigh?\nI was not conscious of it. It is a fashion,\nA silly—a most silly fashion I have\nWhen I am _very_ happy. Did I sigh?      [_Sighing._\n\nALESSANDRA.\nThou didst. Thou art not well. Thou hast indulged\nToo much of late, and I am vexed to see it.\nLate hours and wine, Castiglione,—these\nWill ruin thee! thou art already altered—\nThy looks are haggard—nothing so wears away\nThe constitution as late hours and wine.",
+      "summary": "The text transitions from a poetic description of a sinking town to the opening scene of an unpublished drama titled 'Politian,' featuring a dialogue between Alessandra and Castiglione.",
+      "topics": [
+        "politian-drama",
+        "edgar-allan-poe",
+        "romantic-drama",
+        "literature"
+      ],
+      "aliases": [
+        "politian",
+        "an unpublished drama"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 41
+      },
+      "tokens": 322
+    },
+    {
+      "id": "edgar-allan-poe_042",
+      "title": "Edgar Allan Poe",
+      "text": "CASTIGLIONE [_musing_].\nNothing, fair cousin, nothing—not even deep sorrow—\nWears it away like evil hours and wine.\nI will amend.\n\nALESSANDRA.\nDo it! I would have thee drop\nThy riotous company, too—fellows low born—\nIll suit the like with old Di Broglio’s heir\nAnd Alessandra’s husband.\n\nCASTIGLIONE.\nI will drop them.\n\nALESSANDRA.\nThou wilt—thou must. Attend thou also more\nTo thy dress and equipage—they are over plain\nFor thy lofty rank and fashion—much depends\nUpon appearances.\n\nCASTIGLIONE.\nI’ll see to it.\n\nALESSANDRA.\nThen see to it!—pay more attention, Sir,\nTo a becoming carriage—much thou wantest\nIn dignity.\n\nCASTIGLIONE.\nMuch, much, oh much I want\nIn proper dignity.\n\nALESSANDRA [_haughtily_].\nThou mockest me, sir!\n\nCASTIGLIONE [_abstractedly_].\nSweet, gentle Lalage!\n\nALESSANDRA.\nHeard I aright?\nI speak to him—he speaks of Lalage!\nSir Count! [_Places her hand on his shoulder._]\nWhat, art thou dreaming? he’s not well!\nWhat ails thee, Sir?\n\nCASTIGLIONE [_starting_].\nCousin! fair cousin!—madam!\nI crave thy pardon—indeed I am not well—\nYour hand from off my shoulder, if you please.\nThis air is most oppressive!—Madam—the Duke!\n\n_Enter_ DI BROGLIO.\n\nDI BROGLIO.\nMy son, I’ve news for thee!—hey?—what’s the matter?\n\n[_Observing_ ALESSANDRA.",
+      "summary": "A dramatic dialogue between Castiglione and Alessandra where she critiques his social standing and behavior, only for him to become distracted by thoughts of Lalage.",
+      "topics": [
+        "social-reputation",
+        "aristocratic-etiquette",
+        "romantic-distraction",
+        "drama",
+        "literature"
+      ],
+      "aliases": [
+        "equipage",
+        "personal belongings and carriage",
+        "carriage",
+        "manner of bearing",
+        "riotous-company",
+        "bad influences"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 42
+      },
+      "tokens": 314
+    },
+    {
+      "id": "edgar-allan-poe_043",
+      "title": "Edgar Allan Poe",
+      "text": "I’ the pouts? Kiss her, Castiglione! kiss her,\nYou dog! and make it up, I say, this minute!\nI’ve news for you both. Politian is expected\nHourly in Rome—Politian, Earl of Leicester!\nWe’ll have him at the wedding. ’Tis his first visit\nTo the imperial city.\n\nALESSANDRA.\nWhat! Politian\nOf Britain, Earl of Leicester?\n\nDI BROGLIO.\nThe same, my love.\nWe’ll have him at the wedding. A man quite young\nIn years, but grey in fame. I have not seen him,\nBut Rumour speaks of him as of a prodigy\nPre-eminent in arts, and arms, and wealth,\nAnd high descent. We’ll have him at the wedding.\n\nALESSANDRA.\nI have heard much of this Politian.\nGay, volatile, and giddy—is he not?\nAnd little given to thinking.\n\nDI BROGLIO.\nFar from it, love.\nNo branch, they say, of all philosophy\nSo deep abstruse he has not mastered it.\nLearned as few are learned.\n\nALESSANDRA.\n’Tis very strange!\nI have known men have seen Politian\nAnd sought his company. They speak of him\nAs of one who entered madly into life,\nDrinking the cup of pleasure to the dregs.\n\nCASTIGLIONE.\nRidiculous! Now, _I_ have seen Politian,\nAnd know him well—nor learned nor mirthful he.\nHe is a dreamer and a man shut out\nFrom common passions.",
+      "summary": "A dialogue between characters Castiglione, Di Broglio, and Alessandra regarding the reputation and character of a man named Politian.",
+      "topics": [
+        "character-reputation",
+        "politian-earl-of-leicester",
+        "renaissance-social-dynamics",
+        "drama"
+      ],
+      "aliases": [
+        "the-earl-of-leicester",
+        "Politian"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 43
+      },
+      "tokens": 296
+    },
+    {
+      "id": "edgar-allan-poe_044",
+      "title": "Edgar Allan Poe",
+      "text": "DI BROGLIO.\nChildren, we disagree.\nLet us go forth and taste the fragrant air\nOf the garden. Did I dream, or did I hear\nPolitian was a _melancholy_ man?      [_Exeunt._\nII.\n\nROME.—_A Lady’s apartment, with a window open and looking into a\ngarden._ LALAGE, _in deep mourning, reading at a table on which lie\nsome books and a hand mirror. In the background_ JACINTA (_a servant\nmaid_) _leans carelessly upon a chair_.\n\nLALAGE.\n\nJacinta! is it thou?\n\nJACINTA [_pertly_].\nYes, Ma’am, I’m here.\n\nLALAGE.\nI did not know, Jacinta, you were in waiting.\nSit down!—let not my presence trouble you—\nSit down!—for I am humble, most humble.\n\nJACINTA [_aside_].\n’Tis time.\n\n[JACINTA _seats herself in a side-long manner upon the\nchair, resting her elbows upon the back, and regarding her\nmistress with a contemptuous look_. LALAGE\n_continues to read_.\n\nLALAGE.\n“It in another climate, so he said,\nBore a bright golden flower, but not i’ this soil!”\n\n[_Pauses—turns over some leaves, and resumes._",
+      "summary": "A dramatic scene set in Rome where a mourning woman named Lalage interacts with her contemptuous servant, Jacinta, while reading.",
+      "topics": [
+        "drama-script",
+        "mourning",
+        "class-dynamics",
+        "literature"
+      ],
+      "aliases": [
+        "play-script",
+        "drama-script",
+        "stage-play",
+        "drama-script"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 44
+      },
+      "tokens": 246
+    },
+    {
+      "id": "edgar-allan-poe_045",
+      "title": "Edgar Allan Poe",
+      "text": "“No lingering winters there, nor snow, nor shower—\nBut Ocean ever to refresh mankind\nBreathes the shrill spirit of the western wind.”\nOh, beautiful!—most beautiful!—how like\nTo what my fevered soul doth dream of Heaven!\nO happy land! [_Pauses._] She died!—the maiden died!\nO still more happy maiden who couldst die!\nJacinta!\n\n[JACINTA _returns no answer, and_ LALAGE\n_presently resumes_.\n\nAgain!—a similar tale\nTold of a beauteous dame beyond the sea!\nThus speaketh one Ferdinand in the words of the play—\n“She died full young”—one Bossola answers him—\n“I think not so—her infelicity\nSeemed to have years too many”—Ah luckless lady!\nJacinta!\n\n[_Still no answer._\n\nHere’s a far sterner story,\nBut like—oh, very like in its despair—\nOf that Egyptian queen, winning so easily\nA thousand hearts—losing at length her own.\nShe died. Thus endeth the history—and her maids\nLean over her and weep—two gentle maids\nWith gentle names—Eiros and Charmion!\nRainbow and Dove!——Jacinta!\n\nJACINTA [_pettishly_].\nMadam, what _is_ it?\n\nLALAGE.\nWilt thou, my good Jacinta, be so kind\nAs go down in the library and bring me\nThe Holy Evangelists?\n\nJACINTA.\nPshaw!\n[_Exit._",
+      "summary": "A dramatic dialogue where Lalage recounts tragic stories of beautiful women dying young, comparing them to Jacinta, before asking Jacinta to fetch books from the library.",
+      "topics": [
+        "tragic-heroines",
+        "literary-allusions",
+        "melodrama",
+        "drama"
+      ],
+      "aliases": [
+        "cleopatra",
+        "Egyptian queen",
+        "eiros",
+        "Rainbow",
+        "charmion",
+        "Dove"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 45
+      },
+      "tokens": 288
+    },
+    {
+      "id": "edgar-allan-poe_046",
+      "title": "Edgar Allan Poe",
+      "text": "LALAGE.\nIf there be balm\nFor the wounded spirit in Gilead, it is there!\nDew in the night-time of my bitter trouble\nWill there be found—“dew sweeter far than that\nWhich hangs like chains of pearl on Hermon hill.”\n\n_Re-enter_ JACINTA, _and throws a volume on the table_.\n\nJACINTA.\nThere, Ma’am, ’s the book. Indeed she is very troublesome.\n[_Aside._\n\nLALAGE [_astonished_].\nWhat didst thou say, Jacinta? Have I done aught\nTo grieve thee or to vex thee?—I am sorry.\nFor thou hast served me long, and ever been\nTrustworthy and respectful.\n[_Resumes her reading._\n\nJACINTA.\nI can’t believe\nShe has any more jewels—no—no—she gave me all.  [_Aside._\n\nLALAGE.\nWhat didst thou say, Jacinta? Now I bethink me\nThou hast not spoken lately of thy wedding.\nHow fares good Ugo?—and when is it to be?\nCan I do aught?—is there no farther aid\nThou needest, Jacinta?\n\nJACINTA.\nIs there no _farther_ aid!\nThat’s meant for me. [_Aside._] I’m sure, Madam, you need not\nBe always throwing those jewels in my teeth.\n\nLALAGE.\nJewels! Jacinta,—now indeed, Jacinta,\nI thought not of the jewels.",
+      "summary": "A dramatic dialogue between Lalage and Jacinta where Jacinta expresses resentment regarding jewels through asides, while Lalage remains oblivious to the subtext.",
+      "topics": [
+        "dramatic-dialogue",
+        "interpersonal-conflict",
+        "literary-drama",
+        "fiction"
+      ],
+      "aliases": [
+        "play-script",
+        "drama",
+        "stage-play",
+        "narrative"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 46
+      },
+      "tokens": 267
+    },
+    {
+      "id": "edgar-allan-poe_047",
+      "title": "Edgar Allan Poe",
+      "text": "JACINTA.\nOh! perhaps not!\nBut then I might have sworn it. After all,\nThere’s Ugo says the ring is only paste,\nFor he’s sure the Count Castiglione never\nWould have given a real diamond to such as you;\nAnd at the best I’m certain, Madam, you cannot\nHave use for jewels _now_. But I might have sworn it.   [_Exit._\n\n[LALAGE _bursts into tears, and leans her head upon the\ntable—after a short pause raises it_.\n\nLALAGE.\nPoor Lalage!—and is it come to this?\nThy servant maid!—but courage!—’tis but a viper\nWhom thou hast cherished to sting thee to the soul!\n[_Taking up the mirror._\nHa! here at least’s a friend—too much a friend\nIn earlier days—a friend will not deceive thee.\nFair mirror and true! now tell me (for thou canst)\nA tale—a pretty tale—and heed thou not\nThough it be rife with woe. It answers me.\nIt speaks of sunken eyes, and wasted cheeks,\nAnd Beauty long deceased—remembers me\nOf Joy departed—Hope, the Seraph Hope,\nInurned and entombed!—now, in a tone\nLow, sad, and solemn, but most audible,\nWhispers of early grave untimely yawning\nFor ruined maid. Fair mirror and true!—thou liest not!\n_Thou_ hast no end to gain—no heart to break—\nCastiglione lied who said he loved——\nThou true—he false!—false!—false!",
+      "summary": "A dramatic dialogue between Jacinta and Lalage where Lalage laments her betrayal by Count Castiglione and finds solace in the unflinching reflection of a mirror.",
+      "topics": [
+        "betrayal",
+        "unrequited-love",
+        "melancholy",
+        "drama",
+        "literature"
+      ],
+      "aliases": [
+        "count-castiglione",
+        "the Count",
+        "lalage",
+        "the ruined maid"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 47
+      },
+      "tokens": 304
+    },
+    {
+      "id": "edgar-allan-poe_048",
+      "title": "Edgar Allan Poe",
+      "text": "[_While she speaks, a_ MONK _enters her apartment,\nand approaches unobserved_.\n\nMONK.\nRefuge thou hast,\nSweet daughter! in Heaven. Think of eternal things;\nGive up thy soul to penitence, and pray!\n\nLALAGE [_arising hurriedly_].\nI _cannot_ pray!—My soul is at war with God!\nThe frightful sounds of merriment below\nDisturb my senses—go! I cannot pray—\nThe sweet airs from the garden worry me!\nThy presence grieves me—go!—thy priestly raiment\nFills me with dread—thy ebony crucifix\nWith horror and awe!\nMONK.\nThink of thy precious soul!\n\nLALAGE.\nThink of my early days!—think of my father\nAnd mother in heaven! think of our quiet home,\nAnd the rivulet that ran before the door!\nThink of my little sisters!—think of them!\nAnd think of me!—think of my trusting love\nAnd confidence—his vows—my ruin—think—think\nOf my unspeakable misery!—begone!\nYet stay! yet stay!—what was it thou saidst of prayer\nAnd penitence? Didst thou not speak of faith\nAnd vows before the Throne?\n\nMONK.\nI did.\n\nLALAGE.\n’Tis well.\nThere _is_ a vow were fitting should be made—\nA sacred vow, imperative, and urgent,\nA solemn vow!\n\nMONK.\nDaughter, this zeal is well!",
+      "summary": "A dramatic dialogue between a Monk and Lalage where she expresses spiritual turmoil and grief before proposing a solemn vow.",
+      "topics": [
+        "spiritual-turmoil",
+        "religious-conflict",
+        "gothic-drama",
+        "literature"
+      ],
+      "aliases": [
+        "lalage",
+        "the protagonist",
+        "monk",
+        "the priest"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 48
+      },
+      "tokens": 283
+    },
+    {
+      "id": "edgar-allan-poe_049",
+      "title": "Edgar Allan Poe",
+      "text": "LALAGE.\nFather, this zeal is anything but well!\nHast thou a crucifix fit for this thing?\nA crucifix whereon to register\nThis sacred vow?\n[_He hands her his own._\nNot that—Oh! no!—no!—no!\n\n[_Shuddering._\n\nNot that! Not that!—I tell thee, holy man,\nThy raiments and thy ebony cross affright me!\nStand back! I have a crucifix myself,—\n_I_ have a crucifix! Methinks ’twere fitting\nThe deed—the vow—the symbol of the deed—\nAnd the deed’s register should tally, father!\n[_Draws a cross-handled dagger, and raises it on high._\nBehold the cross wherewith a vow like mine\nIs written in heaven!\n\nMONK.\n\nThy words are madness, daughter,\nAnd speak a purpose unholy—thy lips are livid—\nThine eyes are wild—tempt not the wrath divine!\nPause ere too late!—oh be not—be not rash!\nSwear not the oath—oh swear it not!\n\nLALAGE.\n’Tis sworn!\nIII.\n\n_An Apartment in a Palace._ POLITIAN _and_ Baldazzar.\n\nBALDAZZAR.\nArouse thee now, Politian!\nThou must not—nay indeed, indeed, thou shalt not\nGive way unto these humours. Be thyself!\nShake off the idle fancies that beset thee,\nAnd live, for now thou diest!\n\nPOLITIAN.\nNot so, Baldazzar!\n_Surely_ I live.\n\nBALDAZZAR.\nPolitian, it doth grieve me\nTo see thee thus.",
+      "summary": "A dramatic dialogue between Lalage and a Monk involving a dark vow and a cross-handled dagger, followed by a scene transition to a conversation between Baldazzar and Politian.",
+      "topics": [
+        "dramatic-dialogue",
+        "tragic-drama",
+        "literature",
+        "creative-writing"
+      ],
+      "aliases": [
+        "play-script",
+        "dramatic dialogue",
+        "dramatic-text",
+        "narrative"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 49
+      },
+      "tokens": 297
+    },
+    {
+      "id": "edgar-allan-poe_050",
+      "title": "Edgar Allan Poe",
+      "text": "POLITIAN.\nBaldazzar, it doth grieve me\nTo give thee cause for grief, my honoured friend.\nCommand me, Sir! what wouldst thou have me do?\nAt thy behest I will shake off that nature\nWhich from my forefathers I did inherit,\nWhich with my mother’s milk I did imbibe,\nAnd be no more Politian, but some other.\nCommand me, Sir!\n\nBALDAZZAR.\nTo the field then—to the field—\nTo the senate or the field.\n\nPOLITIAN.\nAlas! alas!\nThere is an imp would follow me even there!\nThere is an imp _hath_ followed me even there!\nThere is——what voice was that?\n\nBALDAZZAR.\nI heard it not.\nI heard not any voice except thine own,\nAnd the echo of thine own.\n\nPOLITIAN.\nThen I but dreamed.\n\nBALDAZZAR.\nGive not thy soul to dreams: the camp—the court\nBefit thee—Fame awaits thee—Glory calls—\nAnd her the trumpet-tongued thou wilt not hear\nIn hearkening to imaginary sounds\nAnd phantom voices.\n\nPOLITIAN.\nIt _is_ a phantom voice!\nDidst thou not hear it _then_?\n\nBALDAZZAR.\nI heard it not.",
+      "summary": "A dialogue between Politian and Baldazzar where Politian expresses distress over hearing a phantom voice, while Baldazzar urges him to focus on duty and glory.",
+      "topics": [
+        "phantom-voices",
+        "duty-vs-delusion",
+        "drama",
+        "literature"
+      ],
+      "aliases": [
+        "politian",
+        "the protagonist",
+        "baldazzar",
+        "the companion"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 50
+      },
+      "tokens": 240
+    },
+    {
+      "id": "edgar-allan-poe_051",
+      "title": "Edgar Allan Poe",
+      "text": "POLITIAN.\nThou heardst it not!——Baldazzar, speak no more\nTo me, Politian, of thy camps and courts.\nOh! I am sick, sick, sick, even unto death,\nOf the hollow and high-sounding vanities\nOf the populous Earth! Bear with me yet awhile!\nWe have been boys together—school-fellows—\nAnd now are friends—yet shall not be so long—\nFor in the eternal city thou shalt do me\nA kind and gentle office, and a Power—\nA Power august, benignant and supreme—\nShall then absolve thee of all farther duties\nUnto thy friend.\n\nBALDAZZAR.\nThou speakest a fearful riddle;\nI _will_ not understand.\n\nPOLITIAN.\nYet now as Fate\nApproaches, and the Hours are breathing low,\nThe sands of Time are changed to golden grains,\nAnd dazzle me, Baldazzar. Alas! alas!\nI _cannot_ die, having within my heart\nSo keen a relish for the beautiful\nAs hath been kindled within it. Methinks the air\nIs balmier now than it was wont to be—\nRich melodies are floating in the winds—\nA rarer loveliness bedecks the earth—\nAnd with a holier lustre the quiet moon\nSitteth in heaven.—Hist! hist! thou canst not say\nThou hearest not _now_, Baldazzar?\n\nBALDAZZAR.\nIndeed I hear not.",
+      "summary": "A dramatic dialogue between Politian and Baldazzar in which Politian expresses a profound weariness of the world and a sensory appreciation for beauty despite approaching death.",
+      "topics": [
+        "existential-weariness",
+        "aesthetic-appreciation",
+        "mortality",
+        "poetry",
+        "literature"
+      ],
+      "aliases": [
+        "politian-and-baldazzar",
+        "dialogue between friends"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 51
+      },
+      "tokens": 282
+    },
+    {
+      "id": "edgar-allan-poe_052",
+      "title": "Edgar Allan Poe",
+      "text": "POLITIAN.\nNot hear it!—listen now—listen!—the faintest sound,\nAnd yet the sweetest that ear ever heard!\nA lady’s voice!—and sorrow in the tone!\nBaldazzar, it oppresses me like a spell!\nAgain!—again!—how solemnly it falls\nInto my heart of hearts! that eloquent voice\nSurely I never heard—yet it were well\nHad I _but_ heard it with its thrilling tones\nIn earlier days!\nBALDAZZAR.\nI myself hear it now.\nBe still!—the voice, if I mistake not greatly,\nProceeds from yonder lattice—which you may see\nVery plainly through the window—it belongs,\nDoes it not? unto this palace of the Duke.\nThe singer is undoubtedly beneath\nThe roof of his Excellency—and perhaps\nIs even that Alessandra of whom he spoke\nAs the betrothed of Castiglione,\nHis son and heir.\n\nPOLITIAN.\nBe still!—it comes again!\n\n_Voice_ [_very faintly_].\n\n“And is thy heart so strong\nAs for to leave me thus,\nWho hath loved thee so long,\nIn wealth and woe among?\nAnd is thy heart so strong\nAs for to leave me thus?\nSay nay—say nay!”\n\nBALDAZZAR.\nThe song is English, and I oft have heard it\nIn merry England—never so plaintively—\nHist! hist! it comes again!\n\n_Voice_ [_more loudly_].",
+      "summary": "Characters Politian and Baldazzar react to hearing a plaintive, sorrowful female voice singing an English song from a nearby palace.",
+      "topics": [
+        "melancholy-song",
+        "palace-intrigue",
+        "drama",
+        "literature"
+      ],
+      "aliases": [
+        "alessandra",
+        "the singer",
+        "castiglione",
+        "the heir"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 52
+      },
+      "tokens": 284
+    },
+    {
+      "id": "edgar-allan-poe_053",
+      "title": "Edgar Allan Poe",
+      "text": "“Is it so strong\nAs for to leave me thus,\nWho hath loved thee so long,\nIn wealth and woe among?\nAnd is thy heart so strong\nAs for to leave me thus?\nSay nay—say nay!”\n\nBALDAZZAR.\n’Tis hushed, and all is still!\n\nPOLITIAN.\nAll _is not_ still.\n\nBALDAZZAR.\nLet us go down.\n\nPOLITIAN.\nGo down, Baldazzar, go!\n\nBALDAZZAR.\nThe hour is growing late—the Duke awaits us,—\nThy presence is expected in the hall\nBelow. What ails thee, Earl Politian?\n\n_Voice_ [_distinctly_].\n\n“Who hath loved thee so long,\nIn wealth and woe among,\nAnd is thy heart so strong?\nSay nay—say nay!”\n\nBALDAZZAR.\nLet us descend!—’tis time. Politian, give\nThese fancies to the wind. Remember, pray,\nYour bearing lately savoured much of rudeness\nUnto the Duke. Arouse thee! and remember!\n\nPOLITIAN.\nRemember? I do. Lead on! I _do_ remember.\n[_Going._\nLet us descend. Believe me, I would give,\nFreely would give, the broad lands of my earldom\nTo look upon the face hidden by yon lattice—\n“To gaze upon that veiled face, and hear\nOnce more that silent tongue.”\n\nBALDAZZAR.\nLet me beg you, sir,\nDescend with me—the Duke may be offended.\nLet us go down, I pray you.\n\n_Voice_ [_loudly_].\n“Say nay!—say nay!”",
+      "summary": "A dramatic dialogue between Baldazzar and Earl Politian, interrupted by a mysterious, recurring voice that haunts Politian's thoughts.",
+      "topics": [
+        "gothic-drama",
+        "mystery-voice",
+        "edgar-allan-poe",
+        "literature"
+      ],
+      "aliases": [
+        "politian",
+        "Earl Politian",
+        "baldazzar",
+        "Baldazzar"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 53
+      },
+      "tokens": 290
+    },
+    {
+      "id": "edgar-allan-poe_054",
+      "title": "Edgar Allan Poe",
+      "text": "POLITIAN [_aside_].\n’Tis strange!—’tis very strange—methought the voice\nChimed in with my desires and bade me stay!\n[_Approaching the window._\nSweet voice! I heed thee, and will surely stay.\nNow be this Fancy, by Heaven, or be it Fate,\nStill will I not descend. Baldazzar, make\nApology unto the Duke for me;\nI go not down to-night.\n\nBALDAZZAR.\nYour lordship’s pleasure\nShall be attended to. Good night, Politian.\n\nPOLITIAN.\nGood night, my friend, good night.\nIV.\n\n_The Gardens of a Palace—Moonlight._ LALAGE _and_ POLITIAN.\n\nLALAGE.\nAnd dost thou speak of love\nTo _me_, Politian?—dost thou speak of love\nTo Lalage?—ah woe—ah woe is me!\nThis mockery is most cruel—most cruel indeed!",
+      "summary": "A dramatic dialogue between characters Politian, Baldazzar, and Lalage involving a refusal to attend a gathering and a reaction to a discussion of love.",
+      "topics": [
+        "romantic-conflict",
+        "dramatic-dialogue",
+        "literature",
+        "fiction"
+      ],
+      "aliases": [
+        "politian",
+        "the protagonist",
+        "lalage",
+        "the female lead"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 54
+      },
+      "tokens": 170
+    },
+    {
+      "id": "edgar-allan-poe_055",
+      "title": "Edgar Allan Poe",
+      "text": "POLITIAN.\nWeep not! oh, sob not thus!—thy bitter tears\nWill madden me. Oh mourn not, Lalage—\nBe comforted! I know—I know it all,\nAnd _still_ I speak of love. Look at me, brightest,\nAnd beautiful Lalage!—turn here thine eyes!\nThou askest me if I could speak of love,\nKnowing what I know, and seeing what I have seen.\nThou askest me that—and thus I answer thee—\nThus on my bended knee I answer thee.\n[_Kneeling._\nSweet Lalage, _I love thee—love thee—love thee_;\nThro’ good and ill—thro’ weal and woe I _love thee_.\nNot mother, with her first-born on her knee,\nThrills with intenser love than I for thee.\nNot on God’s altar, in any time or clime,\nBurned there a holier fire than burneth now\nWithin my spirit for _thee_. And do I love?\n[_Arising._\nEven for thy woes I love thee—even for thy woes—\nThy beauty and thy woes.\n\nLALAGE.\nAlas, proud Earl,\nThou dost forget thyself, remembering me!\nHow, in thy father’s halls, among the maidens\nPure and reproachless of thy princely line,\nCould the dishonoured Lalage abide?\nThy wife, and with a tainted memory—\nMy seared and blighted name, how would it tally\nWith the ancestral honours of thy house,\nAnd with thy glory?",
+      "summary": "A dramatic dialogue between the Politian and Lalage in which the Politian professes an intense, sacrificial love despite her perceived dishonor and social standing.",
+      "topics": [
+        "unrequited-love",
+        "social-dishonor",
+        "romantic-tragedy",
+        "victorian-literature",
+        "poetry"
+      ],
+      "aliases": [
+        "the-politian",
+        "Politian",
+        "lalage",
+        "Lalage"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 55
+      },
+      "tokens": 290
+    },
+    {
+      "id": "edgar-allan-poe_056",
+      "title": "Edgar Allan Poe",
+      "text": "POLITIAN.\nSpeak not to me of glory!\nI hate—I loathe the name; I do abhor\nThe unsatisfactory and ideal thing.\nArt thou not Lalage, and I Politian?\nDo I not love—art thou not beautiful—\nWhat need we more? Ha! glory!—now speak not of it.\nBy all I hold most sacred and most solemn—\nBy all my wishes now—my fears hereafter—\nBy all I scorn on earth and hope in heaven—\nThere is no deed I would more glory in,\nThan in thy cause to scoff at this same glory\nAnd trample it under foot. What matters it—\nWhat matters it, my fairest, and my best,\nThat we go down unhonoured and forgotten\nInto the dust—so we descend together.\nDescend together—and then—and then perchance——\n\nLALAGE.\nWhy dost thou pause, Politian?\n\nPOLITIAN.\nAnd then perchance\n_Arise_ together, Lalage, and roam\nThe starry and quiet dwellings of the blest,\nAnd still——\n\nLALAGE.\nWhy dost thou pause, Politian?\n\nPOLITIAN.\nAnd still _together—together_.\n\nLALAGE.\nNow, Earl of Leicester!\nThou _lovest_ me, and in my heart of hearts\nI feel thou lovest me truly.\n\nPOLITIAN.\nOh, Lalage!\n[_Throwing himself upon his knee._\nAnd lovest thou _me_?",
+      "summary": "A dramatic dialogue between characters Politian and Lalage in which Politian rejects worldly glory in favor of their shared love and a potential afterlife together.",
+      "topics": [
+        "romantic-devotion",
+        "rejection-of-glory",
+        "poetic-drama",
+        "literature"
+      ],
+      "aliases": [
+        "politian",
+        "Earl of Leicester",
+        "lalage",
+        "the beautiful"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 56
+      },
+      "tokens": 272
+    },
+    {
+      "id": "edgar-allan-poe_057",
+      "title": "Edgar Allan Poe",
+      "text": "LALAGE.\nHist! hush! within the gloom\nOf yonder trees methought a figure pass’d—\nA spectral figure, solemn, and slow, and noiseless—\nLike the grim shadow Conscience, solemn and noiseless.\n[_Walks across and returns._\nI was mistaken—’twas but a giant bough\nStirred by the autumn wind, Politian!\n\nPOLITIAN.\nMy Lalage—my love! why art thou moved?\nWhy dost thou turn so pale? Not Conscience’ self,\nFar less a shadow which thou likenest to it,\nShould shake the firm spirit thus. But the night wind\nIs chilly—and these melancholy boughs\nThrow over all things a gloom.\nLALAGE.\nPolitian!\nThou speakest to me of love. Knowest thou the land\nWith which all tongues are busy—a land new found—\nMiraculously found by one of Genoa—\nA thousand leagues within the golden west?\nA fairy-land of flowers, and fruit, and sunshine,\nAnd crystal lakes, and over-arching forests,\nAnd mountains, around whose towering summits the winds\nOf Heaven untrammelled flow—which air to breathe\nIs Happiness now, and will be Freedom hereafter\nIn days that are to come?",
+      "summary": "A dialogue between Lalage and Politian where Lalage expresses fear of a spectral figure before transitioning into a poetic description of a distant, utopian land.",
+      "topics": [
+        "utopian-land",
+        "poetic-dialogue",
+        "romantic-literature",
+        "gothic-fiction"
+      ],
+      "aliases": [
+        "the-new-world",
+        "a land new found",
+        "the-west",
+        "golden west"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 57
+      },
+      "tokens": 258
+    },
+    {
+      "id": "edgar-allan-poe_058",
+      "title": "Edgar Allan Poe",
+      "text": "POLITIAN.\nO, wilt thou—wilt thou\nFly to that Paradise—my Lalage, wilt thou\nFly thither with me? There Care shall be forgotten,\nAnd Sorrow shall be no more, and Eros be all.\nAnd life shall then be mine, for I will live\nFor thee, and in thine eyes—and thou shalt be\nNo more a mourner—but the radiant Joys\nShall wait upon thee, and the angel Hope\nAttend thee ever; and I will kneel to thee\nAnd worship thee, and call thee my beloved,\nMy own, my beautiful, my love, my wife,\nMy all;—oh, wilt thou—wilt thou, Lalage,\nFly thither with me?\n\nLALAGE.\nA deed is to be done—\nCastiglione lives!\n\nPOLITIAN.\nAnd he shall die!\n[_Exit._",
+      "summary": "A dramatic dialogue between Politian and Lalage where Politian proposes an escape to paradise, only for Lalage to reveal a plot involving Castiglione.",
+      "topics": [
+        "romantic-proposal",
+        "conspiracy",
+        "drama",
+        "literature"
+      ],
+      "aliases": [
+        "lalage",
+        "the female protagonist",
+        "politian",
+        "the male protagonist"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 58
+      },
+      "tokens": 157
+    },
+    {
+      "id": "edgar-allan-poe_059",
+      "title": "Edgar Allan Poe",
+      "text": "LALAGE [_after a pause_].\nAnd—he—shall—die!——alas!\nCastiglione die? Who spoke the words?\nWhere am I?—what was it he said?—Politian!\nThou _art_ not gone—thou art not _gone_, Politian!\nI _feel_ thou art not gone—yet dare not look,\nLest I behold thee not; thou _couldst_ not go\nWith those words upon thy lips—O, speak to me!\nAnd let me hear thy voice—one word—one word,\nTo say thou art not gone,—one little sentence,\nTo say how thou dost scorn—how thou dost hate\nMy womanly weakness. Ha! ha! thou _art_ not gone—\nO speak to me! I _knew_ thou wouldst not go!\nI knew thou wouldst not, couldst not, _durst_ not go.\nVillain, thou _art_ not gone—thou mockest me!\nAnd thus I clutch thee—thus!——He is gone, he is gone—\nGone—gone. Where am I?——’tis well—’tis very well!\nSo that the blade be keen—the blow be sure,\n’Tis well, ’tis _very_ well—alas! alas!\nV.\n\n_The Suburbs._ POLITIAN _alone_.",
+      "summary": "A dramatic monologue by the character Lalage expressing grief, denial, and madness following the departure of Politian, ending with her preparation for a violent act.",
+      "topics": [
+        "lalage",
+        "politian",
+        "grief",
+        "madness",
+        "drama",
+        "literature"
+      ],
+      "aliases": [
+        "lalage-monologue",
+        "LALAGE",
+        "the-suburbs-scene",
+        "V. The Suburbs"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 59
+      },
+      "tokens": 224
+    },
+    {
+      "id": "edgar-allan-poe_060",
+      "title": "Edgar Allan Poe",
+      "text": "POLITIAN.\nThis weakness grows upon me. I am faint,\nAnd much I fear me ill—it will not do\nTo die ere I have lived!—Stay—stay thy hand,\nO Azrael, yet awhile!—Prince of the Powers\nOf Darkness and the Tomb, O pity me!\nO pity me! let me not perish now,\nIn the budding of my Paradisal Hope!\nGive me to live yet—yet a little while:\n’Tis I who pray for life—I who so late\nDemanded but to die!—what sayeth the Count?\n\n_Enter_ BALDAZZAR.\n\nBALDAZZAR.\nThat, knowing no cause of quarrel or of feud\nBetween the Earl Politian and himself,\nHe doth decline your cartel.\n\nPOLITIAN.\n_What_ didst thou say?\nWhat answer was it you brought me, good Baldazzar?\nWith what excessive fragrance the zephyr comes\nLaden from yonder bowers!—a fairer day,\nOr one more worthy Italy, methinks\nNo mortal eyes have seen!—_what_ said the Count?\n\nBALDAZZAR.\nThat he, Castiglione, not being aware\nOf any feud existing, or any cause\nOf quarrel between your lordship and himself,\nCannot accept the challenge.\n\nPOLITIAN.\nIt is most true—\nAll this is very true. When saw you, Sir,\nWhen saw you now, Baldazzar, in the frigid\nUngenial Britain which we left so lately,\nA heaven so calm as this—so utterly free\nFrom the evil taint of clouds?—and he did _say_?",
+      "summary": "A dramatic dialogue between Politian and Baldazzar where Politian, feeling physically weak, asks for the response of a Count regarding a challenge or duel.",
+      "topics": [
+        "duel-refusal",
+        "impending-death",
+        "drama",
+        "literature"
+      ],
+      "aliases": [
+        "cartel",
+        "challenge",
+        "feud",
+        "quarrel"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 60
+      },
+      "tokens": 303
+    },
+    {
+      "id": "edgar-allan-poe_061",
+      "title": "Edgar Allan Poe",
+      "text": "BALDAZZAR.\nNo more, my Lord, than I have told you, Sir\nThe Count Castiglione will not fight,\nHaving no cause for quarrel.\n\nPOLITIAN.\nNow this is true—\nAll very true. Thou art my friend, Baldazzar,\nAnd I have not forgotten it—thou’lt do me\nA piece of service; wilt thou go back and say\nUnto this man, that I, the Earl of Leicester,\nHold him a villain?—thus much, I pr’ythee, say\nUnto the Count—it is exceeding just\nHe should have cause for quarrel.\n\nBALDAZZAR.\nMy lord!—my friend!——\n\nPOLITIAN [_aside_].\n’Tis he—he comes himself! [_aloud_] thou reasonest well.\nI know what thou wouldst say—not send the message—\nWell!—I will think of it—I will not send it.\nNow pr’ythee, leave me—hither doth come a person\nWith whom affairs of a most private nature\nI would adjust.\n\nBALDAZZAR.\nI go—to-morrow we meet,\nDo we not?—at the Vatican.\n\nPOLITIAN.\nAt the Vatican.\n[_Exit_ BALDAZZAR.\n\n_Enter_ CASTIGLIONE.\n\nCASTIGLIONE.\nThe Earl of Leicester here!\n\nPOLITIAN.\nI _am_ the Earl of Leicester, and thou seest,\nDost thou not? that I am here.",
+      "summary": "A dramatic dialogue between Baldazzar and Politian (the Earl of Leicester) regarding a provocation intended for Count Castiglione, ending with the arrival of Castiglione.",
+      "topics": [
+        "dramatic-dialogue",
+        "aristocratic-conflict",
+        "literature",
+        "drama"
+      ],
+      "aliases": [
+        "politian",
+        "Earl of Leicester",
+        "castiglione",
+        "The Count"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 61
+      },
+      "tokens": 256
+    },
+    {
+      "id": "edgar-allan-poe_062",
+      "title": "Edgar Allan Poe",
+      "text": "CASTIGLIONE.\nMy Lord, some strange,\nSome singular mistake—misunderstanding—\nHath without doubt arisen: thou hast been urged\nThereby, in heat of anger, to address\nSome words most unaccountable, in writing,\nTo me, Castiglione; the bearer being\nBaldazzar, Duke of Surrey. I am aware\nOf nothing which might warrant thee in this thing,\nHaving given thee no offence. Ha!—am I right?\n’Twas a mistake?—undoubtedly—we all\nDo err at times.\n\nPOLITIAN.\nDraw, villain, and prate no more!\n\nCASTIGLIONE.\nHa!—draw?—and villain? have at thee then at once,\nProud Earl!\n[_Draws._\n\nPOLITIAN [_drawing_].\nThus to the expiatory tomb,\nUntimely sepulchre, I do devote thee\nIn the name of Lalage!\n\nCASTIGLIONE [_letting fall his sword and recoiling to the\nextremity of the stage_].\n\nOf Lalage!\nHold off—thy sacred hand!—avaunt, I say!\nAvaunt—I will not fight thee—indeed I dare not.\n\nPOLITIAN.\nThou wilt not fight with me didst say, Sir Count?\nShall I be baffled thus?—now this is well;\nDidst say thou _darest_ not? Ha!\n\nCASTIGLIONE.\nI dare not—dare not—\nHold off thy hand—with that beloved name\nSo fresh upon thy lips I will not fight thee—\nI cannot—dare not.\n\nPOLITIAN.\nNow by my halidom\nI do believe thee!—coward, I do believe thee!\n\nCASTIGLIONE.\nHa!—coward!—this may not be!",
+      "summary": "A dramatic dialogue between Castiglione and Politian where a misunderstanding leads to a confrontation, which Castiglione refuses to engage in due to the mention of 'Lalage'.",
+      "topics": [
+        "dramatic-confrontation",
+        "honor-and-cowardice",
+        "literary-drama",
+        "fiction"
+      ],
+      "aliases": [
+        "castiglione",
+        "Sir Count",
+        "politian",
+        "Proud Earl"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 62
+      },
+      "tokens": 313
+    },
+    {
+      "id": "edgar-allan-poe_063",
+      "title": "Edgar Allan Poe",
+      "text": "[_Clutches his sword, and staggers towards_ POLITIAN,\n_but his purpose is changed before reaching him, and he falls\nupon his knee at the feet of the_ Earl.\n\nAlas! my Lord,\nIt is—it is—most true. In such a cause\nI am the veriest coward. O pity me!\n\nPOLITIAN [_greatly softened_].\nAlas!—I do—indeed I pity thee.\n\nCASTIGLIONE.\nAnd Lalage——\n\nPOLITIAN.\n_Scoundrel!—arise and die!_\n\nCASTIGLIONE.\nIt needeth not be—thus—thus—O let me die\nThus on my bended knee. It were most fitting\nThat in this deep humiliation I perish.\nFor in the fight I will not raise a hand\nAgainst thee, Earl of Leicester. Strike thou home—\n[_Baring his bosom._\nHere is no let or hindrance to thy weapon—\nStrike home. I _will not_ fight thee.\n\nPOLITIAN.\nNow s’Death and Hell!\nAm I not—am I not sorely—grievously tempted\nTo take thee at thy word? But mark me, Sir,\nThink not to fly me thus. Do thou prepare\nFor public insult in the streets—before\nThe eyes of the citizens. I’ll follow thee—\nLike an avenging spirit I’ll follow thee\nEven unto death. Before those whom thou lovest—\nBefore all Rome I’ll taunt thee, villain,—I’ll taunt thee,\nDost hear? with _cowardice_—thou _wilt not_ fight me?\nThou liest! thou _shalt_!      [_Exit._",
+      "summary": "A dramatic dialogue where Castiglione refuses to fight the Earl of Leicester, choosing instead to die in humiliation, prompting a vow of public vengeance from Politian.",
+      "topics": [
+        "duel-refusal",
+        "honor-and-shame",
+        "drama",
+        "literature"
+      ],
+      "aliases": [
+        "castiglione",
+        "the protagonist",
+        "politian",
+        "the antagonist"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 63
+      },
+      "tokens": 300
+    },
+    {
+      "id": "edgar-allan-poe_064",
+      "title": "Edgar Allan Poe",
+      "text": "CASTIGLIONE.\nNow this indeed is just!\nMost righteous, and most just, avenging Heaven!\nPOEMS WRITTEN IN YOUTH.\n\nAL AARAAF.\n\nPART I.\n\nO! nothing earthly save the ray\n(Thrown back from flowers) of Beauty’s eye,\nAs in those gardens where the day\nSprings from the gems of Circassy—\nO! nothing earthly save the thrill\nOf melody in woodland rill—\nOr (music of the passion-hearted)\nJoy’s voice so peacefully departed\nThat, like the murmur in the shell,\nIts echo dwelleth and will dwell—\nOh, nothing of the dross of ours—\nYet all the beauty—all the flowers\nThat list our Love, and deck our bowers—\nAdorn yon world afar, afar—\nThe wandering star.\n\n’Twas a sweet time for Nesace—for there\nHer world lay lolling on the golden air,\nNear four bright suns—a temporary rest—\nAn oasis in desert of the blest.\nAway—away—’mid seas of rays that roll\nEmpyrean splendour o’er th’ unchained soul—\nThe soul that scares (the billows are so dense)\nCan struggle to its destined eminence—\nTo distant spheres, from time to time, she rode,\nAnd late to ours, the favoured one of God—\nBut, now, the ruler of an anchored realm,\nShe throws aside the sceptre—leaves the helm,\nAnd, amid incense and high spiritual hymns,\nLaves in quadruple light her angel limbs.",
+      "summary": "This chunk contains the beginning of Edgar Allan Poe's poem 'Al Aaraaf,' featuring lyrical descriptions of a celestial, beautiful realm and the transition of a divine figure.",
+      "topics": [
+        "al-aaraaf",
+        "transcendental-beauty",
+        "poetry",
+        "romanticism"
+      ],
+      "aliases": [
+        "al-aaraaf",
+        "the spaces between heaven and hell"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 64
+      },
+      "tokens": 306
+    },
+    {
+      "id": "edgar-allan-poe_065",
+      "title": "Edgar Allan Poe",
+      "text": "Now happiest, loveliest in yon lovely Earth,\nWhence sprang the “Idea of Beauty” into birth,\n(Falling in wreaths thro’ many a startled star,\nLike woman’s hair ’mid pearls, until, afar,\nIt lit on hills Achaian, and there dwelt)\nShe looked into Infinity—and knelt.\nRich clouds, for canopies, about her curled—\nFit emblems of the model of her world—\nSeen but in beauty—not impeding sight\nOf other beauty glittering thro’ the light—\nA wreath that twined each starry form around,\nAnd all the opaled air in colour bound.",
+      "summary": "A poetic passage describing the celestial origin and descent of the 'Idea of Beauty' onto the hills of Achaia.",
+      "topics": [
+        "idea-of-beauty",
+        "celestial-descent",
+        "poetic-mythology",
+        "literature"
+      ],
+      "aliases": [
+        "the-concept-of-beauty",
+        "Idea of Beauty",
+        "ancient-greece",
+        "Achaian"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 65
+      },
+      "tokens": 128
+    },
+    {
+      "id": "edgar-allan-poe_066",
+      "title": "Edgar Allan Poe",
+      "text": "All hurriedly she knelt upon a bed\nOf flowers: of lilies such as reared the head\nOn the fair Capo Deucato, and sprang\nSo eagerly around about to hang\nUpon the flying footsteps of——deep pride—\nOf her who loved a mortal—and so died.\nThe Sephalica, budding with young bees,\nUpreared its purple stem around her knees:\nAnd gemmy flower, of Trebizond misnamed—\nInmate of highest stars, where erst it shamed\nAll other loveliness: its honied dew\n(The fabled nectar that the heathen knew),\nDeliriously sweet, was dropp’d from heaven,\nAnd fell on gardens of the unforgiven\nIn Trebizond—and on a sunny flower\nSo like its own above that, to this hour,\nIt still remaineth, torturing the bee\nWith madness, and unwonted reverie:\nIn heaven, and all its environs, the leaf\nAnd blossom of the fairy plant, in grief\nDisconsolate linger—grief that hangs her head,\nRepenting follies that full long have fled,\nHeaving her white breast to the balmy air,\nLike guilty beauty, chastened, and more fair:\nNyctanthes too, as sacred as the light\nShe fears to perfume, perfuming the night:\nAnd Clytia pondering between many a sun,\nWhile pettish tears adown her petals run:\nAnd that aspiring flower that sprang on Earth—\nAnd died, ere scarce exalted into birth,\nBursting its odorous heart in spirit to wing\nIts way to heaven, from garden of a king:\nAnd Valisnerian lotus thither flown\nFrom struggling with the waters of the Rhone:\nAnd thy most lovely purple perfume, Zante!\nIsola d’oro!—Fior di Levante!\nAnd the Nelumbo bud that floats for ever;\nWith Indian Cupid down the holy river—\nFair flowers, and fairy! to whose care is given\nTo bear the Goddess’ song, in odours, up to heaven:",
+      "summary": "A poetic passage describing various mythical and real flowers, personifying them through themes of grief, divinity, and celestial connection.",
+      "topics": [
+        "mythical-botany",
+        "poetic-personification",
+        "romantic-poetry",
+        "literature"
+      ],
+      "aliases": [
+        "nyctanthes",
+        "Night-flowering jasmine",
+        "nelumbo",
+        "Lotus"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 66
+      },
+      "tokens": 413
+    },
+    {
+      "id": "edgar-allan-poe_067",
+      "title": "Edgar Allan Poe",
+      "text": "Spirit! that dwellest where,\nIn the deep sky,\nThe terrible and fair\nIn beauty vie!\nBeyond the line of blue—\nThe boundary of the star\nWhich turneth at the view\nOf thy barrier and thy bar—\nOf the barrier overgone\nBy the comets who were cast\nFrom their pride, and from their throne\nTo be drudges till the last—\nTo be carriers of fire\n(The red fire of their heart)\nWith speed that may not tire\nAnd with pain that shall not part—\nWho livest—_that_ we know—\nIn Eternity—we feel—\nBut the shadow of whose brow\nWhat spirit shall reveal?\nTho’ the beings whom thy Nesace,\nThy messenger hath known,\nHave dreamed for thy Infinity\nA model of their own—\nThy will is done, O God!\nThe star hath ridden high\nThro’ many a tempest, but she rode\nBeneath thy burning eye;\nAnd here, in thought, to thee—\nIn thought that can alone\nAscend thy empire and so be\nA partner of thy throne—\nBy winged Fantasy,\nMy embassy is given,\nTill secrecy shall knowledge be\nIn the environs of Heaven.”",
+      "summary": "A poetic address to a celestial or divine spirit, contemplating the vastness of eternity, the movement of comets, and the limitations of human thought in reaching the divine.",
+      "topics": [
+        "celestial-spirituality",
+        "divine-infinity",
+        "cosmic-phenomena",
+        "romantic-poetry",
+        "literature"
+      ],
+      "aliases": [
+        "the-divine",
+        "Spirit",
+        "the-heavens",
+        "environs of Heaven"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 67
+      },
+      "tokens": 240
+    },
+    {
+      "id": "edgar-allan-poe_068",
+      "title": "Edgar Allan Poe",
+      "text": "She ceased—and buried then her burning cheek\nAbashed, amid the lilies there, to seek\nA shelter from the fervour of His eye;\nFor the stars trembled at the Deity.\nShe stirred not—breathed not—for a voice was there\nHow solemnly pervading the calm air!\nA sound of silence on the startled ear\nWhich dreamy poets name “the music of the sphere.”\nOurs is a world of words: Quiet we call\n“Silence”—which is the merest word of all.\nAll Nature speaks, and e’en ideal things\nFlap shadowy sounds from visionary wings—\nBut ah! not so when, thus, in realms on high\nThe eternal voice of God is passing by,\nAnd the red winds are withering in the sky!",
+      "summary": "A poetic description of a divine or celestial presence that causes a profound, transcendental silence, contrasting human language with the 'music of the spheres'.",
+      "topics": [
+        "music-of-the-spheres",
+        "divine-presence",
+        "transcendental-silence",
+        "poetry",
+        "literature"
+      ],
+      "aliases": [
+        "musica-universalis",
+        "the music of the sphere",
+        "divinity",
+        "the Deity"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 68
+      },
+      "tokens": 158
+    },
+    {
+      "id": "edgar-allan-poe_069",
+      "title": "Edgar Allan Poe",
+      "text": "“What tho’ in worlds which sightless cycles run,\nLinked to a little system, and one sun—\nWhere all my love is folly, and the crowd\nStill think my terrors but the thunder-cloud,\nThe storm, the earthquake, and the ocean-wrath—\n(Ah! will they cross me in my angrier path?)\nWhat tho’ in worlds which own a single sun\nThe sands of Time grow dimmer as they run,\nYet thine is my resplendency, so given\nTo bear my secrets thro’ the upper heaven.\nLeave tenantless thy crystal home, and fly,\nWith all thy train, athwart the moony sky—\nApart—like fire-flies in Sicilian night,\nAnd wing to other worlds another light!\nDivulge the secrets of thy embassy\nTo the proud orbs that twinkle—and so be\nTo ev’ry heart a barrier and a ban\nLest the stars totter in the guilt of man!”\n\nUp rose the maiden in the yellow night,\nThe single-mooned eve!—on Earth we plight\nOur faith to one love—and one moon adore—\nThe birth-place of young Beauty had no more.\nAs sprang that yellow star from downy hours,\nUp rose the maiden from her shrine of flowers,\nAnd bent o’er sheeny mountain and dim plain\nHer way—but left not yet her Therasæan reign.\nPART II.",
+      "summary": "A poetic passage describing a celestial or mystical transition involving a maiden rising from a shrine and a shift in cosmic light.",
+      "topics": [
+        "celestial-imagery",
+        "romantic-melancholy",
+        "poetry",
+        "literature"
+      ],
+      "aliases": [
+        "romantic-poetry",
+        "verse",
+        "cosmic-metaphor",
+        "celestial-imagery"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 69
+      },
+      "tokens": 280
+    },
+    {
+      "id": "edgar-allan-poe_070",
+      "title": "Edgar Allan Poe",
+      "text": "High on a mountain of enamelled head—\nSuch as the drowsy shepherd on his bed\nOf giant pasturage lying at his ease,\nRaising his heavy eyelid, starts and sees\nWith many a muttered “hope to be forgiven”\nWhat time the moon is quadrated in heaven—\nOf rosy head, that towering far away\nInto the sunlit ether, caught the ray\nOf sunken suns at eve—at noon of night,\nWhile the moon danced with the fair stranger light—\nUpreared upon such height arose a pile\nOf gorgeous columns on th’ unburthened air,\nFlashing from Parian marble that twin smile\nFar down upon the wave that sparkled there,\nAnd nursled the young mountain in its lair.\nOf molten stars their pavement, such as fall\nThro’ the ebon air, besilvering the pall\nOf their own dissolution, while they die—\nAdorning then the dwellings of the sky.\nA dome, by linked light from heaven let down,\nSat gently on these columns as a crown—\nA window of one circular diamond, there,\nLooked out above into the purple air,\nAnd rays from God shot down that meteor chain\nAnd hallowed all the beauty twice again,\nSave when, between th’ Empyrean and that ring,\nSome eager spirit flapped his dusky wing.\nBut on the pillars seraph eyes have seen\nThe dimness of this world: that greyish green\nThat Nature loves the best for Beauty’s grave\nLurked in each cornice, round each architrave—\nAnd every sculptured cherub thereabout,\nThat from his marble dwelling peerèd out,\nSeemed earthly in the shadow of his niche—\nAchaian statues in a world so rich?\nFriezes from Tadmor and Persepolis—\nFrom Balbec, and the stilly, clear abyss\nOf beautiful Gomorrah! O, the wave\nIs now upon thee—but too late to save!",
+      "summary": "A poetic description of a celestial, marble-columned structure situated high in the heavens, which is ultimately threatened by an encroaching earthly shadow or wave.",
+      "topics": [
+        "celestial-architecture",
+        "sublime-beauty",
+        "poetic-imagery",
+        "literature"
+      ],
+      "aliases": [
+        "heavenly-palace",
+        "pile of gorgeous columns",
+        "empyrean",
+        "dwellings of the sky"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 70
+      },
+      "tokens": 406
+    },
+    {
+      "id": "edgar-allan-poe_071",
+      "title": "Edgar Allan Poe",
+      "text": "Sound loves to revel in a summer night:\nWitness the murmur of the grey twilight\nThat stole upon the ear, in Eyraco,\nOf many a wild star-gazer long ago—\nThat stealeth ever on the ear of him\nWho, musing, gazeth on the distance dim,\nAnd sees the darkness coming as a cloud—\nIs not its form—its voice—most palpable and loud?\n\nBut what is this?—it cometh—and it brings\nA music with it—’tis the rush of wings—\nA pause—and then a sweeping, falling strain,\nAnd Nesace is in her halls again.\nFrom the wild energy of wanton haste\nHer cheeks were flushing, and her lips apart;\nAnd zone that clung around her gentle waist\nHad burst beneath the heaving of her heart.\nWithin the centre of that hall to breathe\nShe paused and panted, Zanthe! all beneath,\nThe fairy light that kissed her golden hair\nAnd longed to rest, yet could but sparkle there!\n\nYoung flowers were whispering in melody\nTo happy flowers that night—and tree to tree;\nFountains were gushing music as they fell\nIn many a star-lit grove, or moon-lit dell;\nYet silence came upon material things—\nFair flowers, bright waterfalls and angel wings—\nAnd sound alone that from the spirit sprang\nBore burthen to the charm the maiden sang:",
+      "summary": "A poetic passage describing the transition from natural sounds to a mystical, spiritual music brought by the arrival of a character named Nesace.",
+      "topics": [
+        "nesace",
+        "mystical-music",
+        "nature-imagery",
+        "poetry"
+      ],
+      "aliases": [
+        "nesace",
+        "the maiden",
+        "zanthe",
+        "fairy light"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 71
+      },
+      "tokens": 295
+    },
+    {
+      "id": "edgar-allan-poe_072",
+      "title": "Edgar Allan Poe",
+      "text": "“’Neath blue-bell or streamer—\nOr tufted wild spray\nThat keeps, from the dreamer,\nThe moonbeam away—\nBright beings! that ponder,\nWith half-closing eyes,\nOn the stars, which your wonder\nHath drawn from the skies,\nTill they glance thro’ the shade, and\nCome down to your brow\nLike——eyes of the maiden\nWho calls on you now—\nArise! from your dreaming\nIn violet bowers,\nTo duty beseeming\nThese star-litten hours—\nAnd shake from your tresses\nEncumbered with dew\nThe breath of those kisses\nThat cumber them too—\n(O! how, without you, Love!\nCould angels be blest?)\nThose kisses of true love\nThat lulled ye to rest!\nUp!—shake from your wing\nEach hindering thing:\nThe dew of the night—\nIt would weigh down your flight\nAnd true love caresses—\nO! leave them apart!\nThey are light on the tresses,\nBut lead on the heart.\n\n“Ligeia! Ligeia!\nMy beautiful one!\nWhose harshest idea\nWill to melody run,\nOh! is it thy will\nOn the breezes to toss?\nOr, capriciously still,\nLike the lone Albatross,\nIncumbent on night\n(As she on the air)\nTo keep watch with delight\nOn the harmony there?",
+      "summary": "A poetic excerpt featuring lyrical imagery of celestial beings, dreamers, and the invocation of the character Ligeia.",
+      "topics": [
+        "ligeia",
+        "romantic-poetry",
+        "gothic-literature",
+        "american-literature"
+      ],
+      "aliases": [
+        "poetic-verse",
+        "poetry"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 72
+      },
+      "tokens": 265
+    },
+    {
+      "id": "edgar-allan-poe_073",
+      "title": "Edgar Allan Poe",
+      "text": "“Ligeia! wherever\nThy image may be,\nNo magic shall sever\nThy music from thee.\nThou hast bound many eyes\nIn a dreamy sleep—\nBut the strains still arise\nWhich _thy_ vigilance keep—\nThe sound of the rain\nWhich leaps down to the flower,\nAnd dances again\nIn the rhythm of the shower—\nThe murmur that springs\nFrom the growing of grass\nAre the music of things—\nBut are modelled, alas!—\nAway, then, my dearest,\nOh! hie thee away\nTo springs that lie clearest\nBeneath the moon-ray—\nTo lone lake that smiles,\nIn its dream of deep rest,\nAt the many star-isles\nThat enjewel its breast—\nWhere wild flowers, creeping,\nHave mingled their shade,\nOn its margin is sleeping\nFull many a maid—\nSome have left the cool glade, and\nHave slept with the bee—\nArouse them, my maiden,\nOn moorland and lea—\nGo! breathe on their slumber,\nAll softly in ear,\nThe musical number\nThey slumbered to hear—\nFor what can awaken\nAn angel so soon\nWhose sleep hath been taken\nBeneath the cold moon,\nAs the spell which no slumber\nOf witchery may test,\nThe rhythmical number\nWhich lulled him to rest?”",
+      "summary": "A poetic verse addressed to a figure named Ligeia, describing her musical influence over nature and calling upon her to awaken those sleeping in the landscape.",
+      "topics": [
+        "ligeia",
+        "poetic-verse",
+        "gothic-literature",
+        "romanticism"
+      ],
+      "aliases": [
+        "the-lady-ligeia",
+        "Ligeia"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 73
+      },
+      "tokens": 264
+    },
+    {
+      "id": "edgar-allan-poe_074",
+      "title": "Edgar Allan Poe",
+      "text": "Spirits in wing, and angels to the view,\nA thousand seraphs burst th’ Empyrean thro’,\nYoung dreams still hovering on their drowsy flight—\nSeraphs in all but “Knowledge,” the keen light\nThat fell, refracted, thro’ thy bounds, afar,\nO Death! from eye of God upon that star:\nSweet was that error—sweeter still that death—\nSweet was that error—e’en with _us_ the breath\nOf Science dims the mirror of our joy—\nTo them ’twere the Simoom, and would destroy—\nFor what (to them) availeth it to know\nThat Truth is Falsehood—or that Bliss is Woe?\nSweet was their death—with them to die was rife\nWith the last ecstasy of satiate life—\nBeyond that death no immortality—\nBut sleep that pondereth and is not “to be”—\nAnd there—oh! may my weary spirit dwell—\nApart from Heaven’s Eternity—and yet how far from Hell!\nWhat guilty spirit, in what shrubbery dim,\nHeard not the stirring summons of that hymn?\nBut two: they fell: for Heaven no grace imparts\nTo those who hear not for their beating hearts.\nA maiden-angel and her seraph-lover—\nO! where (and ye may seek the wide skies over)\nWas Love, the blind, near sober Duty known?\nUnguided Love hath fallen—’mid “tears of perfect moan.”",
+      "summary": "A poetic passage exploring the tragic fall of two celestial beings, contrasting the destructive nature of scientific knowledge with the blissful ignorance of spiritual ecstasy.",
+      "topics": [
+        "fallen-angels",
+        "knowledge-vs-bliss",
+        "romantic-tragedy",
+        "poetry",
+        "literature"
+      ],
+      "aliases": [
+        "seraphs",
+        "angels",
+        "empyrean",
+        "heaven"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 74
+      },
+      "tokens": 292
+    },
+    {
+      "id": "edgar-allan-poe_075",
+      "title": "Edgar Allan Poe",
+      "text": "He was a goodly spirit—he who fell:\nA wanderer by mossy-mantled well—\nA gazer on the lights that shine above—\nA dreamer in the moonbeam by his love:\nWhat wonder? for each star is eye-like there,\nAnd looks so sweetly down on Beauty’s hair—\nAnd they and ev’ry mossy spring were holy\nTo his love-haunted heart and melancholy.\nThe night had found (to him a night of woe)\nUpon a mountain crag, young Angelo—\nBeetling it bends athwart the solemn sky,\nAnd scowls on starry worlds that down beneath it lie.\nHere sat he with his love—his dark eye bent\nWith eagle gaze along the firmament:\nNow turned it upon her—but ever then\nIt trembled to the orb of Earth again.",
+      "summary": "A poetic description of a character named Angelo, a melancholic dreamer who experiences a night of woe while gazing at the stars with his love.",
+      "topics": [
+        "angelo",
+        "melancholy",
+        "romantic-poetry",
+        "literature"
+      ],
+      "aliases": [
+        "the-fallen-spirit",
+        "Angelo"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 75
+      },
+      "tokens": 164
+    },
+    {
+      "id": "edgar-allan-poe_076",
+      "title": "Edgar Allan Poe",
+      "text": "“Ianthe, dearest, see! how dim that ray!\nHow lovely ’tis to look so far away!\nShe seemed not thus upon that autumn eve\nI left her gorgeous halls—nor mourned to leave.\nThat eve—that eve—I should remember well—\nThe sun-ray dropped, in Lemnos, with a spell\nOn th’ arabesque carving of a gilded hall\nWherein I sat, and on the draperied wall—\nAnd on my eyelids—O the heavy light!\nHow drowsily it weighed them into night!\nOn flowers, before, and mist, and love they ran\nWith Persian Saadi in his Gulistan:\nBut O that light!—I slumber’d—Death, the while,\nStole o’er my senses in that lovely isle,\nSo softly that no single silken hair\nAwoke that slept—or knew that he was there.\n\n“The last spot of Earth’s orb I trod upon\nWas a proud temple called the Parthenon—\nMore beauty clung around her column’d wall\nThan e’en thy glowing bosom beats withal;”\nAnd when old Time my wing did disenthral,\nThence sprang I—as the eagle from his tower,\nAnd years I left behind me in an hour.\nWhat time upon her airy bounds I hung\nOne half the garden of her globe was flung,\nUnrolling as a chart unto my view—\nTenantless cities of the desert too!\nIanthe, beauty crowded on me then,\nAnd half I wished to be again of men.”",
+      "summary": "A character recounts poetic memories of past travels, mentioning locations like Lemnos and the Parthenon, and describes a sense of temporal displacement and beauty.",
+      "topics": [
+        "poetic-memory",
+        "travel-memoir",
+        "romantic-literature",
+        "fiction"
+      ],
+      "aliases": [
+        "parthenon",
+        "Acropolis temple",
+        "gulistan",
+        "Rose Garden"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 76
+      },
+      "tokens": 303
+    },
+    {
+      "id": "edgar-allan-poe_077",
+      "title": "Edgar Allan Poe",
+      "text": "“My Angelo! and why of them to be?\nA brighter dwelling-place is here for thee—\nAnd greener fields than in yon world above,\nAnd woman’s loveliness—and passionate love.”\n\n“But, list, Ianthe! when the air so soft\nFailed, as my pennon’d spirit leapt aloft,\nPerhaps my brain grew dizzy—but the world\nI left so late was into chaos hurled—\nSprang from her station, on the winds apart,\nAnd rolled, a flame, the fiery heaven athwart.\nMethought, my sweet one, then I ceased to soar,\nAnd fell—not swiftly as I rose before,\nBut with a downward, tremulous motion thro’\nLight, brazen rays, this golden star unto!\nNor long the measure of my falling hours,\nFor nearest of all stars was thine to ours—\nDread star! that came, amid a night of mirth,\nA red Dædalion on the timid Earth.",
+      "summary": "A poetic dialogue between characters Angelo and Ianthe concerning themes of transcendence, falling, and celestial imagery.",
+      "topics": [
+        "poetic-dialogue",
+        "celestial-imagery",
+        "romantic-tragedy",
+        "literature",
+        "poetry"
+      ],
+      "aliases": [
+        "angelo-and-ianthe",
+        "dialogue between lovers"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 77
+      },
+      "tokens": 191
+    },
+    {
+      "id": "edgar-allan-poe_078",
+      "title": "Edgar Allan Poe",
+      "text": "“We came—and to thy Earth—but not to us\nBe given our lady’s bidding to discuss:\nWe came, my love; around, above, below,\nGay fire-fly of the night we come and go,\nNor ask a reason save the angel-nod\n_She_ grants to us, as granted by her God—\nBut, Angelo, than thine grey Time unfurled\nNever his fairy wing o’er fairier world!\nDim was its little disk, and angel eyes\nAlone could see the phantom in the skies,\nWhen first Al Aaraaf knew her course to be\nHeadlong thitherward o’er the starry sea—\nBut when its glory swelled upon the sky,\nAs glowing Beauty’s bust beneath man’s eye,\nWe paused before the heritage of men,\nAnd thy star trembled—as doth Beauty then!”\n\nThus, in discourse, the lovers whiled away\nThe night that waned and waned and brought no day.\nThey fell: for Heaven to them no hope imparts\nWho hear not for the beating of their hearts.\n\nSONNET—TO SCIENCE.",
+      "summary": "A poetic excerpt featuring a dialogue between celestial lovers regarding their journey to Earth and the observation of its beauty, followed by a concluding stanza on their fate.",
+      "topics": [
+        "celestial-lovers",
+        "poetic-dialogue",
+        "romantic-tragedy",
+        "literature"
+      ],
+      "aliases": [
+        "al-aaraaf",
+        "the celestial entity/location",
+        "angelo",
+        "the interlocutor"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 78
+      },
+      "tokens": 217
+    },
+    {
+      "id": "edgar-allan-poe_079",
+      "title": "Edgar Allan Poe",
+      "text": "Science! true daughter of Old Time thou art!\nWho alterest all things with thy peering eyes.\nWhy preyest thou thus upon the poet’s heart,\nVulture, whose wings are dull realities?\nHow should he love thee? or how deem thee wise,\nWho wouldst not leave him in his wandering\nTo seek for treasure in the jewelled skies,\nAlbeit he soared with an undaunted wing?\nHast thou not dragged Diana from her car?\nAnd driven the Hamadryad from the wood\nTo seek a shelter in some happier star?\nHast thou not torn the Naiad from her flood,\nThe Elfin from the green grass, and from me\nThe summer dream beneath the tamarind tree?\nTO THE RIVER ——.\n\nFair river! in thy bright, clear flow\nOf crystal, wandering water,\nThou art an emblem of the glow\nOf beauty—the unhidden heart—\nThe playful maziness of art\nIn old Alberto’s daughter;\n\nBut when within thy wave she looks—\nWhich glistens then, and trembles—\nWhy, then, the prettiest of brooks\nHer worshipper resembles;\nFor in his heart, as in thy stream,\nHer image deeply lies—\nHis heart which trembles at the beam\nOf her soul-searching eyes.\nTAMERLANE.",
+      "summary": "A collection of poetic verses expressing the tension between scientific reality and poetic imagination, followed by a lyrical tribute to a river and a beloved figure.",
+      "topics": [
+        "science-vs-poetry",
+        "romanticism",
+        "nature-imagery",
+        "literature"
+      ],
+      "aliases": [
+        "science",
+        "the vulture of dull realities",
+        "river",
+        "emblem of beauty"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 79
+      },
+      "tokens": 269
+    },
+    {
+      "id": "edgar-allan-poe_080",
+      "title": "Edgar Allan Poe",
+      "text": "I.\nKind solace in a dying hour!\nSuch, father, is not (now) my theme—\nI will not madly deem that power\nOf Earth may shrive me of the sin\nUnearthly pride hath revelled in—\nI have no time to dote or dream:\nYou call it hope—that fire of fire!\nIt is but agony of desire:\nIf I _can_ hope—Oh God! I can—\nIts fount is holier—more divine—\nI would not call thee fool, old man,\nBut such is not a gift of thine.\n\nII.\nKnow thou the secret of a spirit\nBowed from its wild pride into shame.\nO yearning heart! I did inherit\nThy withering portion with the fame,\nThe searing glory which hath shone\nAmid the Jewels of my throne,\nHalo of Hell! and with a pain\nNot Hell shall make me fear again—\nO craving heart, for the lost flowers\nAnd sunshine of my summer hours!\nThe undying voice of that dead time,\nWith its interminable chime,\nRings, in the spirit of a spell,\nUpon thy emptiness—a knell.\n\nIII.\nI have not always been as now:\nThe fevered diadem on my brow\nI claimed and won usurpingly——\nHath not the same fierce heirdom given\nRome to the Cæsar—this to me?\nThe heritage of a kingly mind,\nAnd a proud spirit which hath striven\nTriumphantly with human kind.",
+      "summary": "A poetic monologue expressing themes of pride, spiritual shame, and the heavy burden of a 'kingly' or superior intellect.",
+      "topics": [
+        "spiritual-shame",
+        "unearthly-pride",
+        "existential-agony",
+        "romantic-poetry",
+        "literature"
+      ],
+      "aliases": [
+        "poetic-monologue",
+        "I",
+        "hubris",
+        "unearthly pride"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 80
+      },
+      "tokens": 294
+    },
+    {
+      "id": "edgar-allan-poe_081",
+      "title": "Edgar Allan Poe",
+      "text": "IV.\nOn mountain soil I first drew life:\nThe mists of the Taglay have shed\nNightly their dews upon my head,\nAnd, I believe, the winged strife\nAnd tumult of the headlong air\nHave nestled in my very hair.\n\nV.\nSo late from Heaven—that dew—it fell\n(’Mid dreams of an unholy night)\nUpon me with the touch of Hell,\nWhile the red flashing of the light\nFrom clouds that hung, like banners, o’er,\nAppeared to my half-closing eye\nThe pageantry of monarchy,\nAnd the deep trumpet-thunder’s roar\nCame hurriedly upon me, telling\nOf human battle, where my voice—\nMy own voice, silly child!—was swelling\n(O! how my spirit would rejoice,\nAnd leap within me at the cry)\nThe battle-cry of Victory!\n\nVI.\nThe rain came down upon my head\nUnsheltered—and the heavy wind\nRendered me mad and deaf and blind.\nIt was but man, I thought, who shed\nLaurels upon me: and the rush—\nThe torrent of the chilly air\nGurgled within my ear the crush\nOf empires—with the captive’s prayer—\nThe hum of suitors—and the tone\nOf flattery round a sovereign’s throne.",
+      "summary": "A poetic account of a speaker's sensory experiences in nature, describing the mists of the Taglay, celestial/infernal sensations, and the overwhelming sounds of battle and monarchy.",
+      "topics": [
+        "sensory-experience",
+        "nature-imagery",
+        "poetic-expression",
+        "literature"
+      ],
+      "aliases": [
+        "taglay",
+        "Taglay River/Region",
+        "monarchy-imagery",
+        "royal pageantry"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 81
+      },
+      "tokens": 255
+    },
+    {
+      "id": "edgar-allan-poe_082",
+      "title": "Edgar Allan Poe",
+      "text": "VII.\nMy passions, from that hapless hour,\nUsurped a tyranny which men\nHave deemed, since I have reached to power,\nMy innate nature—be it so:\nBut, father, there lived one who, then,\nThen—in my boyhood—when their fire\nBurned with a still intenser glow\n(For passion must, with youth, expire),\nE’en _then_ who knew this iron heart\nIn woman’s weakness had a part.\n\nVIII.\nI have no words—alas!—to tell\nThe loveliness of loving well!\nNor would I now attempt to trace\nThe more than beauty of a face\nWhose lineaments, upon my mind,\nAre——shadows on th’ unstable wind;\nThus I remember having dwelt\nSome page of early lore upon,\nWith loitering eye, till I have felt\nThe letters—with their meaning—melt\nTo fantasies—with none.\n\nIX.\nO, she was worthy of all love!\nLove as in infancy was mine—\n’Twas such as angel minds above\nMight envy; her young heart the shrine\nOn which my every hope and thought\nWere incense—then a goodly gift,\nFor they were childish and upright—\nPure——as her young example taught:\nWhy did I leave it, and, adrift,\nTrust to the fire within, for light?\nX.\nWe grew in age—and love—together—\nRoaming the forest, and the wild;\nMy breast her shield in wintry weather—\nAnd, when the friendly sunshine smiled,\nAnd she would mark the opening skies,\n_I_ saw no Heaven—but in her eyes.",
+      "summary": "A first-person account of a speaker reflecting on a profound, formative childhood love and the intense passions that shaped his character.",
+      "topics": [
+        "childhood-romance",
+        "unrequited-passion",
+        "memory-and-loss",
+        "poetic-introspection",
+        "literature"
+      ],
+      "aliases": [
+        "first-person-confession",
+        "narrative account",
+        "romantic-reminiscence",
+        "reflection on love"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 82
+      },
+      "tokens": 320
+    },
+    {
+      "id": "edgar-allan-poe_083",
+      "title": "Edgar Allan Poe",
+      "text": "XI.\nYoung Love’s first lesson is——the heart:\nFor ’mid that sunshine, and those smiles,\nWhen, from our little cares apart,\nAnd laughing at her girlish wiles,\nI’d throw me on her throbbing breast,\nAnd pour my spirit out in tears—\nThere was no need to speak the rest—\nNo need to quiet any fears\nOf her—who asked no reason why,\nBut turned on me her quiet eye!\n\nXII.\nYet _more_ than worthy of the love\nMy spirit struggled with, and strove,\nWhen, on the mountain peak, alone,\nAmbition lent it a new tone—\nI had no being—but in thee:\nThe world, and all it did contain\nIn the earth—the air—the sea—\nIts joy—its little lot of pain\nThat was new pleasure——the ideal,\nDim, vanities of dreams by night—\nAnd dimmer nothings which were real—\n(Shadows—and a more shadowy light!)\nParted upon their misty wings,\nAnd so, confusedly, became\nThine image and—a name—a name!\nTwo separate—yet most intimate things.\n\nXIII.\nI was ambitious—have you known\nThe passion, father? You have not:\nA cottager, I marked a throne\nOf half the world as all my own,\nAnd murmured at such lowly lot—\nBut, just like any other dream,\nUpon the vapour of the dew\nMy own had past, did not the beam\nOf beauty which did while it thro’\nThe minute—the hour—the day—oppress\nMy mind with double loveliness.",
+      "summary": "A poetic reflection on the speaker's transition from youthful romantic love to an overwhelming, consuming ambition that eventually dissolves into a singular, idealized image of a beloved.",
+      "topics": [
+        "romantic-love",
+        "ambition",
+        "idealization",
+        "poetic-expression",
+        "literature"
+      ],
+      "aliases": [
+        "romantic-attachment",
+        "Young Love",
+        "professional-aspiration",
+        "Ambition"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 83
+      },
+      "tokens": 316
+    },
+    {
+      "id": "edgar-allan-poe_084",
+      "title": "Edgar Allan Poe",
+      "text": "XIV.\nWe walked together on the crown\nOf a high mountain which looked down\nAfar from its proud natural towers\nOf rock and forest, on the hills—\nThe dwindled hills! begirt with bowers\nAnd shouting with a thousand rills.\n\nXV.\nI spoke to her of power and pride,\nBut mystically—is such guise\nThat she might deem it nought beside\nThe moment’s converse; in her eyes\nI read, perhaps too carelessly—\nA mingled feeling with my own—\nThe flush on her bright cheek to me\nSeemed to become a queenly throne,\nToo well that I should let it be\nLight in the wilderness alone.\nXVI.\nI wrapped myself in grandeur then,\nAnd donned a visionary crown——\nYet it was not that Fantasy\nHad thrown her mantle over me—\nBut that, among the rabble—men,\nLion ambition is chained down—\nAnd crouches to a keeper’s hand—\nNot so in deserts where the grand—\nThe wild—the terrible conspire\nWith their own breath to fan his fire.\n\nXVII.\nLook round thee now on Samarcand!—\nIs she not queen of Earth? her pride\nAbove all cities? in her hand\nTheir destinies? in all beside\nOf glory which the world hath known\nStands she not nobly and alone?\nFalling—her veriest stepping-stone\nShall form the pedestal of a throne—\nAnd who her sovereign? Timour—he\nWhom the astonished people saw\nStriding o’er empires haughtily\nA diademed outlaw!",
+      "summary": "A poetic account of a walk through a mountain landscape and a conversation between the narrator and a woman, transitioning into a meditation on ambition and the historical glory of Samarcand and Timur.",
+      "topics": [
+        "ambition",
+        "romantic-longing",
+        "samarcand",
+        "timur",
+        "poetry",
+        "literature"
+      ],
+      "aliases": [
+        "tamerlane",
+        "Timour",
+        "samarkand",
+        "Samarcand"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 84
+      },
+      "tokens": 320
+    },
+    {
+      "id": "edgar-allan-poe_085",
+      "title": "Edgar Allan Poe",
+      "text": "XVIII.\nO human love! thou spirit given,\nOn Earth, of all we hope in Heaven!\nWhich fall’st into the soul like rain\nUpon the Siroc-withered plain,\nAnd, failing in thy power to bless,\nBut leav’st the heart a wilderness!\nIdea! which bindest life around\nWith music of so strange a sound\nAnd beauty of so wild a birth—\nFarewell! for I have won the Earth.\n\nXIX.\nWhen Hope, the eagle that towered, could see\nNo cliff beyond him in the sky,\nHis pinions were bent droopingly—\nAnd homeward turned his softened eye.\n’Twas sunset: when the sun will part\nThere comes a sullenness of heart\nTo him who still would look upon\nThe glory of the summer sun.\nThat soul will hate the ev’ning mist\nSo often lovely, and will list\nTo the sound of the coming darkness (known\nTo those whose spirits hearken) as one\nWho, in a dream of night, _would_ fly,\nBut _cannot_, from a danger nigh.",
+      "summary": "Poetic verses expressing the overwhelming nature of human love and the melancholy descent of hope as it faces the inevitable darkness of sunset.",
+      "topics": [
+        "human-love",
+        "hope",
+        "melancholy",
+        "poetry",
+        "literature"
+      ],
+      "aliases": [
+        "human-love",
+        "spiritual essence",
+        "hope",
+        "the eagle"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 85
+      },
+      "tokens": 215
+    },
+    {
+      "id": "edgar-allan-poe_086",
+      "title": "Edgar Allan Poe",
+      "text": "XX.\nWhat tho’ the moon—the white moon\nShed all the splendour of her noon,\n_Her_ smile is chilly—and _her_ beam,\nIn that time of dreariness, will seem\n(So like you gather in your breath)\nA portrait taken after death.\nAnd boyhood is a summer sun\nWhose waning is the dreariest one—\nFor all we live to know is known,\nAnd all we seek to keep hath flown—\nLet life, then, as the day-flower, fall\nWith the noon-day beauty—which is all.",
+      "summary": "A poetic reflection comparing the moon's light to death and the waning of boyhood to the loss of life's vitality.",
+      "topics": [
+        "mortality",
+        "boyhood",
+        "nature-metaphor",
+        "poetry",
+        "literature"
+      ],
+      "aliases": [
+        "death",
+        "portrait taken after death",
+        "youth",
+        "boyhood"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 86
+      },
+      "tokens": 108
+    },
+    {
+      "id": "edgar-allan-poe_087",
+      "title": "Edgar Allan Poe",
+      "text": "XXI.\nI reached my home—my home no more—\nFor all had flown who made it so.\nI passed from out its mossy door,\nAnd, tho’ my tread was soft and low,\nA voice came from the threshold stone\nOf one whom I had earlier known—\nO, I defy thee, Hell, to show\nOn beds of fire that burn below,\nAn humbler heart—a deeper woe.\nXXII.\nFather, I firmly do believe—\nI _know_—for Death who comes for me\nFrom regions of the blest afar,\nWhere there is nothing to deceive,\nHath left his iron gate ajar,\nAnd rays of truth you cannot see\nAre flashing thro’ Eternity——\nI do believe that Eblis hath\nA snare in every human path—\nElse how, when in the holy grove\nI wandered of the idol, Love,\nWho daily scents his snowy wings\nWith incense of burnt offerings\nFrom the most unpolluted things,\nWhose pleasant bowers are yet so riven\nAbove with trelliced rays from Heaven\nNo mote may shun—no tiniest fly—\nThe lightning of his eagle eye—\nHow was it that Ambition crept,\nUnseen, amid the revels there,\nTill growing bold, he laughed and leapt\nIn the tangles of Love’s very hair?\nTO ——.\n\nThe bowers whereat, in dreams, I see\nThe wantonest singing birds,\nAre lips—and all thy melody\nOf lip-begotten words—",
+      "summary": "A poetic sequence describing a speaker's return to a desolate home and a philosophical reflection on the intrusion of Ambition into the realm of Love and the presence of evil.",
+      "topics": [
+        "ambition",
+        "love",
+        "spiritual-struggle",
+        "poetic-verse",
+        "literature"
+      ],
+      "aliases": [
+        "eblis",
+        "devil",
+        "the-idol-of-love",
+        "eros"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 87
+      },
+      "tokens": 291
+    },
+    {
+      "id": "edgar-allan-poe_088",
+      "title": "Edgar Allan Poe",
+      "text": "Thine eyes, in Heaven of heart enshrined\nThen desolately fall,\nO God! on my funereal mind\nLike starlight on a pall—\n\nThy heart—_thy_ heart!—I wake and sigh,\nAnd sleep to dream till day\nOf the truth that gold can never buy—\nOf the baubles that it may.\nA DREAM.\n\nIn visions of the dark night\nI have dreamed of joy departed—\nBut a waking dream of life and light\nHath left me broken-hearted.\n\nAh! what is not a dream by day\nTo him whose eyes are cast\nOn things around him with a ray\nTurned back upon the past?\n\nThat holy dream—that holy dream,\nWhile all the world were chiding,\nHath cheered me as a lovely beam\nA lonely spirit guiding.\n\nWhat though that light, thro’ storm and night,\nSo trembled from afar—\nWhat could there be more purely bright\nIn Truth’s day-star?\n\nROMANCE.\n\nRomance, who loves to nod and sing,\nWith drowsy head and folded wing,\nAmong the green leaves as they shake\nFar down within some shadowy lake,\nTo me a painted paroquet\nHath been—a most familiar bird—\nTaught me my alphabet to say—\nTo lisp my very earliest word\nWhile in the wild wood I did lie,\nA child—with a most knowing eye.",
+      "summary": "A collection of poetic verses exploring themes of grief, memory, and the distinction between dreams and reality, followed by a poem titled 'Romance'.",
+      "topics": [
+        "melancholy",
+        "dream-vs-reality",
+        "poetic-verse",
+        "romanticism",
+        "literature"
+      ],
+      "aliases": [
+        "poetry",
+        "verse",
+        "romanticism",
+        "romance"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 88
+      },
+      "tokens": 276
+    },
+    {
+      "id": "edgar-allan-poe_089",
+      "title": "Edgar Allan Poe",
+      "text": "Of late, eternal Condor years\nSo shake the very heaven on high\nWith tumult as they thunder by,\nI have no time for idle cares\nThrough gazing on the unquiet sky.\nAnd when an hour with calmer wings\nIts down upon my spirit flings—\nThat little time with lyre and rhyme\nTo while away—forbidden things!\nMy heart would feel to be a crime\nUnless it trembled with the strings.\nFAIRY-LAND.",
+      "summary": "A poetic excerpt expressing a sense of cosmic turbulence and the speaker's compulsion to use music and poetry to cope with an unquiet spirit.",
+      "topics": [
+        "existential-dread",
+        "poetic-inspiration",
+        "cosmic-turmoil",
+        "romanticism",
+        "literature"
+      ],
+      "aliases": [
+        "lyre-and-rhyme",
+        "poetry",
+        "fairy-land",
+        "imaginary realm"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 89
+      },
+      "tokens": 94
+    },
+    {
+      "id": "edgar-allan-poe_090",
+      "title": "Edgar Allan Poe",
+      "text": "Dim vales—and shadowy floods—\nAnd cloudy-looking woods,\nWhose forms we can’t discover\nFor the tears that drip all over—\nHuge moons there wax and wane—\nAgain—again—again—\nEvery moment of the night—\nFor ever changing places—\nAnd they put out the starlight\nWith the breath from their pale faces.\nAbout twelve by the moon-dial\nOne more filmy than the rest\n(A kind which, upon trial,\nThey have found to be the best)\nComes down—still down—and down\nWith its centre on the crown\nOf a mountain’s eminence,\nWhile its wide circumference\nIn easy drapery falls\nOver hamlets, over halls,\nWherever they may be—\nO’er the strange woods—o’er the sea—\nOver spirits on the wing—\nOver every drowsy thing—\nAnd buries them up quite\nIn a labyrinth of light—\nAnd then, how deep!—O, deep!\nIs the passion of their sleep.\nIn the morning they arise,\nAnd their moony covering\nIs soaring in the skies,\nWith the tempests as they toss,\nLike——almost any thing—\nOr a yellow Albatross.\nThey use that moon no more\nFor the same end as before—\nVidelicet a tent—\nWhich I think extravagant:\nIts atomies, however,\nInto a shower dissever,\nOf which those butterflies,\nOf Earth, who seek the skies,\nAnd so come down again,\n(Never-contented things!)\nHave brought a specimen\nUpon their quivering wings.\nTHE LAKE.\n\nTO ——.",
+      "summary": "A poetic passage describing a shifting, moon-like entity that descends over landscapes and spirits, eventually dissolving into particles carried by butterflies.",
+      "topics": [
+        "surreal-imagery",
+        "poetic-metaphor",
+        "gothic-literature",
+        "poetry"
+      ],
+      "aliases": [
+        "videlicet",
+        "namely"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 90
+      },
+      "tokens": 318
+    },
+    {
+      "id": "edgar-allan-poe_091",
+      "title": "Edgar Allan Poe",
+      "text": "In spring of youth it was my lot\nTo haunt of the wide world a spot\nThe which I could not love the less—\nSo lovely was the loneliness\nOf a wild lake, with black rock bound,\nAnd the tall pines that towered around.\n\nBut when the Night had thrown her pall\nUpon that spot, as upon all,\nAnd the mystic wind went by\nMurmuring in melody—\nThen—ah then I would awake\nTo the terror of the lone lake.\n\nYet that terror was not fright,\nBut a tremulous delight—\nA feeling not the jewelled mine\nCould teach or bribe me to define—\nNor Love—although the Love were thine.\n\nDeath was in that poisonous wave,\nAnd in its gulf a fitting grave\nFor him who thence could solace bring\nTo his lone imagining—\nWhose solitary soul could make\nAn Eden of that dim lake.\n\nSONG.\n\nI saw thee on thy bridal day—\nWhen a burning blush came o’er thee,\nThough happiness around thee lay,\nThe world all love before thee:\n\nAnd in thine eye a kindling light\n(Whatever it might be)\nWas all on Earth my aching sight\nOf Loveliness could see.\n\nThat blush, perhaps, was maiden shame—\nAs such it well may pass—\nThough its glow hath raised a fiercer flame\nIn the breast of him, alas!",
+      "summary": "A poetic account describing a speaker's complex emotional connection to a lonely lake and a memory of a woman on her wedding day.",
+      "topics": [
+        "solitude",
+        "nature-imagery",
+        "unrequited-love",
+        "romantic-poetry",
+        "literature"
+      ],
+      "aliases": [
+        "poetry",
+        "song",
+        "melancholy",
+        "tremulous delight"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 91
+      },
+      "tokens": 286
+    },
+    {
+      "id": "edgar-allan-poe_092",
+      "title": "Edgar Allan Poe",
+      "text": "Who saw thee on that bridal day,\nWhen that deep blush _would_ come o’er thee,\nThough happiness around thee lay,\nThe world all love before thee.\n\nTO M. L. S——.\n\nOf all who hail thy presence as the morning—\nOf all to whom thine absence is the night—\nThe blotting utterly from out high heaven\nThe sacred sun—of all who, weeping, bless thee\nHourly for hope—for life—ah! above all,\nFor the resurrection of deep-buried faith\nIn Truth—in Virtue—in Humanity—\nOf all who, on Despair’s unhallowed bed\nLying down to die, have suddenly arisen\nAt thy soft-murmured words, “Let there be light!”\nAt the soft-murmured words that were fulfilled\nIn the seraphic glancing of thine eyes—\nOf all who owe thee most—whose gratitude\nNearest resembles worship—oh, remember\nThe truest—the most fervently devoted,\nAnd think that these weak lines are written by him—\nBy him who, as he pens them, thrills to think\nHis spirit is communing with an angel’s.\nTO HELEN.\n\nHelen, thy beauty is to me\nLike those Nicéan barks of yore\nThat gently, o’er a perfumed sea,\nThe weary way-worn wanderer bore\nTo his own native shore.\n\nOn desperate seas long wont to roam,\nThy hyacinth hair, thy classic face,\nThy Naiad airs have brought me home\nTo the glory that was Greece,\nAnd the grandeur that was Rome.\n\nLo, in yon brilliant window-niche\nHow statue-like I see thee stand,\nThe agate lamp within thy hand!\nAh, Psyche, from the regions which\nAre holy-land!",
+      "summary": "A collection of poetic verses and dedications addressed to M. L. S——, Helen, and Psyche, expressing themes of devotion, loss, and classical beauty.",
+      "topics": [
+        "romantic-devotion",
+        "classical-mythology",
+        "elegy",
+        "poetry",
+        "literature"
+      ],
+      "aliases": [
+        "psyche",
+        "the beloved",
+        "helen",
+        "the muse"
+      ],
+      "source": {
+        "file": "Data/raw/edgar_allan_poe.txt",
+        "doc": "edgar-allan-poe",
+        "position": 92
+      },
+      "tokens": 353
+    }
+  ]
+}
