@@ -1,7 +1,9 @@
 spec: deliberate recall ("Remembering…" — Sal queries its own history mid-turn via a tool loop)
 status: proposed              # 2026-06-09 — raised with the developer and approved per Mission Brief ("raise it first"); build AFTER retrieval-eval-harness-spec.yaml
 date: 2026-06-09
-depends_on: docs/ignored/retrieval-eval-harness-spec.yaml   # implemented 2026-06-09 (archived) — the probe suite is the regression net for this change
+depends_on:
+  - docs/ignored/retrieval-eval-harness-spec.yaml   # implemented 2026-06-09 (archived) — the probe suite is the regression net for this change
+  - docs/ignored/00_constitutional-document-spec.yaml   # implemented 2026-07-05 (archived) — reshaped prompt.ts; REFRESH this spec's prompt.ts line anchors before building
 goal: >
   Give Sal a `recall` tool that runs the SAME deterministic retrieval engine
   (searchScored) mid-turn with a query Sal formulates — ambient retrieval stays

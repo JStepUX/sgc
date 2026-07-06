@@ -1,0 +1,169 @@
+spec: user document import — .txt/.md → deterministic in-app chunker → sgc-brain/1 pack ("homegrown brains")
+status: proposed              # 2026-07-05 — developer decided: lexical only, NO model flavor pass in v1 (see deferred_raise), plain text formats only
+date: 2026-07-05
+goal: >
+  Let a user drop a .txt/.md file into the Brain Manager and get a mounted
+  brain, no Atlantis required: the browser chunks the document with a TS port
+  of Atlantis's deterministic packer + stub-classifier metadata fallbacks,
+  assembles a valid sgc-brain/1 pack (source.stub=true → the existing
+  "model-free build" badge), and POSTs it through the EXISTING import route.
+  Zero server changes; retrieval (searchBrains) byte-identical.
+
+invariant_check:
+  no_model_anywhere: chunking, summaries, topics, ids — all deterministic string math. This is the Atlantis StubClassifier path ported to TS; the model-flavor pass stays an Atlantis-only luxury (deferred_raise below).
+  retrieval_untouched: lib/brains.ts and searchBrains unchanged; the pack format is unchanged; the memory-grep isolation regression (turn-context.test.ts) stays green by construction.
+  server_untouched: src/server/** unchanged — the existing POST /api/brains validates the chunker's output against the same sgc-brain/1 contract it applies to Atlantis exports.
+  embeddings_still_2b: packs remain lexical-only (text/summary/topics/aliases). Nothing here opens the embedding door; that raise is unchanged.
+
+deferred_raise:                # recorded so the future conversation starts from the decision, not from scratch
+  model_flavor_pass: >
+    Atlantis optionally runs a local model as a "flavor processor" (per-chunk
+    summary/topics/aliases). Doing the same in SGC with the user's SELECTED
+    provider was considered and deferred 2026-07-05: it would spend the user's
+    tokens/compute on document processing, needs loud up-front disclosure plus
+    a duration warning scaled to document size, and turns import into a long
+    async job. Preconditions for the raise: progress UI for long imports, cost
+    disclosure copy, and a cancel path. Until then: deterministic metadata only.
+
+current_state:
+  import_flow:
+    file: src/client/components/BrainManagerModal.tsx   # 451 lines — default 500 budget; see budget_note
+    handle_import: lines 205-241     # handleImportFile: JSON.parse(file.text()) → importBrain POST → refresh → auto-mount (refreshIds on same-id overwrite)
+    file_input: lines 272-283        # hidden input, accept=".json,application/json", value reset for re-import
+    empty_state_copy: lines 314-317  # "Export one from Atlantis, then import it here."
+    mutation_guard: lines 55-62      # ONE mutation at a time (mutationRef) — document import must respect it
+  pack_contract:
+    types: src/client/lib/types.ts:113-141          # BrainChunk / BrainPack — chunk: id,title,text,summary,topics[],aliases[],source{file,doc,position},tokens
+    server_validation: src/server/brains-routes.ts:56-97  # schema sgc-brain/1; id [a-z0-9-]{1,64}; title non-empty; text 1..8000 chars; topics/aliases string[]; tokens finite number; unique chunk ids
+    body_limit: src/server/index.ts:118-127         # POST /api/brains rides the 32mb packJsonParser — no practical ceiling for text documents
+    digest_consumer: src/client/lib/brains.ts:96-106  # buildBrainDigest reads chunk.title + chunk.topics[0] — derived topics feed it directly
+  atlantis_reference:            # the implementation being ported (C:/projects/Atlantis-SGC) — port the CONTRACT, not the code
+    packer: atlantis/chunking.py            # heading-split → paragraph pack → oversized sentence-split → backward merge
+    params: atlantis/config.py:31-35        # target_tokens 320, max_tokens 480, min_tokens 40, respect_headings true
+    stub_metadata: atlantis/classify.py     # _Coercer fallbacks: _summary 160-166 (first sentence, ≤240 chars, fallback heading→title); _fallback_topics 191-210 (heading slug depth-0 + top content terms to 3)
+    text_utils: atlantis/textutils.py       # slugify (NFKD→ascii→kebab), content_terms (stopwords + len≥2, NO stemming), estimate_tokens = max(1, round(chars/4), round(words*1.3))
+    title_extraction: atlantis/chunking.py:54-60  # first markdown heading, else Title-Cased de-slugged filename stem
+    chunk_ids: atlantis/chunking.py:171     # `${docSlug}_${i.toString().padStart(3,'0')}`
+
+resolved_decisions:
+  - id: D1-client-side-zero-server-delta
+    decision: the browser reads the File, chunks it, and POSTs a finished pack to the existing /api/brains. No new route, no server chunker.
+    rationale: the pack contract is already the boundary; the server's whole brains job is "validate and store files". A server-side chunker would put document processing where the repo doctrine says no thinking happens. Client-side it's a pure lib module — vitest-testable with no mocks.
+  - id: D2-port-the-contract-not-the-code
+    decision: same parameters (320/480/40, respect_headings), same pipeline (heading sections → paragraph packing → sentence-split oversized → backward-merge small), same token estimator formula. Parity is BEHAVIORAL, pinned by ported test vectors — NOT numeric identity with Python (Python's round() is banker's rounding; JS Math.round isn't; a ±1-token divergence on the same text is accepted and documented in the test file).
+    rationale: a doc chunked in SGC and the same doc pushed through Atlantis stub should produce the same mental model of chunks; Atlantis stays the strict superset (model pass, salience, archive), not a different chunking philosophy.
+  - id: D3-stub-metadata-fallbacks
+    decision: |
+      summary = first sentence of chunk text (split on [.!?]+space), truncated to 240 chars; empty → heading → doc title.
+      topics  = heading slug first (when present), then most-frequent content terms (contentTerms port: stopworded, len≥2, unstemmed) until 3 topics; ties break count-desc then first-appearance; never empty (docSlug fallback).
+      aliases = [] — the hand-edit path (export JSON → edit → re-import) is unchanged and is the documented way to add synonym bridges.
+      source  = { tool: 'sgc', schema: 'sgc-inline-v1', stub: true } — the existing "model-free build" badge (BrainManagerModal.tsx:393-397) applies with zero UI work.
+      chunk.source = { file: filename, doc: docSlug, position: i }; tokens = estimateTokens(text).
+  - id: D4-no-stemmer-in-topics
+    decision: the chunker gets its own contentTerms/slugify/estimateTokens (ported from textutils.py) and must NOT import lib/tfidf's tokenize.
+    rationale: tfidf tokenize Porter-stems ("mechanics"→"mechan") — stemmed stumps would leak into topics, and topics render in the DIGEST, which is Sal-visible prose. Retrieval still works either way (the index tokenizes topics itself); this is about human/Sal-legible metadata.
+  - id: D5-pack-identity
+    decision: |
+      id      = slugify(filename stem) clamped to 64 chars; empty slug (e.g. non-latin filename) → import error asking the user to rename the file, no silent hash fallback.
+      name    = extracted title (first # heading, else Title-Cased stem).
+      version = fnv1a32 hex of the raw file text (same file → same version; edited file → visibly new version in the card).
+      built_at = new Date().toISOString(), injected as a param so tests stay deterministic.
+      description = `Chunked from ${filename} in SGC — deterministic build.`
+  - id: D6-overwrite-confirm
+    decision: if the derived id already exists in the fetched manifest list, show an inline confirm (same visual pattern as the delete confirm) naming the existing pack before POSTing; JSON pack import keeps today's silent same-id overwrite (that's the deliberate Atlantis re-export flow).
+    rationale: two different files named notes.txt must not silently clobber each other — or a stock brain. One extra click on the re-import-my-edited-notes flow is acceptable.
+  - id: D7-one-file-one-pack
+    decision: single file per import; multi-document packs remain Atlantis territory.
+  - id: D8-oversize-hard-guard
+    decision: after packing, any chunk whose text still exceeds 8000 chars (a single unbroken >8000-char "sentence" — no sentence boundaries to split on) is hard-split at the last whitespace before the cap.
+    rationale: the Python packer has this same latent hole; the server WILL reject >8000, so the TS chunker closes it rather than surfacing a confusing validation error. (Log to AGENTS.md that Atlantis shares the gap.)
+
+design:
+  chunker:
+    file: src/client/lib/brain-chunker.ts
+    new: true
+    purpose: pure deterministic document→pack compiler. No React, no network, no imports from tfidf.ts (D4).
+    exported_api: |
+      export interface ChunkDocumentOptions { now?: Date }        // built_at injection for tests
+      export class DocumentImportError extends Error {}           // user-readable message (empty doc, unusable filename)
+      export function chunkDocumentToPack(filename: string, text: string, opts?: ChunkDocumentOptions): BrainPack
+      // internals exported for tests: estimateTokens, contentTerms, slugifyTerm, extractTitle, splitSections, packSections
+    pipeline: |
+      1. extractTitle(text, stem)                     — first #..###### heading, else de-slugged Title Case stem
+      2. splitSections(text)                          — [(heading, body)] at markdown headings; plain text → one section
+      3. packSections(sections, {target:320, max:480, min:40})
+           paragraphs (blank-line split) packed to target; paragraph > max → sentence-split
+           (regex (?<=[.!?])\s+(?=[A-Z0-9"'(]) — JS lookbehind, ES2018) packed to max;
+           trailing < min merged backward when the merge stays ≤ max
+      4. hard guard (D8), then map to BrainChunk[]    — ids `${docSlug}_${String(i).padStart(3,'0')}`,
+           metadata per D3
+      5. assemble BrainPack per D5; throw DocumentImportError on zero chunks or empty id
+  modal:
+    file: src/client/components/BrainManagerModal.tsx
+    changes: |
+      - file input accept widens to ".json,.txt,.md,application/json,text/plain,text/markdown";
+        button label stays "Import pack…" → becomes "Import…".
+      - handler branches on extension: .json → existing handleImportFile body; .txt/.md →
+        chunkDocumentToPack (DocumentImportError → importError slot) → same importBrain POST →
+        refresh → auto-mount. Extract the shared post/refresh/mount tail into one helper so the
+        two branches converge (it already exists as the tail of handleImportFile, lines 219-240).
+      - overwrite confirm (D6): when the derived id is in `packs`, stash {file, id, name} in a
+        pendingImport state and render an inline confirm strip in the importError slot position
+        ("Replaces "<name>" — import anyway?" / Cancel). Confirm proceeds down the shared tail.
+      - empty-state copy (lines 314-317) gains the second path: "…or import a .txt/.md document
+        directly — SGC chunks it into a brain on the spot."
+    budget_note: 451/500 lines today; this delta may trip the anti-god-object ratchet. If it does, split PackCard (lines 344-450) into components/PackCard.tsx — the ratchet's answer is split, never raise.
+  size_guard: client-side pre-check — file.size > 4 MB → DocumentImportError with the size named ("4 MB of plain text is ~1000 chunks — split the document or build it in Atlantis"). Server's 32mb limit stays the backstop.
+  docs:
+    claude_md: Project Structure gains the lib/brain-chunker.ts one-liner; the knowledge-axis paragraph gains a sentence (users can also import .txt/.md directly; deterministic in-app chunking, Atlantis remains the full pipeline).
+    readme: mount-flow section gains the direct-import path.
+    changelog: docs/changelogs/ entry on land.
+
+out_of_scope:
+  - PDF / docx extraction — decided 2026-07-05: plain text only in v1; conversion is the user's step
+  - the model flavor pass (see deferred_raise — has its own preconditions)
+  - multi-file packs (D7) and a chunk-editor UI — JSON hand-edit + re-import remains the curation path
+  - document import from ConfirmPersonaModal's pack picker — Brain Manager only in v1; add on friction
+  - embedding retrieval — Phase 2b, unchanged, separate raise
+
+build_sequence:
+  - step: 1
+    target: src/client/lib/brain-chunker.ts (+ brain-chunker.test.ts)
+    do: |
+      Port per design.chunker. Test vectors (commit a small fixture .md under lib/eval/fixtures/):
+      - heading split: chunks never straddle headings; pre-heading content chunks with heading ""
+      - packing: paragraphs pack to ~320; >480-token paragraph splits on sentences; <40-token tail merges backward
+      - hard guard: a single 9000-char unbroken string yields chunks ≤8000
+      - metadata: summary = first sentence ≤240; topics = heading slug first, unstemmed, ≤3, deterministic tie order; aliases []
+      - identity: id slug clamped; version stable across two runs on same text; built_at honors opts.now
+      - contract: every output field satisfies the brains-routes rules (mirror its checks as assertions)
+      - errors: whitespace-only doc, non-latin-only filename
+      - estimator parity: pinned numbers for 3-4 sample strings, with the banker's-rounding divergence documented inline (D2)
+  - step: 2
+    target: src/client/lib/eval/ (brain-eval pattern)
+    do: chunk the committed fixture .md at test time, buildBrainIndex over it, replay 3-5 planted-fact probes through searchBrains — proves a homegrown brain actually retrieves, same instrument as the Atlantis fixture pack.
+  - step: 3
+    target: src/client/components/BrainManagerModal.tsx (+ PackCard split if the ratchet trips)
+    do: accept widening, extension branch, shared post/mount tail, overwrite confirm, copy updates. npm test (architecture ratchet), typecheck, lint.
+  - step: 4
+    target: manual smoke
+    do: |
+      - import a real multi-heading .md → card appears (chunk count, "model-free build" badge), auto-mounted; MOUNTED BRAINS summary updates
+      - ask Sal about a fact in the doc → PERSONA KNOWLEDGE carries the chunk; inspector shows the hit; digest lists the doc's title/topics
+      - re-import the same file → overwrite confirm names the pack; confirm → version (hash) unchanged; edit the file, re-import → new version
+      - import notes.txt when a different pack with id "notes" exists → confirm blocks the silent clobber
+      - .json import path regression: an Atlantis pack still imports silently (no confirm)
+      - isolation: memory-grep eval suite green (nothing touched it — the run IS the evidence)
+  - step: 5
+    target: docs (CLAUDE.md, README, changelog) + AGENTS.md note re the shared Atlantis oversize gap (D8)
+    do: per design.docs. Present; developer review → /pre-commit-qa on their invocation.
+
+surprises_to_log:
+  - file: AGENTS.md
+    entry_if_anything_surprises: |
+      Title pattern: "## <Short scannable title> (document import, 2026-07-05)"
+      Candidates to watch for:
+        - Python round() (banker's) vs Math.round drift bigger than ±1 on real docs (D2 accepts ±1)
+        - Counter.most_common tie order vs the TS count-desc/first-seen rule producing different topic slugs on the same doc (cosmetic, but note it)
+        - CRLF documents (Windows .txt) — paragraph split \n\s*\n and heading regex must tolerate \r\n; normalize line endings first
+        - the 4 MB guard being hit by legitimate documents (raise deliberately, with the chunk-count math redone)

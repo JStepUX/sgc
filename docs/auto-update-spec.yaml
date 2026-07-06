@@ -1,0 +1,220 @@
+spec: desktop auto-update (electron-updater + GitHub Releases, voluntary restart)
+status: proposed              # 2026-07-05 — discussed with the developer; posture chosen: voluntary install, unsigned accepted
+date: 2026-07-05
+goal: >
+  Packaged SGC checks GitHub Releases on launch, downloads a newer installer in
+  the background (differential via blockmap), and surfaces "vX.Y ready — restart
+  to update" in the PhaseBar; clicking installs + relaunches. Ignoring the chip
+  still installs on next quit. Publishing becomes `npm run dist:win:publish`
+  (uploads installer + latest.yml + blockmap as a DRAFT release the developer
+  finishes by hand). Dev mode: updater is a no-op, same gate as the server fork.
+
+invariant_check:
+  off_thesis: shell plumbing only — no model, no memory path, no prompt change, no new per-turn API call. Sal never knows updates exist.
+  server_untouched: src/server/** unchanged; the update feed is fetched by MAIN, not the Express fork, not the renderer.
+  bridge_stays_tiny: preload gains one event subscription + one invoke — no key material, no filesystem paths cross to the renderer (matches D2 "redacted state, whitelisted patches" posture).
+  supervises_never_thinks: electron/updater.ts is event wiring around electron-updater; policy (compare versions, diff download) lives in the library, decisions (install now) live with the user.
+
+security_posture:                # decided 2026-07-05 — record, don't relitigate per-build
+  unsigned: the app has no code-signing cert; electron-updater's publisher-match check on the downloaded installer is therefore inactive. Trust anchor = GitHub Releases over TLS on the public repo. Acceptable for a research prototype distributed to known users; revisit (Azure Trusted Signing) if distribution widens.
+  elevation: nsis is the assisted installer (oneClick:false); a user who chose per-machine install will see one UAC prompt when the update installs. Accepted — the voluntary flow means the user just clicked "restart to update" anyway.
+
+current_state:
+  version: 1.2.0 (package.json:3); releases exist on github JStepUX/sgc tagged sgc_v1.0.0 / sgc_v1.1.0 / sgc_v1.2.0 (tag scheme changes — see D4)
+  build_config:
+    file: package.json
+    lines: 27-65                # "build" block — no publish config, so electron-builder does NOT emit app-update.yml today (electron-updater hard-requires it)
+    nsis: lines 60-64           # oneClick:false, allowToChangeInstallationDirectory:true
+    artifact_name: line 30      # sgc-v${version}.${ext} — latest.yml records whatever this resolves to; keep as-is
+  pack_script:
+    file: scripts/dist-win.mjs
+    line: 29                    # run('npx', ['electron-builder', '--win', '--x64']) — no --publish flag (CLI default can auto-publish when GH_TOKEN is set; make it explicit, see D7)
+    abi_dance: the rebuild/restore-in-finally wrapper is untouched by this spec — updates ship a whole new install, so the packaged better-sqlite3 story is unchanged
+  electron_main:
+    file: electron/main.ts       # 101 lines, default 500 budget — room, but updater goes in its own file anyway
+    boot: lines 46-62            # app.isPackaged gate — updater init lands here, packaged branch only
+    ipc_registration: lines 64-93  # app.whenReady().then — installUpdate handle registers beside sgc:getConfigState/sgc:setConfig
+    will_quit: lines 95-97       # serverManager.stop() — quitAndInstall emits before-quit/will-quit, so the fork stops cleanly on update-relaunch; verify in smoke
+  preload:
+    file: electron/preload.ts    # 24 lines — sgcDesktop surface: getConfigState/setConfig only; gains onUpdateReady + installUpdate
+  renderer_bridge_mirror:
+    file: src/client/lib/desktop.ts
+    lines: 33-39                 # SgcDesktopBridge — hand-mirrors the preload surface (comment at lines 5-7 mandates keeping them in sync by hand)
+  chip_site:
+    file: src/client/components/PhaseBar.tsx
+    lines: 47-70                 # right-hand cluster ("considering" marker, meta, Begin again) — the update chip renders first in this cluster
+    wiring: src/client/SalienceGatedCognition.tsx:111-118 (composition root threads props; no domain logic there)
+  esbuild_bundle:
+    script: package.json:13      # build:electron bundles electron/*.ts → dist/electron/*.cjs with --external:electron only
+
+resolved_decisions:
+  - id: D1-electron-updater-github
+    decision: electron-updater with the GitHub provider. Added to "dependencies" (ships in node_modules like the server deps) and marked --external:electron-updater in build:electron rather than bundled by esbuild.
+    rationale: repo is public → no token in the app, no update server to run. Externalizing sidesteps esbuild-vs-dynamic-require surprises; electron-builder already ships production deps (that's how express reaches the fork).
+  - id: D2-voluntary-restart-plus-quiet-fallback
+    decision: autoDownload true; on update-downloaded, notify the renderer (chip). Chip click → autoUpdater.quitAndInstall(true, true) (silent install, relaunch). autoInstallOnAppQuit stays true — an ignored chip still lands the update at next normal quit.
+    rationale: user picks the restart moment (live SQLite session, mid-conversation streams); nobody stays stale forever.
+  - id: D3-check-on-launch-only
+    decision: one checkForUpdates() at boot, packaged only. No periodic re-check timer in v1.
+    rationale: friction-driven — desktop sessions are hours, not weeks; next launch catches up. A timer is a 3-line follow-up if staleness actually bites.
+  - id: D4-tags-become-v-prefixed
+    decision: releases created by electron-builder are tagged v<version> (v1.3.0). The existing sgc_v* tags stay as history; they are never consulted once a newer v-tagged release is latest.
+    rationale: electron-updater's GitHub provider parses semver from the tag; the sgc_ prefix breaks it. Letting the builder create the release removes the hand-tagging step entirely.
+  - id: D5-ipc-surface
+    decision: |
+      main → renderer: webContents.send('sgc:updateReady', { version: string }) once, on update-downloaded.
+      renderer → main: ipcMain.handle('sgc:installUpdate') → quitAndInstall. No getState/poll channel.
+    rationale: push-once matches the event's shape (it happens at most once per run); polling would add surface for nothing. Version string is the only payload — no paths, no URLs cross the bridge.
+  - id: D6-errors-are-silent
+    decision: updater errors (offline, GitHub down, corrupt download) log to console in main and do nothing else. No dialog, no renderer event.
+    rationale: an update failure must never degrade the app someone is actually using; next launch retries naturally (D3).
+  - id: D7-explicit-publish-flag
+    decision: dist-win.mjs always passes an explicit --publish flag — never (default, current `dist:win` behavior preserved) or always when invoked with --publish (new script `dist:win:publish`). Publishing requires GH_TOKEN in the environment; releaseType stays electron-builder's default (draft).
+    rationale: the CLI's implicit publish-when-GH_TOKEN-present behavior is exactly the kind of diligence-dependent surprise Core Value #3 exists to prevent. Draft-by-default keeps release notes hand-written; the update only reaches apps when the developer clicks Publish.
+  - id: D8-updater-own-file
+    decision: all updater logic in new electron/updater.ts; main.ts gains only initUpdater(win) in the packaged boot branch + the sgc:installUpdate handle.
+    rationale: main.ts stays supervision-index-sized; the anti-god-object ratchet never comes near.
+
+design:
+  package_json:
+    build_publish: |
+      "build" gains:  "publish": [{ "provider": "github", "owner": "JStepUX", "repo": "sgc" }]
+      Presence of this block (independent of --publish value) makes electron-builder embed
+      app-update.yml into resources — electron-updater refuses to run without it. This is the
+      one change that must land even for local-only packs.
+    scripts: |
+      "build:electron": add --external:electron-updater
+      "dist:win":         "npm run electron:build && node scripts/dist-win.mjs"            (unchanged text; wrapper now passes --publish never)
+      "dist:win:publish": "npm run electron:build && node scripts/dist-win.mjs --publish"
+    dependencies: electron-updater (runtime dep — see D1)
+  dist_win_mjs:
+    file: scripts/dist-win.mjs
+    change: |
+      const publish = process.argv.includes('--publish') ? 'always' : 'never';
+      builder args become ['electron-builder', '--win', '--x64', '--publish', publish].
+      When publish === 'always', fail fast BEFORE the ABI flip if !process.env.GH_TOKEN
+      (clear message; don't discover it after a full pack).
+  updater:
+    file: electron/updater.ts
+    new: true
+    exported_api: |
+      export function initUpdater(getWindow: () => BrowserWindow | null): void;
+        // packaged-only caller; wires events + fires the single checkForUpdates()
+      export function installUpdate(): void;   // autoUpdater.quitAndInstall(true, true)
+    behavior: |
+      import { autoUpdater } from 'electron-updater';
+      autoUpdater.autoDownload = true; autoUpdater.autoInstallOnAppQuit = true;
+      on 'update-downloaded' (info) → getWindow()?.webContents.send('sgc:updateReady',
+        { version: info.version });
+      on 'error' → console.error('[updater]', err) and nothing else (D6).
+      void autoUpdater.checkForUpdates() — errors surface via the 'error' event, not a rejection
+      crash (attach .catch(() => {}) — checkForUpdates both emits AND rejects on failure).
+      A getWindow THUNK, not a captured win: the window can be recreated/reloaded (config-save
+      restart path, main.ts:83-84) between download-complete and send.
+  main:
+    file: electron/main.ts
+    changes: |
+      boot(), packaged branch (after the loadURL at line 51): initUpdater(() => win).
+      whenReady block: ipcMain.handle('sgc:installUpdate', () => installUpdate()).
+      will-quit (lines 95-97): unchanged — verify in smoke that quitAndInstall runs it (server
+      fork must stop before the installer swaps files).
+  preload:
+    file: electron/preload.ts
+    changes: |
+      sgcDesktop gains:
+        onUpdateReady: (cb: (info: { version: string }) => void): (() => void) => {
+          const listener = (_e, info) => cb(info);
+          ipcRenderer.on('sgc:updateReady', listener);
+          return () => ipcRenderer.removeListener('sgc:updateReady', listener);
+        },
+        installUpdate: (): Promise<void> => ipcRenderer.invoke('sgc:installUpdate'),
+      Unsubscribe return is load-bearing: React StrictMode double-mounts the subscribing hook.
+  renderer_bridge:
+    file: src/client/lib/desktop.ts
+    changes: SgcDesktopBridge gains onUpdateReady(cb): () => void and installUpdate(): Promise<void>, mirroring preload by hand per the file's own sync comment. Web build: bridge absent → feature invisible, zero code paths hit.
+  hook:
+    file: src/client/hooks/useDesktopUpdate.ts
+    new: true
+    exported_api: |
+      export function useDesktopUpdate(): {
+        updateVersion: string | null;      // null until sgc:updateReady fires
+        installUpdate: () => void;         // no-op when bridge absent
+      }
+    behavior: useEffect subscribes via getDesktop()?.onUpdateReady, cleans up with the returned unsubscribe; web mode returns the inert shape. One useState — this is a hook for symmetry with the hooks/ axis pattern, not for size.
+  chip:
+    file: src/client/components/PhaseBar.tsx (+ wiring in src/client/SalienceGatedCognition.tsx:111-118)
+    changes: |
+      PhaseBar props gain updateVersion: string | null and onInstallUpdate: () => void.
+      When updateVersion non-null, render FIRST in the right cluster (before "considering"):
+        a quiet button, font-mono text-[11px], ember accent (this is an invitation, not an
+        alarm): `v{updateVersion} ready — restart to update`. Disabled while processing
+        (never yank a live stream); onClick → onInstallUpdate().
+      Composition root: const update = useDesktopUpdate(); thread both props. No other logic.
+  release_flow: |
+    1. bump "version" in package.json (electron-updater compares app.getVersion() vs latest.yml)
+    2. npm run dist:win:publish   (GH_TOKEN in env; uploads sgc-vX.Y.Z.exe + .blockmap + latest.yml to a DRAFT release tagged vX.Y.Z)
+    3. write release notes on github; click Publish — apps see it from their next launch
+    Note: the FIRST auto-update download is full-size; differential kicks in once two consecutive
+    releases both carry blockmaps (all v-tagged releases will).
+  docs:
+    claude_md: Project Structure gains electron/updater.ts one-liner; "Run it (desktop)" paragraph gains two sentences (update check on launch → PhaseBar chip; dist:win:publish flow). Mission Brief untouched — nothing here is thesis-adjacent.
+    changelog: docs/changelogs/ entry on land.
+
+out_of_scope:
+  - code signing (Azure Trusted Signing) — revisit when distribution widens beyond known users; recorded in security_posture
+  - periodic re-check timer (D3) — 3-line follow-up if staleness shows up as real friction
+  - release-notes display in-app (autoUpdater info.releaseNotes → a modal) — the chip links nothing in v1; GitHub is the changelog surface
+  - delta-only "channel" support (beta/latest) — one channel, latest
+  - macOS/Linux targets — win-only repo today; signing is MANDATORY for mac auto-update, so that's a bigger conversation
+  - rollback UI — a bad release is fixed by publishing a newer good one
+
+build_sequence:
+  - step: 1
+    target: package.json + scripts/dist-win.mjs
+    do: publish config block; electron-updater dep; --external:electron-updater; dist:win:publish script; wrapper --publish flag + GH_TOKEN fail-fast. Verify `npm run dist:win` (never path) still packs and app-update.yml appears in release/win-unpacked/resources/.
+  - step: 2
+    target: electron/updater.ts
+    do: initUpdater/installUpdate per design. Typecheck via tsconfig.electron.json.
+  - step: 3
+    target: electron/main.ts + electron/preload.ts
+    do: initUpdater call (packaged branch), sgc:installUpdate handle, preload surface + unsubscribe.
+  - step: 4
+    target: src/client/lib/desktop.ts + src/client/hooks/useDesktopUpdate.ts
+    do: bridge mirror + hook (inert on web).
+  - step: 5
+    target: src/client/components/PhaseBar.tsx + src/client/SalienceGatedCognition.tsx
+    do: chip + prop threading. `npm run dev` visual check: no chip in web mode, layout undisturbed.
+  - step: 6
+    target: manual smoke (this feature has no meaningful unit surface — it's wiring around a library; the smoke IS the verification)
+    do: |
+      - loopback update: pack at current version; bump package.json version + repack; serve the
+        second release/ dir with `npx serve`; drop dev-app-update.yml (generic provider →
+        http://localhost:<port>) next to the packaged exe of the FIRST build and launch it →
+        chip appears with the bumped version → click → silent install → app relaunches at new
+        version → %APPDATA% db/config intact.
+      - kill the static server, relaunch → no chip, no dialog, console shows the logged error (D6).
+      - `npm run electron:dev` → updater never initializes (packaged gate).
+      - quit WITHOUT clicking the chip while an update is downloaded → next launch is the new
+        version (autoInstallOnAppQuit path) — also proves will-quit stopped the fork cleanly.
+  - step: 7
+    target: first real publish
+    do: version → 1.3.0; npm run dist:win:publish; publish the draft; install the PREVIOUS release build and confirm the chip appears against real GitHub. (This step happens post-land, first release after.)
+  - step: 8
+    target: docs (CLAUDE.md, changelog)
+    do: per design.docs. Then present; developer review → /pre-commit-qa on their invocation.
+
+surprises_to_log:
+  - file: AGENTS.md
+    entry_if_anything_surprises: |
+      Title pattern: "## <Short scannable title> (auto-update, 2026-07-05)"
+      Candidates to watch for:
+        - quitAndInstall vs will-quit ordering (does serverManager.stop() finish before the NSIS
+          installer swaps files? if the fork holds the sqlite file open the installer may retry/fail)
+        - electron-updater resolving the "latest" release while old sgc_v* tags exist (expected
+          fine — it reads the latest release's latest.yml — but verify at step 7)
+        - esbuild --external:electron-updater and its transitive deps under asar (it lives in
+          node_modules unpacked-normally; better-sqlite3 is the only asarUnpack)
+        - the assisted-installer (oneClick:false) running silently via quitAndInstall(true,…) —
+          confirm the silent flag is honored for per-user installs, note UAC behavior for per-machine
+        - GH_TOKEN scope needed for release upload on a public repo (classic: repo; fine-grained:
+          contents:write)
