@@ -50,6 +50,14 @@ export interface TurnContextInput {
    * list in the header comment.
    */
   brainIndex?: BrainIndex | null;
+  /**
+   * Whether the `recall` tool will be attached to this turn's model call(s).
+   * MUST mirror the caller's tool-attachment decision (deliberate-recall D2:
+   * prompt framing and tool attach toggle together from one value — never
+   * tell Sal about a tool it doesn't have). Defaults false; the re-spin path
+   * doesn't attach tools, so its default reproduces a plain prompt.
+   */
+  recallEnabled?: boolean;
 }
 
 export interface TurnContextResult {
@@ -62,7 +70,7 @@ export interface TurnContextResult {
 }
 
 export function assembleTurnContext(input: TurnContextInput): TurnContextResult {
-  const { query, priorLog, constitutional, persona, now, fetchedDocs, failedUrls, spontaneityDirective, brainIndex } = input;
+  const { query, priorLog, constitutional, persona, now, fetchedDocs, failedUrls, spontaneityDirective, brainIndex, recallEnabled = false } = input;
 
   // ---- LOCAL BUFFER: last 2 turns (4 entries: user+assistant pairs) ----
   const localBuffer = priorLog.slice(-LOCAL_BUFFER_SIZE);
@@ -94,7 +102,12 @@ export function assembleTurnContext(input: TurnContextInput): TurnContextResult 
       ? { digests: brainIndex.digests, results: searchBrains(query, brainIndex) }
       : null;
 
-  // ---- BUILD THE SINGLE-CALL PROMPT ----
+  // Older history exists beyond BOTH buffers — the distinction the absence
+  // marker needs: "nothing surfaced" is only worth saying when there was a
+  // corpus to surface from (deliberate-recall spec, D7 rationale).
+  const hasOlderHistory = priorLog.length > LOCAL_BUFFER_SIZE + SUMMARY_BUFFER_SIZE;
+
+  // ---- BUILD THE PROMPT ----
   // `now` gives retrieved turns a relative-time prefix computed against the same
   // reference the time scorer used; the distilled summary window follows it.
   const systemPrompt = buildPrompt(
@@ -108,6 +121,8 @@ export function assembleTurnContext(input: TurnContextInput): TurnContextResult 
     summaryWindow,
     spontaneityDirective,
     knowledge,
+    recallEnabled,
+    hasOlderHistory,
   );
 
   return { systemPrompt, grepResults, knowledge, localBufferSize: localBuffer.length };

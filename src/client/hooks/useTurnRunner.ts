@@ -3,7 +3,9 @@ import type { FetchedDoc } from '../lib/types';
 import type { TurnData } from '../lib/turn-data';
 import { assembleTurnContext } from '../lib/turn-context';
 import { estimateNaiveContextTokens, parseTurnResponse, stripStreamingMeta } from '../lib/prompt';
-import { runTurn, extractUrls, fetchUrl } from '../lib/api';
+import { extractUrls, fetchUrl } from '../lib/api';
+import { executeRecall, RECALL_TOOL } from '../lib/recall';
+import { runTurnWithRecall } from '../lib/recall-loop';
 import { runSpontaneity } from '../lib/spontaneity/engine';
 import { operatorLabel } from '../lib/spontaneity/flexDeck';
 import { saveTurn as apiSaveTurn, listChats as apiListChats } from '../lib/persistence';
@@ -11,9 +13,10 @@ import type { ChatSession } from './useChatSession';
 import type { ProviderState } from './useProvider';
 
 // ============================================================
-// TURN RUNNER — the live turn: assemble the three tiers, make the single
-// model call (streamed), promote the reply, persist the pair. Operates on the
-// shared session (see useChatSession — the hooks are namespaces, not stores).
+// TURN RUNNER — the live turn: assemble the three tiers, run the model call
+// (streamed; up to two extra rounds when Sal deliberately recalls), promote
+// the reply, persist the pair. Operates on the shared session (see
+// useChatSession — the hooks are namespaces, not stores).
 // ============================================================
 
 export function useTurnRunner(
@@ -24,12 +27,17 @@ export function useTurnRunner(
 ): {
   isProcessing: boolean;
   streamingText: string | null;
+  turnStatus: 'streaming' | 'remembering' | null;
   submitTurn: (text: string) => void;
 } {
   const [isProcessing, setIsProcessing] = useState(false);
   // Sal's reply as it streams in, with the trailing <turn-summary> block stripped.
   // null = no turn streaming (show the dot-pulse loader instead).
   const [streamingText, setStreamingText] = useState<string | null>(null);
+  // What the in-flight turn is doing: 'remembering' while a recall round-trip
+  // runs (the root shows the quiet "Remembering…" line under any streamed
+  // text), 'streaming' once deltas arrive, null when nothing is in flight.
+  const [turnStatus, setTurnStatus] = useState<'streaming' | 'remembering' | null>(null);
 
   // `text` is the trimmed draft the composer passed up. The composer also
   // pre-checks `submitDisabled`, but we keep the guard here as a belt to
@@ -130,6 +138,23 @@ export function useTurnRunner(
         ? { label: operatorLabel(spont.operator.directive) }
         : undefined;
 
+      // ---- PROVIDER + RECALL GATE (decided BEFORE prompt assembly) ----
+      // Assert the provider token only once /api/health has CONFIRMED it
+      // available — an explicit-but-unavailable token 503s by design
+      // (resolveTurnProvider never reroutes), and before health resolves (or
+      // when the fetch failed) the stored/initial token is just a guess.
+      // Omitting it lets the server route to its boot default instead. This
+      // matters since the fresh-install default became LOCAL: a fast submit
+      // on an Anthropic-only deploy must not 503 on an unconfigured 'openai'.
+      const confirmedProvider = health?.providers[provider]?.available ? provider : undefined;
+      // Deliberate recall is Anthropic-only in v1 (spec D2) — and the decision
+      // is made HERE, before assembly, because the prompt's recall framing and
+      // the tool attachment must toggle together from this one value. An
+      // unconfirmed provider gets no tools (we can't know what will serve the
+      // turn), so it also gets no framing — never tell Sal about a tool it
+      // might not have.
+      const recallEnabled = confirmedProvider === 'anthropic';
+
       // ---- ASSEMBLE THE THREE TIERS (deterministic, no model) ----
       // localBuffer (verbatim last 2 turns) + distilled summary window + cosine
       // grep + buildPrompt — all in assembleTurnContext, the shared path the
@@ -149,6 +174,7 @@ export function useTurnRunner(
         // (null when none). Searched inside the assembler — still 0 ms, 0
         // tokens, no model; the memory grep above it is untouched.
         brainIndex,
+        recallEnabled,
       });
       turnData.localBufferSize = localBufferSize;
       if (grepResults.length > 0) {
@@ -172,29 +198,35 @@ export function useTurnRunner(
         }));
       }
 
-      // ---- SINGLE MODEL CALL (streamed) ----
-      // Assert the provider token only once /api/health has CONFIRMED it
-      // available — an explicit-but-unavailable token 503s by design
-      // (resolveTurnProvider never reroutes), and before health resolves (or
-      // when the fetch failed) the stored/initial token is just a guess.
-      // Omitting it lets the server route to its boot default instead. This
-      // matters since the fresh-install default became LOCAL: a fast submit
-      // on an Anthropic-only deploy must not 503 on an unconfigured 'openai'.
-      const confirmedProvider = health?.providers[provider]?.available ? provider : undefined;
-      const turnResult = await runTurn(
+      // ---- MODEL CALL(S), STREAMED ----
+      // One call on the common path; up to 1 + MAX_RECALL_ROUNDS when Sal
+      // reaches for the recall tool (the consciously-amended guardrail — see
+      // CLAUDE.md Mission Brief). The loop is pure control flow; every recall
+      // executes client-side through the SAME deterministic engine as ambient
+      // retrieval, seeded with the ambient grep's turnIndexes so a recall
+      // never re-fetches what the prompt already carries (D5).
+      const turnResult = await runTurnWithRecall({
         systemPrompt,
-        userInput,
-        (rawSoFar) => {
+        userMessage: userInput,
+        tools: recallEnabled ? [RECALL_TOOL] : null,
+        provider: confirmedProvider,
+        onDelta: (rawSoFar) => {
           // Render Sal's reply as it arrives; hide the trailing <turn-summary> block.
           setStreamingText(stripStreamingMeta(rawSoFar));
         },
-        confirmedProvider,
-      );
+        onStatus: setTurnStatus,
+        executeTool: (input, surfaced) => executeRecall(input, chatLog, turnStartedAt, surfaced),
+        initialSurfaced: grepResults.map((r) => r.turnIndex),
+      });
+      // The <turn-summary> contract binds the FINAL round — parse the full
+      // cross-round concatenation (D6): one turn, one reply, one summary.
       const { displayText, summary } = parseTurnResponse(turnResult.text);
 
       turnData.inputTokens = turnResult.inputTokens;
       turnData.outputTokens = turnResult.outputTokens;
       turnData.totalLatency = turnResult.elapsed;
+      turnData.recalls = turnResult.recalls;
+      turnData.apiCalls = turnResult.apiCalls;
       // Sal's fresh per-turn observation. Stored on turnData (→ inspector_json,
       // so it persists + rehydrates) and carried on the message below so it
       // renders as a dimmed one-line appendage beneath this reply. It is NOT
@@ -261,6 +293,7 @@ export function useTurnRunner(
       setMessages((prev) => [...prev, { role: 'assistant' as const, content: `I lost my place. Try again? (${detail})`, createdAt: Date.now() }]);
     } finally {
       setStreamingText(null);
+      setTurnStatus(null);
       setIsProcessing(false);
       // The composer focuses itself on its `resetSignal` effect (bumped above
       // when the turn started). No imperative focus call needed here.
@@ -278,5 +311,5 @@ export function useTurnRunner(
     void processInputRef.current(text);
   }, []);
 
-  return { isProcessing, streamingText, submitTurn };
+  return { isProcessing, streamingText, turnStatus, submitTurn };
 }

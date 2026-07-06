@@ -103,7 +103,7 @@ export function useResponseEditor(
       const confirmedProvider = health?.providers[provider]?.available ? provider : undefined;
       const result = await runTurn(
         systemPrompt,
-        targetUser.content,
+        [{ role: 'user', content: targetUser.content }],
         (raw) => onDelta(stripStreamingMeta(raw)),
         confirmedProvider,
       );

@@ -2,6 +2,7 @@ import type { SpontaneityInspector } from './spontaneity/engine';
 import { operatorLabel } from './spontaneity/flexDeck';
 import type { ChatEntry, TurnSummary } from './types';
 import type { ChatTurn } from './persistence';
+import type { RecallEvent } from './recall-loop';
 import { parseTurnResponse } from './turn-parser';
 
 // ============================================================
@@ -64,6 +65,20 @@ export interface TurnData extends SpontaneityInspector {
    * don't carry it. NOT part of the naive baseline (spec D7).
    */
   knowledgeDetails?: KnowledgeDetail[] | null;
+  /**
+   * Deliberate recalls Sal performed this turn (the recall tool loop), for the
+   * inspector's "Deliberate recall" tile. Empty = tool available but unused;
+   * optional because turns persisted before the feature don't carry it. Also
+   * the raw material for a future usage-based salience factor — a deliberate
+   * recall is the strongest rehearsal signal (out-of-scope note, spec 01).
+   */
+  recalls?: RecallEvent[];
+  /**
+   * Model calls this turn took: 1 + one per recall round. Optional (old
+   * turns); the inspector falls back to 1. naiveTokens deliberately ignores
+   * this — recall is an SGC capability the naive pipeline lacks.
+   */
+  apiCalls?: number;
 }
 
 export interface TokenHistoryEntry {

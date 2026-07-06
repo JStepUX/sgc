@@ -174,6 +174,16 @@ export default function SalienceGatedCognition() {
                   </div>
                 )}
 
+                {/* Quiet status line while a deliberate-recall round-trip is in
+                    flight — rendered UNDER any already-streamed text so the
+                    partial reply stays visible while Sal remembers. Diegetic
+                    copy only (never "grep" / "tool call"). */}
+                {runner.turnStatus === 'remembering' && (
+                  <div className="animate-pulse py-1 font-mono text-[10.5px] tracking-wide text-fg-3">
+                    Remembering…
+                  </div>
+                )}
+
                 <div ref={chatEndRef} />
               </div>
             </div>

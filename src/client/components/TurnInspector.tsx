@@ -55,6 +55,16 @@ export const TurnInspector = memo(function TurnInspector({ turnData }: { turnDat
             Knowledge: {turnData.knowledgeDetails.length} fragment{turnData.knowledgeDetails.length !== 1 ? 's' : ''}
           </li>
         )}
+        {turnData.recalls && turnData.recalls.length > 0 && (
+          // Deliberate recall — Sal paused mid-turn and queried its own
+          // history through the same deterministic engine. Per-event cards
+          // below carry the query/neighbor target + match counts.
+          <li className="flex items-center gap-2 font-mono text-[11px] tracking-[0.02em] text-fg-2">
+            <span className="size-[5px] shrink-0 rounded-full bg-ember" />
+            Deliberate recall: {turnData.recalls.length} recall{turnData.recalls.length !== 1 ? 's' : ''}
+            {typeof turnData.apiCalls === 'number' ? ` (${turnData.apiCalls} API calls)` : ''}
+          </li>
+        )}
         {typeof turnData.spontaneitySimilarity === 'number' && (
           // Always-on slack reading — the calibration signal. Shown even when
           // nothing fired so the firing line (DEFAULT_SLACK_THRESHOLD) can be
@@ -108,6 +118,34 @@ export const TurnInspector = memo(function TurnInspector({ turnData }: { turnDat
         </div>
       )}
 
+      {turnData.recalls && turnData.recalls.length > 0 && (
+        <div className="mt-1 flex flex-col gap-2">
+          {turnData.recalls.map((r, i) => (
+            // Same card idiom as a grep match — round + mode line, then what
+            // Sal actually asked for. The inspector is the technical surface,
+            // so query text renders verbatim here.
+            <Card
+              key={i}
+              className="gap-0 rounded-[4px_10px_10px_4px] border border-l-2 border-l-ember px-3 py-2.5 shadow-none"
+            >
+              <div className="mb-1 flex items-baseline gap-3 font-mono text-[10.5px] text-fg-3">
+                <span className="font-medium text-fg-1">Deliberate recall · round {r.round}</span>
+                <span>
+                  {r.matches} match{r.matches !== 1 ? 'es' : ''}
+                </span>
+              </div>
+              <div className="overflow-hidden text-ellipsis whitespace-nowrap text-xs leading-[1.5] text-fg-2">
+                {typeof r.input.query === 'string' && r.input.query.trim()
+                  ? `query: “${r.input.query}”`
+                  : typeof r.input.around_turn === 'number'
+                    ? `around turn ${r.input.around_turn}`
+                    : 'empty recall input'}
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
       {turnData.spontaneityFired && turnData.spontaneityDirective && (
         // The exact directive injected into Sal's prompt this turn — the INPUT
         // half of transparency. Whether Sal acted on it is a read of the reply
@@ -138,6 +176,13 @@ export const TurnInspector = memo(function TurnInspector({ turnData }: { turnDat
         const sent = turnData.inputTokens;
         const naive = turnData.naiveTokens ?? 0;
         const hasNaive = naive > 0;
+        // Old turns predate the field; the base loop is 1 call. Recall turns
+        // bill each round's input, so Sent reads visibly larger on them —
+        // expected, and worth saying rather than leaving the number odd.
+        const apiCalls = turnData.apiCalls ?? 1;
+        const callsLine = apiCalls === 1
+          ? '1 API call this turn — Sal only.'
+          : `${apiCalls} API calls this turn — Sal paused to remember (tokens are summed across rounds).`;
         const savedPct = hasNaive && naive > sent
           ? Math.round(((naive - sent) / naive) * 100)
           : 0;
@@ -175,14 +220,14 @@ export const TurnInspector = memo(function TurnInspector({ turnData }: { turnDat
                   </div>
                 )}
                 <div className="mt-1.5 text-[10.5px] leading-[1.4] text-fg-3">
-                  Naive is an estimate (~4 chars / token). 1 API call this turn — Sal only.
+                  Naive is an estimate (~4 chars / token). {callsLine}
                 </div>
               </>
             ) : (
               <>
-                <div className="mt-1.5 font-mono text-[22px] font-semibold text-ember">1</div>
+                <div className="mt-1.5 font-mono text-[22px] font-semibold text-ember">{apiCalls}</div>
                 <div className="mt-0.5 text-[10.5px] text-fg-3">
-                  Sal only. Grep is TF-IDF (0 ms).
+                  {apiCalls === 1 ? 'Sal only. Grep is TF-IDF (0 ms).' : 'Sal paused to remember. Retrieval is still TF-IDF (0 ms).'}
                 </div>
               </>
             )}
