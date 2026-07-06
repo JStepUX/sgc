@@ -8,7 +8,7 @@
 // lib/turn-parser.ts (re-exported below so existing importers stay valid).
 // ============================================================
 
-import type { Memory, ChatEntry, FetchedDoc, TurnSummary } from './types';
+import type { ChatEntry, FetchedDoc, TurnSummary } from './types';
 import type { ScoredResult } from './time-score';
 import type { KnowledgeBlock } from './brains';
 import { formatRelative, formatNowHeader } from './format-time';
@@ -41,7 +41,7 @@ You are one aperture in a system of apertures. The person you're speaking with i
 When the person shares a link, its text is usually pre-loaded for you below as a LINKED PAGE - read it there. You have no live web access of your own: you cannot search or open pages yourself. So when something falls outside what you know, your constitutional memories, the retrieved history, or a page already provided to you, say plainly that you don't have it and ask the person to paste what you need - don't guess or invent it. Your constitutional memories and the retrieved history are the source of truth for who they are.`;
 
 export function buildPrompt(
-  memories: Memory[],
+  constitutional: string,
   localBuffer: ChatEntry[],
   grepResults: ScoredResult[] | null,
   fetchedDocs?: FetchedDoc[] | null,
@@ -71,13 +71,15 @@ export function buildPrompt(
   const personaKnowledgeClause = hasKnowledge
     ? '\n\nThis conversation also carries PERSONA KNOWLEDGE — curated reference material mounted alongside you, listed below. It is part of what you know here: when its subjects come up, speak from it, and prefer a provided passage over general recollection. It is reference material about the world, not memory of this person.'
     : '';
-  // With no memories (a fresh chat — the set is per-chat and starts empty), say
-  // so plainly rather than rendering an empty section under the "you carry
+  // The constitutional document renders VERBATIM (trimmed) — no chip numbering,
+  // no reformatting. Sal reads prose better than decontextualized fragments;
+  // relationships between facts survive an unmangled paragraph. With no
+  // document (a fresh chat — the set is per-chat and starts empty), say so
+  // plainly rather than rendering an empty section under the "you carry
   // constitutional memories" framing, which would read as a contradiction.
-  const memBlock = memories.length > 0
-    ? memories
-        .map((m, i) => `  [M${i + 1}] ${m.text}`)
-        .join('\n')
+  const trimmedConstitutional = constitutional.trim();
+  const memBlock = trimmedConstitutional.length > 0
+    ? trimmedConstitutional
     : '  (none yet — nothing has been curated for this conversation)';
 
   let localBlock = '';
@@ -287,7 +289,7 @@ IMPORTANT: The <turn-summary> block must be the very last thing in your response
  * changes.
  */
 export function estimateNaiveContextTokens(
-  memories: Memory[],
+  constitutional: string,
   fullChatLog: ChatEntry[],
   userInput: string,
   fetchedDocs?: FetchedDoc[] | null,
@@ -305,6 +307,6 @@ export function estimateNaiveContextTokens(
   // `now` is forwarded so the relative-time prefixes in the grep block (when
   // present) compute against the same reference instant; here grepResults is
   // null so it's a no-op, but the parameter is kept in sync for symmetry.
-  const naiveSystem = buildPrompt(memories, fullChatLog, null, fetchedDocs, failedUrls, persona, now);
+  const naiveSystem = buildPrompt(constitutional, fullChatLog, null, fetchedDocs, failedUrls, persona, now);
   return estimateTokens(naiveSystem) + estimateTokens(userInput);
 }

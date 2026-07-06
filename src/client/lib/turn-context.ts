@@ -16,7 +16,7 @@
 // assembly to the byte: the buffer math, the summary window, the grep options,
 // and the buildPrompt argument order all live here, in one place.
 
-import type { ChatEntry, FetchedDoc, Memory } from './types';
+import type { ChatEntry, FetchedDoc } from './types';
 import { LOCAL_BUFFER_SIZE, SUMMARY_BUFFER_SIZE } from './constants';
 import { searchScored, type ScoredResult } from './time-score';
 import { searchBrains, type BrainIndex, type KnowledgeBlock } from './brains';
@@ -27,7 +27,8 @@ export interface TurnContextInput {
   query: string;
   /** Everything BEFORE this turn's user message. Live: the full chatLog. Re-spin: chatLog sliced to the turn. */
   priorLog: ChatEntry[];
-  memories: Memory[];
+  /** This chat's constitutional document — freeform prose, rendered verbatim by buildPrompt. */
+  constitutional: string;
   persona: string;
   /** Reference instant — turnStartedAt for the live turn, the target turn's createdAt for a re-spin. */
   now: number;
@@ -61,7 +62,7 @@ export interface TurnContextResult {
 }
 
 export function assembleTurnContext(input: TurnContextInput): TurnContextResult {
-  const { query, priorLog, memories, persona, now, fetchedDocs, failedUrls, spontaneityDirective, brainIndex } = input;
+  const { query, priorLog, constitutional, persona, now, fetchedDocs, failedUrls, spontaneityDirective, brainIndex } = input;
 
   // ---- LOCAL BUFFER: last 2 turns (4 entries: user+assistant pairs) ----
   const localBuffer = priorLog.slice(-LOCAL_BUFFER_SIZE);
@@ -97,7 +98,7 @@ export function assembleTurnContext(input: TurnContextInput): TurnContextResult 
   // `now` gives retrieved turns a relative-time prefix computed against the same
   // reference the time scorer used; the distilled summary window follows it.
   const systemPrompt = buildPrompt(
-    memories,
+    constitutional,
     localBuffer,
     grepResults.length > 0 ? grepResults : null,
     fetchedDocs,

@@ -27,6 +27,7 @@ import {
   type ProviderId,
 } from './providers.js';
 import {
+  MAX_CONSTITUTIONAL_CHARS,
   appendPromptVersion as dbAppendPromptVersion,
   createChat as dbCreateChat,
   deleteChat as dbDeleteChat,
@@ -34,12 +35,11 @@ import {
   listChats as dbListChats,
   loadChat as dbLoadChat,
   prependManualTurnPair as dbPrependManualTurnPair,
-  saveMemories as dbSaveMemories,
   saveTurnPair as dbSaveTurnPair,
+  setChatConstitutional as dbSetChatConstitutional,
   setTurnsActive as dbSetTurnsActive,
   updateTurnContent as dbUpdateTurnContent,
   type ManualTurnInput,
-  type SaveMemoryInput,
   type SaveTurnInput,
   type TurnActiveState,
 } from './db.js';
@@ -474,23 +474,35 @@ app.get('/api/chats', (_req, res) => {
 // is a short display-only label (NEVER reaches the model — see prompt path).
 const MAX_PERSONA_CHARS = 20_000;
 const MAX_MASK_CHARS = 80;
+// The constitutional cap (same size + rationale as the persona: it rides every
+// turn's system prompt — spec D5) is imported from db.ts, which shares it with
+// the legacy-chips migration clamp so route and storage can never disagree.
 
 interface CreateChatBody {
   persona?: unknown;
   mask?: unknown;
+  constitutional?: unknown;
 }
 
 app.post('/api/chats', (req, res) => {
-  // Optional { persona, mask }; each must be a string when present. The server
-  // stores both as opaque strings — it never interprets the persona (it forwards
-  // the fully-built system prompt on /api/turn) and the mask is display-only.
-  const { persona, mask } = (req.body ?? {}) as CreateChatBody;
+  // Optional { persona, mask, constitutional }; each must be a string when
+  // present. The server stores all three as opaque strings — it never
+  // interprets the persona or the constitutional document (both are forwarded
+  // verbatim into the system prompt on /api/turn) and the mask is display-only.
+  // `constitutional` is how "Begin again"'s carry-forward seeds a new chat's
+  // document at birth (D3) — absent/empty means the chat starts with nothing
+  // curated, same as before this tier existed.
+  const { persona, mask, constitutional } = (req.body ?? {}) as CreateChatBody;
   if (persona !== undefined && typeof persona !== 'string') {
     res.status(400).json({ error: 'persona must be a string when provided.' });
     return;
   }
   if (mask !== undefined && typeof mask !== 'string') {
     res.status(400).json({ error: 'mask must be a string when provided.' });
+    return;
+  }
+  if (constitutional !== undefined && typeof constitutional !== 'string') {
+    res.status(400).json({ error: 'constitutional must be a string when provided.' });
     return;
   }
   if (typeof persona === 'string' && persona.length > MAX_PERSONA_CHARS) {
@@ -501,9 +513,18 @@ app.post('/api/chats', (req, res) => {
     res.status(400).json({ error: `mask exceeds ${MAX_MASK_CHARS} characters.` });
     return;
   }
+  if (typeof constitutional === 'string' && constitutional.length > MAX_CONSTITUTIONAL_CHARS) {
+    res.status(400).json({ error: `constitutional exceeds ${MAX_CONSTITUTIONAL_CHARS} characters.` });
+    return;
+  }
   try {
     const id = randomUUID();
-    dbCreateChat(id, typeof persona === 'string' ? persona : null, typeof mask === 'string' ? mask : null);
+    dbCreateChat(
+      id,
+      typeof persona === 'string' ? persona : null,
+      typeof mask === 'string' ? mask : null,
+      typeof constitutional === 'string' ? constitutional : undefined,
+    );
     res.json({ id });
   } catch (err) {
     console.error('createChat failed:', err);
@@ -795,48 +816,28 @@ app.post('/api/chats/:id/prompt-versions', (req, res) => {
   }
 });
 
-// Memories are per-chat now: there is no global GET — a chat's memories ride
-// along in its /api/chats/:id (loadChat) payload. PUT below scopes by chatId.
-
-interface SaveMemoriesBody {
-  chatId?: unknown;
-  memories?: unknown;
+// The constitutional document is per-chat, one column: there is no global
+// GET — a chat's document rides along in its /api/chats/:id (loadChat)
+// payload. This PUT overwrites it wholesale, scoped by chatId, mirroring
+// turn-active / prompt-versions above. NOT a model route: saving the document
+// is curation the user typed themselves, same "no model in the memory tier"
+// line every other route in this section holds.
+interface SaveConstitutionalBody {
+  text?: unknown;
 }
 
-function parseMemoryInput(x: unknown): SaveMemoryInput | null {
-  if (!x || typeof x !== 'object') return null;
-  const r = x as Record<string, unknown>;
-  if (typeof r.id !== 'string') return null;
-  if (typeof r.text !== 'string') return null;
-  // Constitutional memories are plain durable facts now — no confidence/history
-  // (the per-turn grading was retired for the <turn-summary> channel).
-  return { id: r.id, text: r.text };
-}
-
-app.put('/api/memories', (req, res) => {
-  const body = (req.body ?? {}) as SaveMemoriesBody;
-  if (typeof body.chatId !== 'string') {
-    res.status(400).json({ error: 'chatId must be a string.' });
+app.put('/api/chats/:id/constitutional', (req, res) => {
+  const { text } = (req.body ?? {}) as SaveConstitutionalBody;
+  if (typeof text !== 'string') {
+    res.status(400).json({ error: 'text must be a string.' });
     return;
   }
-  const chatId = body.chatId;
-  if (!Array.isArray(body.memories)) {
-    res.status(400).json({ error: 'memories must be an array.' });
+  if (text.length > MAX_CONSTITUTIONAL_CHARS) {
+    res.status(400).json({ error: `text exceeds ${MAX_CONSTITUTIONAL_CHARS} characters.` });
     return;
-  }
-  const parsed: SaveMemoryInput[] = [];
-  for (const raw of body.memories) {
-    const m = parseMemoryInput(raw);
-    if (!m) {
-      res.status(400).json({
-        error: 'each memory must be {id, text}.',
-      });
-      return;
-    }
-    parsed.push(m);
   }
   try {
-    dbSaveMemories({ chatId, memories: parsed });
+    dbSetChatConstitutional(req.params.id, text);
     res.json({ ok: true });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'unknown';
@@ -844,12 +845,8 @@ app.put('/api/memories', (req, res) => {
       res.status(404).json({ error: 'Chat not found.' });
       return;
     }
-    if (msg.startsWith('memory chat mismatch')) {
-      res.status(409).json({ error: 'A memory id in the payload is owned by another chat.' });
-      return;
-    }
-    console.error('saveMemories failed:', err);
-    res.status(500).json({ error: 'Failed to save memories.' });
+    console.error('setChatConstitutional failed:', err);
+    res.status(500).json({ error: 'Failed to save constitutional document.' });
   }
 });
 

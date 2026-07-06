@@ -29,7 +29,7 @@ export function useResponseEditor(
   saveEdit: (text: string, respin: RespinResult | null) => Promise<void>;
 } {
   const {
-    messages, chatLog, memories, activePersona, latestTurn, chatId, brainIndex,
+    messages, chatLog, constitutional, activePersona, latestTurn, chatId, brainIndex,
     setMessages, setChatLog, setLatestTurn, setChats,
   } = session;
   const { provider, health } = providerState;
@@ -54,9 +54,10 @@ export function useResponseEditor(
 
   // Re-spin: re-run the currently-selected model for the target turn. The chat
   // HISTORY tier is reconstructed faithfully — sliced to before this turn, recency
-  // anchored at its original instant, so no later turn can leak in. Memories and
-  // persona are CURRENT, not snapshotted (they have no per-turn binding anywhere;
-  // the modal copy says so). Streams stripped preview text via onDelta.
+  // anchored at its original instant, so no later turn can leak in. The
+  // constitutional document and persona are CURRENT, not snapshotted (they have
+  // no per-turn binding anywhere; the modal copy says so). Streams stripped
+  // preview text via onDelta.
   // This is the feature's one extra model call: an explicit user action that
   // reuses the deterministic context-assembly path (assembleTurnContext) and
   // keeps Sal ephemeral + memory retrieval pure math — inside the Phase 1.5
@@ -84,7 +85,7 @@ export function useResponseEditor(
       const { systemPrompt } = assembleTurnContext({
         query: targetUser.content,
         priorLog: chatLog.slice(0, userIdx),
-        memories,
+        constitutional,
         persona: activePersona,
         now: targetUser.createdAt,
         fetchedDocs,
@@ -95,7 +96,7 @@ export function useResponseEditor(
         // only, so latestTurn is this turn's diagnostics. null → none fired.
         spontaneityDirective: latestTurn?.spontaneityDirective ?? null,
         // CURRENT mounts, not a per-turn snapshot (spec D8) — same convention
-        // as memories/persona above; the modal copy says so.
+        // as the constitutional document/persona above; the modal copy says so.
         brainIndex,
       });
 
@@ -115,7 +116,7 @@ export function useResponseEditor(
         elapsed: result.elapsed,
       };
     },
-    [editTarget, chatLog, memories, activePersona, health, provider, latestTurn, brainIndex],
+    [editTarget, chatLog, constitutional, activePersona, health, provider, latestTurn, brainIndex],
   );
 
   // Save the edited reply. Persist FIRST, then commit to state on success (a

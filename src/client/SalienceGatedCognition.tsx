@@ -14,6 +14,7 @@ import { Composer } from './components/Composer';
 import { ChatHistoryModal } from './components/ChatHistoryModal';
 import { BrainManagerModal } from './components/BrainManagerModal';
 import { ConfirmPersonaModal } from './components/ConfirmPersonaModal';
+import { ConstitutionalEditorModal } from './components/ConstitutionalEditorModal';
 import { PromptEditorModal } from './components/PromptEditorModal';
 import { ProviderConfigModal } from './components/ProviderConfigModal';
 import { EditResponseModal } from './components/EditResponseModal';
@@ -43,6 +44,7 @@ export default function SalienceGatedCognition() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [personaModalOpen, setPersonaModalOpen] = useState(false);
   const [promptEditorOpen, setPromptEditorOpen] = useState(false);
+  const [constitutionalEditorOpen, setConstitutionalEditorOpen] = useState(false);
   const [brainManagerOpen, setBrainManagerOpen] = useState(false);
 
   // Composer reset signal: bumped after a successful submit (and after a chat
@@ -56,6 +58,7 @@ export default function SalienceGatedCognition() {
   const handleToggleHistory = useCallback(() => setHistoryOpen((o) => !o), []);
   const handleCloseHistory = useCallback(() => setHistoryOpen(false), []);
   const handleOpenPromptEditor = useCallback(() => setPromptEditorOpen(true), []);
+  const handleOpenConstitutionalEditor = useCallback(() => setConstitutionalEditorOpen(true), []);
   const handleOpenBrainManager = useCallback(() => setBrainManagerOpen(true), []);
   const handleCloseBrainManager = useCallback(() => setBrainManagerOpen(false), []);
 
@@ -92,9 +95,9 @@ export default function SalienceGatedCognition() {
   // session object.)
   const { startNewChat } = session;
   const confirmPersona = useCallback(
-    async (persona: string, mask: string, brainIds: string[]) => {
+    async (persona: string, mask: string, brainIds: string[], constitutional: string) => {
       setPersonaModalOpen(false);
-      await startNewChat(persona, mask, brainIds);
+      await startNewChat(persona, mask, brainIds, constitutional);
     },
     [startNewChat],
   );
@@ -210,10 +213,9 @@ export default function SalienceGatedCognition() {
             }`}
           >
             <MemoryPanel
-              memories={session.memories}
-              onUpdate={session.updateMemory}
-              onAdd={session.addMemory}
-              onRemove={session.removeMemory}
+              constitutional={session.constitutional}
+              onOpenEditor={handleOpenConstitutionalEditor}
+              editorDisabled={!session.chatId}
               promptVersionN={session.promptVersions.length > 0 ? session.promptVersions[0].n : 1}
               onOpenPromptEditor={handleOpenPromptEditor}
               promptEditorDisabled={!session.chatId}
@@ -248,8 +250,16 @@ export default function SalienceGatedCognition() {
       <ConfirmPersonaModal
         open={personaModalOpen}
         defaultPersona={DEFAULT_PERSONA}
+        currentConstitutional={session.constitutional}
         onConfirm={confirmPersona}
         onCancel={() => setPersonaModalOpen(false)}
+      />
+
+      <ConstitutionalEditorModal
+        open={constitutionalEditorOpen}
+        text={session.constitutional}
+        onSave={session.setConstitutional}
+        onClose={() => setConstitutionalEditorOpen(false)}
       />
 
       <BrainManagerModal

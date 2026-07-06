@@ -36,7 +36,7 @@ export function useTurnRunner(
   // those suspenders — this is the only path that mutates chat state.
   const processInput = async (text: string) => {
     const {
-      chatId, chatLog, memories, activePersona, hydrated, turnCount,
+      chatId, chatLog, constitutional, activePersona, hydrated, turnCount,
       brainIndex, spontaneityStateRef,
       setMessages, setChatLog, setTurnCount, setLatestTurn, setTokenHistory, setChats,
     } = session;
@@ -106,7 +106,7 @@ export function useTurnRunner(
       // turn — same baseline the local buffer and cosine grep see. `now` is
       // the turn instant so any relative-time prefixes in the grep block (when
       // present) compute against the same reference instant the real prompt does.
-      naiveTokens: estimateNaiveContextTokens(memories, chatLog, userInput, fetchedDocs, failedUrls, activePersona, turnStartedAt),
+      naiveTokens: estimateNaiveContextTokens(constitutional, chatLog, userInput, fetchedDocs, failedUrls, activePersona, turnStartedAt),
     };
 
     try {
@@ -139,7 +139,7 @@ export function useTurnRunner(
       const { systemPrompt, grepResults, knowledge, localBufferSize } = assembleTurnContext({
         query: userInput,
         priorLog: chatLog,
-        memories,
+        constitutional,
         persona: activePersona,
         now: turnStartedAt,
         fetchedDocs,

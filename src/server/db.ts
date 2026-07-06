@@ -1,11 +1,13 @@
 // SGC persistence — SQLite via better-sqlite3.
 //
 // Storage lives in ./data/sgc.db (gitignored). Schema is created on first
-// open. Chats + turns are scoped to a chat (cascade on delete); memories are
-// too — each chat owns its own constitutional set (chat_id FK, cascade on
-// delete), so different conversations can hold completely different memories
-// and a new chat starts empty. (Memories were GLOBAL before; see the migration
-// below for the one-time re-scope.)
+// open. Chats + turns are scoped to a chat (cascade on delete). Constitutional
+// memory is a `constitutional TEXT` column on chats — ONE freeform document
+// per chat (2-3 paragraphs of prose the user edits directly), not a table of
+// rows: different conversations hold completely different documents and a new
+// chat starts with '' (see docs/ignored/00_constitutional-document-spec.yaml). It was
+// a per-chat `memories` table of chip-rows before that; before THAT it was
+// GLOBAL — see the migrations below for both one-time re-scopes.
 //
 // This module owns the DB connection, the schema, and a set of pure helpers
 // callers (the Express routes in index.ts) compose into endpoints. It does no
@@ -76,41 +78,6 @@ db.exec(`
   );
 `);
 
-// Constitutional memories — plain durable facts, scoped per chat via chat_id
-// (cascade on chat delete). No confidence/history: the per-turn grading was
-// retired for the <turn-summary> channel. Held in a const so the fresh-create
-// path and the legacy migration below share one DDL source of truth.
-const MEMORIES_SCHEMA_SQL = `
-  CREATE TABLE IF NOT EXISTS memories (
-    id TEXT PRIMARY KEY,
-    chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
-    text TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS idx_memories_chat ON memories(chat_id);
-`;
-
-// Migration: a deliberate ONE-TIME DROP of any legacy `memories` shape, run
-// before the schema DDL so the DDL rebuilds the table cleanly. Two obsolete
-// shapes have no honest forward mapping:
-//   - GLOBAL memories (no chat_id) — rows that belong to no chat.
-//   - CONFIDENCE-GRADED memories (a `confidence` column + a memory_history
-//     table) — grading was retired for the <turn-summary> channel, so the
-//     scores and their sparkline history are discarded by design.
-// Child table first so the parent has no dangling references when it goes.
-// (Confirmed acceptable: the local DB is a research-prototype store; the
-// discarded data is intentional — same rationale as the original re-scope drop.)
-{
-  const memCols = db.prepare(`PRAGMA table_info(memories)`).all() as { name: string }[];
-  const legacyGlobal = memCols.length > 0 && !memCols.some((c) => c.name === 'chat_id');
-  const legacyGraded = memCols.some((c) => c.name === 'confidence');
-  if (legacyGlobal || legacyGraded) {
-    db.exec(`DROP TABLE IF EXISTS memory_history; DROP TABLE IF EXISTS memories;`);
-  }
-}
-db.exec(MEMORIES_SCHEMA_SQL);
-
 // Migration: DBs created before the chat memory editor predate turns.active.
 // CREATE TABLE IF NOT EXISTS won't add a column to an existing table, so add it
 // explicitly when missing. Default 1 means every pre-existing turn stays
@@ -135,6 +102,11 @@ db.exec(MEMORIES_SCHEMA_SQL);
 // untouched and read as default-Sal. The server stores both as opaque strings —
 // it never interprets the persona (it forwards the fully-built system prompt)
 // and the mask never reaches the model at all (display-only).
+//
+// `constitutional` joins the same ALTER block (NOT NULL DEFAULT '' — unlike
+// persona/mask it's never null, since '' already means "nothing curated yet"
+// and the prompt builder needs no null-check). Must run before the memories
+// migration below, which writes into this column.
 {
   const chatCols = db.prepare(`PRAGMA table_info(chats)`).all() as { name: string }[];
   if (!chatCols.some((c) => c.name === 'persona')) {
@@ -142,6 +114,66 @@ db.exec(MEMORIES_SCHEMA_SQL);
   }
   if (!chatCols.some((c) => c.name === 'mask')) {
     db.exec(`ALTER TABLE chats ADD COLUMN mask TEXT`);
+  }
+  if (!chatCols.some((c) => c.name === 'constitutional')) {
+    db.exec(`ALTER TABLE chats ADD COLUMN constitutional TEXT NOT NULL DEFAULT ''`);
+  }
+}
+
+// THE cap on a stored constitutional document — exported so index.ts backs
+// its 400s (POST /api/chats, PUT /api/chats/:id/constitutional) with the same
+// number the migration below clamps to. The invariant is "a STORED document
+// never exceeds the cap": legacy chip rows were uncapped, and an over-cap
+// aggregate would be un-saveable and un-carry-forwardable once loaded (every
+// later write path rejects it), so the fold is where the cap must land.
+export const MAX_CONSTITUTIONAL_CHARS = 20_000;
+
+// Migration: the constitutional document replaces the per-chat `memories`
+// table (docs/ignored/00_constitutional-document-spec.yaml, D1) — a ONE-TIME
+// aggregate-then-drop, same house pattern as the legacy global/graded memory
+// drop this table already survived once. Two obsolete row shapes still get
+// the old no-mercy treatment (no honest per-chat mapping, discarded by
+// design):
+//   - GLOBAL memories (no chat_id) — rows that belong to no chat.
+//   - CONFIDENCE-GRADED memories (a `confidence` column + a memory_history
+//     table) — grading was retired for the <turn-summary> channel.
+// Anything else is the ordinary chat-scoped shape memories has held since
+// that original re-scope, and DOES have an honest mapping: per chat,
+// concatenate its rows (created_at ASC, `text` joined with '\n') into
+// chats.constitutional, then the table goes regardless of shape. Idempotent
+// by construction: a second boot finds no `memories` table (PRAGMA returns no
+// columns) and no-ops. DDL (the DROP) runs outside any transaction, same as
+// every other migration here; only the per-chat UPDATE loop is wrapped, so
+// schema changes and data movement don't straddle one transaction boundary.
+{
+  const memCols = db.prepare(`PRAGMA table_info(memories)`).all() as { name: string }[];
+  if (memCols.length > 0) {
+    const legacyGlobal = !memCols.some((c) => c.name === 'chat_id');
+    const legacyGraded = memCols.some((c) => c.name === 'confidence');
+    if (!legacyGlobal && !legacyGraded) {
+      const rows = db
+        .prepare(`SELECT chat_id, text FROM memories ORDER BY chat_id ASC, created_at ASC`)
+        .all() as { chat_id: string; text: string }[];
+      const byChat = new Map<string, string[]>();
+      for (const r of rows) {
+        const texts = byChat.get(r.chat_id) ?? [];
+        texts.push(r.text);
+        byChat.set(r.chat_id, texts);
+      }
+      const setConstitutionalStmt = db.prepare(`UPDATE chats SET constitutional = ? WHERE id = ?`);
+      const txn = db.transaction(() => {
+        for (const [chatId, texts] of byChat) {
+          // Clamp to the shared cap (honest, documented data loss on a
+          // pathological legacy set) — see MAX_CONSTITUTIONAL_CHARS above.
+          setConstitutionalStmt.run(texts.join('\n').slice(0, MAX_CONSTITUTIONAL_CHARS), chatId);
+        }
+      });
+      txn();
+    }
+    // Child table first (mirrors the historical drop order) — legacy shapes
+    // skip straight here with nothing migrated; the ordinary shape just had
+    // its rows folded into chats.constitutional above.
+    db.exec(`DROP TABLE IF EXISTS memory_history; DROP TABLE IF EXISTS memories;`);
   }
 }
 
@@ -183,8 +215,9 @@ export interface ChatDetail {
   persona: string | null;
   /** Display-only assistant mask. null/'' → "Sal". Never sent to the model. */
   mask: string | null;
-  /** This chat's constitutional memories — plain durable facts (id/text). */
-  memories: MemoryRow[];
+  /** This chat's constitutional document — freeform prose, verbatim into the
+   *  CONSTITUTIONAL MEMORIES prompt block. '' → nothing curated yet. */
+  constitutional: string;
   /** Edit history of this chat's persona, newest-first. Empty for a chat whose
    *  prompt has never been edited (the client synthesises a baseline from
    *  `persona`). The head (versions[0]) is the live prompt.
@@ -204,11 +237,6 @@ export interface PromptVersion {
   createdAt: number;
 }
 
-export interface MemoryRow {
-  id: string;
-  text: string;
-}
-
 // ============================================================
 // CHAT HELPERS
 // ============================================================
@@ -224,21 +252,25 @@ export function deriveTitle(userContent: string): string {
 }
 
 const insertChatStmt = db.prepare(`
-  INSERT INTO chats (id, title, created_at, updated_at, persona, mask)
-  VALUES (?, ?, ?, ?, ?, ?)
+  INSERT INTO chats (id, title, created_at, updated_at, persona, mask, constitutional)
+  VALUES (?, ?, ?, ?, ?, ?, ?)
 `);
 
 // Create a chat. `persona` is the per-chat system-prompt head (null → the
 // client resolves DEFAULT_PERSONA at build time); `mask` is the display-only
-// assistant label (null/'' → "Sal"). Both are stored as opaque strings — the
-// server never interprets the persona and the mask never reaches the model.
+// assistant label (null/'' → "Sal"). `constitutional` seeds the new chat's
+// document — the carry-forward copy at Begin Again, or '' for a chat that
+// starts with nothing curated. Both persona and mask are stored as opaque
+// strings — the server never interprets the persona and the mask never
+// reaches the model.
 export function createChat(
   id: string,
   persona?: string | null,
   mask?: string | null,
+  constitutional?: string,
 ): { id: string } {
   const now = Date.now();
-  insertChatStmt.run(id, NEW_CHAT_TITLE, now, now, persona ?? null, mask ?? null);
+  insertChatStmt.run(id, NEW_CHAT_TITLE, now, now, persona ?? null, mask ?? null, constitutional ?? '');
   return { id };
 }
 
@@ -283,7 +315,9 @@ export function listChats(): ChatSummary[] {
   }));
 }
 
-const getChatStmt = db.prepare(`SELECT id, title, persona, mask FROM chats WHERE id = ?`);
+const getChatStmt = db.prepare(
+  `SELECT id, title, persona, mask, constitutional FROM chats WHERE id = ?`,
+);
 const getChatTurnsStmt = db.prepare(`
   SELECT id, ordinal, role, content, created_at, inspector_json, active, timeless
   FROM turns
@@ -291,7 +325,13 @@ const getChatTurnsStmt = db.prepare(`
   ORDER BY ordinal ASC
 `);
 
-interface ChatHeaderRow { id: string; title: string; persona: string | null; mask: string | null }
+interface ChatHeaderRow {
+  id: string;
+  title: string;
+  persona: string | null;
+  mask: string | null;
+  constitutional: string;
+}
 interface TurnRow {
   id: number;
   ordinal: number;
@@ -330,10 +370,6 @@ export function loadChat(id: string): ChatDetail | null {
       break;
     }
   }
-  // Bundle this chat's memories into the detail so a single load hydrates the
-  // constitutional tier alongside turns/persona (no separate round-trip).
-  // getMemories is scoped to chat_id.
-  const mem = getMemories(id);
   return {
     id: header.id,
     title: header.title,
@@ -341,7 +377,7 @@ export function loadChat(id: string): ChatDetail | null {
     latestInspector,
     persona: header.persona,
     mask: header.mask,
-    memories: mem.memories,
+    constitutional: header.constitutional,
     versions: getPromptVersions(id),
   };
 }
@@ -625,82 +661,19 @@ export function appendPromptVersion(
 }
 
 // ============================================================
-// MEMORY HELPERS
+// CONSTITUTIONAL DOCUMENT HELPERS
 // ============================================================
 
-const listMemoriesStmt = db.prepare(`
-  SELECT id, text
-  FROM memories
-  WHERE chat_id = ?
-  ORDER BY created_at ASC
-`);
+const setConstitutionalDocStmt = db.prepare(`UPDATE chats SET constitutional = ? WHERE id = ?`);
 
-interface MemoryDbRow { id: string; text: string }
-
-export function getMemories(chatId: string): { memories: MemoryRow[] } {
-  const memories = (listMemoriesStmt.all(chatId) as MemoryDbRow[]).map((r) => ({
-    id: r.id,
-    text: r.text,
-  }));
-  return { memories };
-}
-
-const listMemoryIdsStmt = db.prepare(`SELECT id FROM memories WHERE chat_id = ?`);
-const deleteMemoryStmt = db.prepare(`DELETE FROM memories WHERE id = ?`);
-// Which chat owns a given memory id, if any. `id` is a globally-unique UUID and
-// the upsert keys on it alone, so an id must belong to exactly one chat for
-// life — this lets saveMemories reject a cross-chat id reuse loudly instead of
-// silently rebinding/corrupting the owning chat's row.
-const memoryOwnerStmt = db.prepare(`SELECT chat_id FROM memories WHERE id = ?`);
-const upsertMemoryStmt = db.prepare(`
-  INSERT INTO memories (id, chat_id, text, created_at, updated_at)
-  VALUES (?, ?, ?, ?, ?)
-  ON CONFLICT(id) DO UPDATE SET
-    text = excluded.text,
-    updated_at = excluded.updated_at
-`);
-
-export interface SaveMemoryInput {
-  id: string;
-  text: string;
-}
-
-export interface SaveMemoriesInput {
-  chatId: string;
-  memories: SaveMemoryInput[];
-}
-
-// Upsert this chat's memories (preserving created_at on existing rows) and
-// delete any of THIS chat's memories absent from the payload — another chat's
-// memories are never touched. Reconciliation is scoped to input.chatId.
-export function saveMemories(input: SaveMemoriesInput): void {
-  const now = Date.now();
-  const incomingIds = new Set(input.memories.map((m) => m.id));
-  const txn = db.transaction(() => {
-    // The chat must exist: the upsert's FK would catch a non-empty payload, but
-    // an empty one (clearing a chat's memories) would otherwise no-op silently
-    // for a deleted chat. Check up front so both cases surface as "chat not
-    // found" (→ 404), mirroring saveTurnPair/prependManualTurnPair.
-    if (!getChatStmt.get(input.chatId)) {
-      throw new Error(`chat not found: ${input.chatId}`);
-    }
-    // Reject an id already owned by a DIFFERENT chat. Can't happen via the UI
-    // (UUIDs, never copied), but the upsert keys on id alone and leaves chat_id
-    // untouched on conflict — so without this a stray cross-chat id would
-    // silently mutate the owner's row and drop the memory for this chat.
-    for (const m of input.memories) {
-      const owner = memoryOwnerStmt.get(m.id) as { chat_id: string } | undefined;
-      if (owner && owner.chat_id !== input.chatId) {
-        throw new Error(`memory chat mismatch: ${m.id} is owned by another chat`);
-      }
-    }
-    const existing = listMemoryIdsStmt.all(input.chatId) as { id: string }[];
-    for (const row of existing) {
-      if (!incomingIds.has(row.id)) deleteMemoryStmt.run(row.id);
-    }
-    for (const m of input.memories) {
-      upsertMemoryStmt.run(m.id, input.chatId, m.text, now, now);
-    }
-  });
-  txn();
+// Overwrite a chat's constitutional document wholesale — there's no
+// reconciliation to do (it's one column, not a row set), so this is a single
+// UPDATE. Throws 'chat not found' (mirroring dbSetChatBrains in db-brains.ts)
+// so the route can map it to a 404 instead of silently no-op-ing on a stale
+// or deleted chat id.
+export function setChatConstitutional(chatId: string, text: string): void {
+  if (!getChatStmt.get(chatId)) {
+    throw new Error(`chat not found: ${chatId}`);
+  }
+  setConstitutionalDocStmt.run(text, chatId);
 }

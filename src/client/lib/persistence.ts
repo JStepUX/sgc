@@ -4,9 +4,9 @@
 // model calls — the Phase 1.5 invariant "one API call per turn" is owned by
 // /api/turn (lib/api.ts). The functions here are POST/GET/PUT/DELETE plumbing
 // the UI uses to load history on mount, save turns after they finish
-// streaming, and sync each chat's own (per-chat) memory set.
+// streaming, and sync each chat's own (per-chat) constitutional document.
 
-import type { BrainManifest, BrainPack, Memory } from './types';
+import type { BrainManifest, BrainPack } from './types';
 
 // ============================================================
 // SHAPES ON THE WIRE
@@ -45,8 +45,8 @@ export interface PromptVersion {
   createdAt: number;
 }
 
-/** Raw /api/chats/:id payload. Memories arrive as plain {id, text} rows — they
- *  are already the domain `Memory` shape (no scoring, no history). */
+/** Raw /api/chats/:id payload. `constitutional` is the chat's freeform
+ *  constitutional document — plain prose, no scoring, no history. */
 interface ChatDetailWire {
   id: string;
   title: string;
@@ -54,7 +54,7 @@ interface ChatDetailWire {
   latestInspector: unknown | null;
   persona: string | null;
   mask: string | null;
-  memories: { id: string; text: string }[];
+  constitutional: string;
   versions: PromptVersion[];
   brainIds?: string[];
 }
@@ -70,8 +70,9 @@ export interface ChatDetail {
   persona: string | null;
   /** Display-only assistant mask. null/'' → "Sal". Never sent to the model. */
   mask: string | null;
-  /** This chat's constitutional memories — plain durable facts (id/text). */
-  memories: Memory[];
+  /** This chat's constitutional document — a freeform prose "about me", edited
+   *  in the ConstitutionalEditorModal, rendered verbatim into the prompt. */
+  constitutional: string;
   /** Edit history of the persona, newest-first. Empty when never edited (the UI
    *  synthesises a baseline from `persona`). versions[0] is the live prompt. */
   versions: PromptVersion[];
@@ -82,12 +83,6 @@ export interface ChatDetail {
 export interface SaveTurnArgs {
   user: { content: string };
   assistant: { content: string; inspectorJson: string | null };
-}
-
-/** Wire shape for PUT /api/memories: chat-scoped; each memory is a plain {id, text}. */
-export interface SaveMemoriesArgs {
-  chatId: string;
-  memories: { id: string; text: string }[];
 }
 
 // ============================================================
@@ -129,7 +124,7 @@ export async function loadChat(id: string): Promise<ChatDetail> {
     latestInspector: wire.latestInspector,
     persona: wire.persona,
     mask: wire.mask,
-    memories: wire.memories,
+    constitutional: wire.constitutional,
     // Tolerate an older server that predates versioning by defaulting to [].
     versions: wire.versions ?? [],
     // Same tolerance for a server that predates the brains routes.
@@ -156,15 +151,22 @@ export function savePromptVersion(
 }
 
 /**
- * Create a chat, optionally with a per-chat persona + display-only mask.
- * Called with no args for the default-Sal flow (hydration spawn, delete-fallback)
- * and with { persona, mask } from the Confirm Persona modal. The mask is stored
- * for display only — it never crosses into the prompt or /api/turn.
+ * Create a chat, optionally with a per-chat persona + display-only mask +
+ * a carried-forward constitutional document. Called with no args for the
+ * default-Sal flow (hydration spawn, delete-fallback) and with
+ * { persona, mask, constitutional } from the Confirm Persona modal's carry-
+ * forward step. The mask is stored for display only — it never crosses into
+ * the prompt or /api/turn.
  */
-export function createChat(args?: { persona?: string; mask?: string }): Promise<{ id: string }> {
+export function createChat(args?: {
+  persona?: string;
+  mask?: string;
+  constitutional?: string;
+}): Promise<{ id: string }> {
   const body: Record<string, string> = {};
   if (args?.persona !== undefined) body.persona = args.persona;
   if (args?.mask !== undefined) body.mask = args.mask;
+  if (args?.constitutional !== undefined) body.constitutional = args.constitutional;
   return jsonFetch<{ id: string }>('/api/chats', { method: 'POST', body: JSON.stringify(body) });
 }
 
@@ -257,21 +259,18 @@ export function setTurnsActive(
 }
 
 // ============================================================
-// MEMORIES
+// CONSTITUTIONAL DOCUMENT
 // ============================================================
 
-// Persist one chat's memory set — the full domain Memory[] for this chat, mapped
-// to the {id, text} wire shape. The server upserts these and deletes any of this
-// chat's memories absent from the payload (scoped to chatId).
-export function saveMemories(chatId: string, memories: Memory[]): Promise<{ ok: true }> {
-  const args: SaveMemoriesArgs = {
-    chatId,
-    memories: memories.map((m) => ({ id: m.id, text: m.text })),
-  };
-  return jsonFetch<{ ok: true }>('/api/memories', {
-    method: 'PUT',
-    body: JSON.stringify(args),
-  });
+// Persist one chat's constitutional document — a single freeform prose blob,
+// chat-scoped. Replaces the old chip-list PUT /api/memories entirely (D6):
+// the resource is a property of the chat now, like persona/mask, so it lives
+// at the chat-scoped URL rather than a standalone memories collection.
+export function saveConstitutional(chatId: string, text: string): Promise<{ ok: true }> {
+  return jsonFetch<{ ok: true }>(
+    `/api/chats/${encodeURIComponent(chatId)}/constitutional`,
+    { method: 'PUT', body: JSON.stringify({ text }) },
+  );
 }
 
 // ============================================================

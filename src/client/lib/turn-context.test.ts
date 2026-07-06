@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { assembleTurnContext } from './turn-context';
 import { buildBrainIndex } from './brains';
 import { LOCAL_BUFFER_SIZE } from './constants';
-import type { BrainPack, ChatEntry, Memory } from './types';
+import type { BrainPack, ChatEntry } from './types';
 
 const HOUR = 3_600_000;
 const NOW = 1_700_000_000_000;
@@ -23,12 +23,12 @@ function turnPair(userText: string, assistantText: string, ageHours: number): Ch
   ];
 }
 
-const memories: Memory[] = [{ id: 'm1', text: 'The user is named Ada.' }];
+const constitutional = 'The user is named Ada.';
 
 describe('assembleTurnContext', () => {
   it('is deterministic for identical inputs (no hidden Date.now())', () => {
     const log = [...turnPair('first question about cats', 'cats answer', 40), ...turnPair('second about dogs', 'dogs answer', 30)];
-    const args = { query: 'cats', priorLog: log, memories, persona: 'P', now: NOW, fetchedDocs: [], failedUrls: [] };
+    const args = { query: 'cats', priorLog: log, constitutional, persona: 'P', now: NOW, fetchedDocs: [], failedUrls: [] };
     expect(assembleTurnContext(args).systemPrompt).toBe(assembleTurnContext(args).systemPrompt);
   });
 
@@ -39,7 +39,7 @@ describe('assembleTurnContext', () => {
       ...turnPair('q3', 'a3', 20),
     ];
     const { systemPrompt, localBufferSize } = assembleTurnContext({
-      query: 'q3', priorLog: log, memories, persona: 'P', now: NOW, fetchedDocs: [], failedUrls: [],
+      query: 'q3', priorLog: log, constitutional, persona: 'P', now: NOW, fetchedDocs: [], failedUrls: [],
     });
     expect(localBufferSize).toBe(LOCAL_BUFFER_SIZE);
     expect(systemPrompt).toContain('Ada'); // constitutional tier rendered
@@ -60,21 +60,21 @@ describe('assembleTurnContext', () => {
     // Positive control: with the full log the future turn sits in the verbatim
     // buffer, so its content (sentinel and all) reaches the prompt.
     const withFuture = assembleTurnContext({
-      query: 'xylophone', priorLog: full, memories, persona: 'P', now: NOW, fetchedDocs: [], failedUrls: [],
+      query: 'xylophone', priorLog: full, constitutional, persona: 'P', now: NOW, fetchedDocs: [], failedUrls: [],
     });
     expect(withFuture.systemPrompt).toContain(SENTINEL);
 
     // Re-spin reconstruction: slice to BEFORE the future turn (turns 1–4, 8
     // entries). The helper reads only this slice, so the sentinel must vanish.
     const reconstructed = assembleTurnContext({
-      query: 'xylophone', priorLog: full.slice(0, 8), memories, persona: 'P', now: NOW, fetchedDocs: [], failedUrls: [],
+      query: 'xylophone', priorLog: full.slice(0, 8), constitutional, persona: 'P', now: NOW, fetchedDocs: [], failedUrls: [],
     });
     expect(reconstructed.systemPrompt).not.toContain(SENTINEL);
   });
 
   it('threads a spontaneity directive into the prompt — and omits it when none', () => {
     const log = [...turnPair('q1', 'a1', 20), ...turnPair('q2', 'a2', 10)];
-    const base = { query: 'q', priorLog: log, memories, persona: 'P', now: NOW, fetchedDocs: [], failedUrls: [] };
+    const base = { query: 'q', priorLog: log, constitutional, persona: 'P', now: NOW, fetchedDocs: [], failedUrls: [] };
 
     const fired = assembleTurnContext({ ...base, spontaneityDirective: '@!OPERATOR: Zed!@ — a deliberate nudge' });
     expect(fired.systemPrompt).toContain('SPONTANEITY OPERATOR');
@@ -114,7 +114,7 @@ describe('assembleTurnContext — knowledge axis (mounted brains)', () => {
     ...turnPair('filler one', 'filler reply one', 30),
     ...turnPair('filler two', 'filler reply two', 20),
   ];
-  const base = { query: 'molten glass on the blowpipe', priorLog: log, memories, persona: 'P', now: NOW, fetchedDocs: [], failedUrls: [] };
+  const base = { query: 'molten glass on the blowpipe', priorLog: log, constitutional, persona: 'P', now: NOW, fetchedDocs: [], failedUrls: [] };
 
   it('populates the knowledge block from the brain index (digest + matched fragment)', () => {
     const { knowledge, systemPrompt } = assembleTurnContext({ ...base, brainIndex: buildBrainIndex([pack]) });

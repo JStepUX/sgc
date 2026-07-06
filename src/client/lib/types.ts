@@ -79,18 +79,6 @@ export interface ChatEntry {
 }
 
 /**
- * A constitutional memory — a curated, durable fact about the user. Plain text
- * the user adds / edits / deletes in the MemoryPanel. No model scoring: the
- * former per-turn confidence grading was retired in favour of the per-turn
- * `<turn-summary>` channel (see lib/prompt.ts). Curation of this tier stays
- * entirely with the user — no model in its loop.
- */
-export interface Memory {
-  id: string;
-  text: string;
-}
-
-/**
  * A web page the user linked, pre-fetched and extracted (Readability) on the
  * server BEFORE the turn, then folded into the prompt as ephemeral, this-turn-
  * only context. Deterministic retrieval — no model in the loop. `truncated` is

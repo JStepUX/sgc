@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ToggleSwitch } from '@/components/ui/toggle-switch';
 import { importBrain, listBrains } from '../lib/persistence';
 import type { BrainManifest, BrainPack } from '../lib/types';
 
@@ -23,9 +24,14 @@ interface ConfirmPersonaModalProps {
   open: boolean;
   /** The default persona text, prefilled into the textarea (DEFAULT_PERSONA). */
   defaultPersona: string;
-  /** Confirm with the (possibly edited) persona, mask ('' = none), and the
-   * ids of the brains to mount on the new chat ([] = none). */
-  onConfirm: (persona: string, mask: string, brainIds: string[]) => void;
+  /** The outgoing chat's constitutional document — offered as an editable
+   * carry-forward default (spec D3). '' when there's nothing to carry, in
+   * which case the whole carry-forward section doesn't render. */
+  currentConstitutional: string;
+  /** Confirm with the (possibly edited) persona, mask ('' = none), the ids of
+   * the brains to mount on the new chat ([] = none), and the constitutional
+   * document to carry forward ('' = start blank). */
+  onConfirm: (persona: string, mask: string, brainIds: string[], constitutional: string) => void;
   /** Cancel — no chat is created. */
   onCancel: () => void;
 }
@@ -35,11 +41,17 @@ const RAIL_LABEL = 'font-mono text-[11px] tracking-[0.18em] uppercase text-fg-3'
 export function ConfirmPersonaModal({
   open,
   defaultPersona,
+  currentConstitutional,
   onConfirm,
   onCancel,
 }: ConfirmPersonaModalProps) {
   const [persona, setPersona] = useState(defaultPersona);
   const [mask, setMask] = useState('');
+  // Carry-forward: default ON iff the outgoing document is non-blank (D3).
+  // The draft is the editable copy that lands in the new chat; the section
+  // itself only renders when there's something to offer.
+  const [carryConstitutional, setCarryConstitutional] = useState(true);
+  const [constitutionalDraft, setConstitutionalDraft] = useState('');
   // The importable pack list + this modal's mount selection. null = still
   // loading (or load failed — the section then shows its empty state).
   const [brains, setBrains] = useState<BrainManifest[] | null>(null);
@@ -49,14 +61,20 @@ export function ConfirmPersonaModal({
   const personaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const hasCarryForward = Boolean(currentConstitutional.trim());
+
   // Reset to a clean default-persona / empty-mask / nothing-mounted state each
   // time the modal opens, and focus the persona textarea. Avoids carrying a
   // stale edit from a cancelled previous open into the next one. The pack list
-  // is (re)fetched per open so a pack imported elsewhere shows up.
+  // is (re)fetched per open so a pack imported elsewhere shows up. The carry-
+  // forward draft re-seeds from the outgoing chat's document every open, like
+  // persona/mask.
   useEffect(() => {
     if (open) {
       setPersona(defaultPersona);
       setMask('');
+      setCarryConstitutional(Boolean(currentConstitutional.trim()));
+      setConstitutionalDraft(currentConstitutional);
       setSelectedBrainIds(new Set());
       setImportError(null);
       listBrains()
@@ -68,7 +86,7 @@ export function ConfirmPersonaModal({
       const id = setTimeout(() => personaRef.current?.focus(), 30);
       return () => clearTimeout(id);
     }
-  }, [open, defaultPersona]);
+  }, [open, defaultPersona, currentConstitutional]);
 
   // Escape → cancel. Focus trap: Tab/Shift+Tab cycle within the dialog.
   useEffect(() => {
@@ -128,8 +146,11 @@ export function ConfirmPersonaModal({
   const handleBegin = () => {
     // Pass the raw persona through — buildPrompt falls back to DEFAULT_PERSONA
     // for a blank/whitespace persona, so no special-casing here. Trim the mask
-    // so a stray space doesn't become a "non-empty" label.
-    onConfirm(persona, mask.trim(), [...selectedBrainIds]);
+    // so a stray space doesn't become a "non-empty" label. The carry-forward
+    // section only exists when hasCarryForward is true; toggled off (or absent
+    // entirely) sends '' — the new chat starts with an empty document.
+    const constitutional = hasCarryForward && carryConstitutional ? constitutionalDraft : '';
+    onConfirm(persona, mask.trim(), [...selectedBrainIds], constitutional);
   };
 
   return (
@@ -193,6 +214,37 @@ export function ConfirmPersonaModal({
             placeholder="Sal"
             className="w-full rounded-[14px] border border-hairline-strong bg-surface px-4 py-2.5 text-[13.5px] text-fg-1 outline-none placeholder:text-fg-4 focus:border-ember/55"
           />
+
+          {/* Constitutional memories carry-forward — only offered when the
+              outgoing chat actually has a document (D3). Default ON; the
+              textarea is the editable copy that lands in the new chat, so
+              pruning here never touches the outgoing chat's own document. */}
+          {hasCarryForward && (
+            <>
+              <div className="mb-2 mt-5 flex items-center justify-between gap-3">
+                <span className={RAIL_LABEL}>Constitutional memories</span>
+                <label className="flex cursor-pointer items-center gap-2">
+                  <span className="font-mono text-[10.5px] tracking-[0.04em] text-fg-3">
+                    Carry into the new chat
+                  </span>
+                  <ToggleSwitch
+                    on={carryConstitutional}
+                    onClick={() => setCarryConstitutional((c) => !c)}
+                    ariaLabel="Carry into the new chat"
+                  />
+                </label>
+              </div>
+              {carryConstitutional && (
+                <textarea
+                  value={constitutionalDraft}
+                  onChange={(e) => setConstitutionalDraft(e.target.value)}
+                  spellCheck={false}
+                  maxLength={20000}
+                  className="sal-scroll min-h-[140px] w-full resize-y rounded-[14px] border border-hairline-strong bg-surface px-4 py-3 font-mono text-[12.5px] leading-[1.6] text-fg-1 outline-none focus:border-ember/55"
+                />
+              )}
+            </>
+          )}
 
           {/* Mount brains — knowledge packs bound to the new chat. */}
           <div className="mb-2 mt-5 flex items-center justify-between gap-3">
