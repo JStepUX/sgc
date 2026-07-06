@@ -1,0 +1,206 @@
+spec: constitutional document — the memory chips become one freeform per-chat text, with carry-forward at Begin Again
+status: implemented           # 2026-07-05 — built same day (orchestrated waves); hardened post-review: migration clamp to MAX_CONSTITUTIONAL_CHARS, startNewChat create-failure recovery, useConstitutionalDoc split (ratchet)
+date: 2026-07-05
+goal: >
+  Replace the Memory[] chip list (M1/M2/M3 cards + single-line add input) with
+  ONE freeform constitutional document per chat: 2-3 paragraphs of prose,
+  edited in a modal textarea (sibling of the persona editor), rendered
+  verbatim into the CONSTITUTIONAL MEMORIES prompt block. "Begin again" gains
+  a carry-forward step: the outgoing chat's document is offered (editable,
+  default on when non-empty) so a new chat doesn't start from a blank
+  biography. Commit fully (Core Value 4): the memories table is REPLACED by a
+  text column — no blob-in-one-row half-measure.
+
+invariant_check:
+  tier_preserved: constitutional memory remains Tier 1 — user-curated durable facts, distinct from persona (identity, swappable, operator-authored) by contract; only the container changes (list → document). The model still never scores, grades, or writes it.
+  no_model_anywhere: pure UI/storage/prompt-shape change. Retrieval untouched; one call per turn untouched.
+  per_chat_scoping_kept: "about me" legitimately differs per relationship (co-worker chat vs conversational partner — decided 2026-07-05). Carry-forward is an explicit, editable COPY at chat birth, not shared state; chats stay sealed units (delete cascades, nothing global).
+  sequencing: land BEFORE 01_deliberate-recall-spec.yaml — both edit prompt.ts; recall's anchors (buildPrompt signature, absence marker site) should be written against this final shape.
+
+current_state:
+  ui:
+    file: src/client/components/MemoryPanel.tsx        # 174 lines
+    chips: lines 83-105          # contentEditable cards labelled M{i+1}, per-card × delete
+    add_input: lines 107-122     # single-line <input>, Enter submits — the "one short sentence" signal
+    brains_strip: lines 124-171  # UNTOUCHED — the knowledge-axis summary stays
+  state:
+    file: src/client/hooks/useChatSession.ts
+    memory_state: lines 82-133   # memories: Memory[], dirty ref, memoriesRef/chatIdRef mirrors
+    debounce_save: lines 201-231 # 250ms debounced PUT + flushPendingMemorySave (swap-safety) — SHAPE KEPT, payload changes
+    mutators: lines 233-246      # updateMemory/addMemory/removeMemory → collapse to one setConstitutional
+    new_chat_reset: lines 300-303  # startNewChat empties the set (dirty ref first) — becomes the carry-forward landing site
+    load_sites: lines 158-160, 373-375  # hydration + loadChat set memories from detail payload
+  prompt:
+    file: src/client/lib/prompt.ts
+    signature: lines 43-48       # buildPrompt(memories: Memory[], ...)
+    mem_block: lines 74-81       # `[M${i+1}] ${text}` join — becomes verbatim document text; empty-state string KEPT
+    persona_framing: line 35     # "You carry constitutional memories: distilled knowledge…" — still true of a document; no copy change
+    naive_estimator: lines 289-309  # estimateNaiveContextTokens(memories: Memory[], ...) — same signature change
+  turn_assembly:
+    file: src/client/lib/turn-context.ts
+    lines: 30, 64, 99-100        # TurnContextInput.memories: Memory[] → constitutional: string; both callers (useTurnRunner.ts:39,109,142; useResponseEditor.ts:32,87)
+  server:
+    db: src/server/db.ts
+    memories_ddl: lines 79-91    # memories table + index — REPLACED by a chats column
+    migration_precedent: lines 94-109  # the ONE-TIME DROP of legacy global/confidence-graded memories — this spec follows the same pattern
+    detail_payload: lines 186-187, 333-344  # ChatDetail.memories: MemoryRow[] → constitutional: string
+    save_helpers: lines 633-703  # getMemories / dbSaveMemories reconciliation — deleted wholesale
+    route: src/server/index.ts:798-853  # PUT /api/memories → replaced; MAX_PERSONA_CHARS precedent at line 475
+  client_api:
+    file: src/client/lib/persistence.ts
+    lines: 57, 73-74, 87-90, 132, 265-271  # ChatDetail/wire shapes + saveMemories()
+  begin_again:
+    file: src/client/components/ConfirmPersonaModal.tsx  # 285 lines; onConfirm(persona, mask, brainIds) at 28, 128-133
+    wiring: src/client/SalienceGatedCognition.tsx (confirmPersona → session.startNewChat; MemoryPanel props at 213)
+  types: src/client/lib/types.ts — Memory {id, text}; deleted at the end (no remaining importers)
+  tests_existing: prompt.test.ts, db.test.ts, turn-context.test.ts — all touch the memories shape
+
+resolved_decisions:
+  - id: D1-document-not-rows
+    decision: chats gains `constitutional TEXT NOT NULL DEFAULT ''`; the memories table, its index, getMemories, and the dbSaveMemories reconciliation are deleted. One-time migration in initDb — concatenate any existing rows (`text` joined '\n', chat-scoped, created_at order) into the column, then DROP TABLE memories.
+    rationale: Core Value 4. The known real-world row count is zero (developer confession, 2026-07-05), but the migration is written anyway — the code serves any DB, and db.ts:94-109 is the house precedent for exactly this kind of hard one-time migration.
+  - id: D2-modal-editor-not-inline
+    decision: the rail section becomes a read-only preview (first ~5 lines, dimmed, "(none yet)" empty state) + an Edit button opening a new ConstitutionalEditorModal — textarea, Save/Cancel, no version history.
+    rationale: the persona editor's textarea-modal is the format with proven adoption (same user, same rail: textarea → used and versioned; chips → empty since inception). No versions in v1: the persona's forward-only history exists because prompt changes alter Sal's behavior mid-chat and deserve an audit trail; facts about the user don't need one until friction says otherwise.
+  - id: D3-carry-forward-editable
+    decision: ConfirmPersonaModal gains a "Constitutional memories" section — a toggle ("Carry into the new chat", default ON iff the outgoing document is non-empty) revealing an editable textarea prefilled with the outgoing chat's document. onConfirm gains a 4th value (constitutional: string, '' when toggled off). startNewChat sends it in the CREATE payload so the first turn already carries the tier (same pattern as persona/brainIds at create).
+    rationale: editable-at-birth directly serves the decided use case — "about me" differs between a co-worker chat and a conversational partner, and chat birth is where that pruning naturally happens. Default-on kills the re-paste diligence tax that emptied the chips.
+  - id: D4-verbatim-prompt-block
+    decision: memBlock renders the document verbatim (trimmed) under the unchanged CONSTITUTIONAL MEMORIES: header; empty → the existing "(none yet — nothing has been curated for this conversation)" line. No [M1] prefixes, no reformatting.
+    rationale: the numbering was for the retired 0-100 grading; Sal reads prose better than decontextualized chips (relationships between facts survive). The persona's baton framing (prompt.ts:35) already describes a document.
+  - id: D5-size-cap
+    decision: MAX_CONSTITUTIONAL_CHARS = 20_000, enforced server-side (400 on breach) and as the textarea maxLength — the same cap as MAX_PERSONA_CHARS, for the same reason (it rides every turn's system prompt).
+  - id: D6-route-shape
+    decision: PUT /api/memories is deleted; the new route is PUT /api/chats/:id/constitutional with body { text: string }. createChat's body gains optional constitutional (stored at insert). loadChat detail swaps memories: rows → constitutional: string.
+    rationale: chat-scoped URL matches the resource's new identity (a property of the chat, like persona/mask) and the existing PUT /api/chats/:id/brains pattern. The old route dies with the table — no compatibility shim; client and server ship together (Core Value 4).
+  - id: D7-memory-type-deleted
+    decision: the Memory interface leaves types.ts; every importer migrates to `constitutional: string` in the same change. The debounce/flush/dirty-ref machinery in useChatSession keeps its exact shape (it guards the same race) with the payload swapped.
+
+design:
+  db:
+    file: src/server/db.ts
+    changes: |
+      - chats DDL + a PRAGMA-guarded ALTER for existing DBs: ALTER TABLE chats ADD COLUMN
+        constitutional TEXT NOT NULL DEFAULT '' (guard: column absent from PRAGMA table_info).
+      - one-time migration, immediately after (same style as lines 94-109): if the memories
+        table exists, per chat concatenate its rows (created_at ASC, text joined '\n') into
+        chats.constitutional, then DROP TABLE memories + its index. Idempotent by construction
+        (second run: no memories table, no-op).
+      - getChatDetail: memories join replaced by the column read → detail.constitutional: string.
+      - createChat helper gains constitutional?: string (INSERT column, default '').
+      - new setChatConstitutional(chatId, text) — single UPDATE, throws 'chat not found' style
+        like dbSetChatBrains for the 404 mapping.
+      - DELETE: getMemories, dbSaveMemories, SaveMemoryInput, MemoryRow, the four prepared
+        memory statements.
+  server_route:
+    file: src/server/index.ts
+    changes: |
+      - delete PUT /api/memories (lines 798-853) + its parse helpers + the db imports.
+      - add PUT /api/chats/:id/constitutional: body { text: string } (typeof string, length
+        ≤ MAX_CONSTITUTIONAL_CHARS = 20_000); 404 on unknown chat; { ok: true }.
+      - POST /api/chats accepts optional constitutional (same validation), forwarded to createChat.
+  client_api:
+    file: src/client/lib/persistence.ts
+    changes: ChatDetail.memories → constitutional: string (wire + mapped shape); saveMemories() → saveConstitutional(chatId, text); createChat args gain constitutional?: string.
+  session_hook:
+    file: src/client/hooks/useChatSession.ts
+    changes: |
+      - memories: Memory[] state → constitutional: string ('' initial). Dirty ref, live
+        mirrors, 250ms debounce effect, and flushPendingMemorySave keep their exact structure
+        (the chat-swap flush race is unchanged); payload becomes saveConstitutional(chatId, text).
+      - updateMemory/addMemory/removeMemory → one setConstitutional(text: string) (marks dirty).
+      - hydration + loadChat: setConstitutional-equivalent programmatic loads from
+        detail.constitutional (dirty ref reset first, as today).
+      - startNewChat(persona?, mask?, brainIds?, constitutional?): flush outgoing (unchanged),
+        reset state to the INCOMING value ('' when absent) instead of always-empty, include it
+        in the create payload when non-empty. The delete-fallback path passes nothing → ''.
+      - ChatSession interface: memories/updateMemory/addMemory/removeMemory out;
+        constitutional + setConstitutional in.
+  prompt:
+    file: src/client/lib/prompt.ts (+ prompt.test.ts)
+    changes: |
+      buildPrompt + estimateNaiveContextTokens: memories: Memory[] → constitutional: string.
+      memBlock = constitutional.trim() ? constitutional.trim() : '  (none yet — …)' (existing
+      string). Header, baton framing, task-line "informed by the memories" — all unchanged.
+  turn_assembly:
+    file: src/client/lib/turn-context.ts (+ turn-context.test.ts fixtures)
+    changes: TurnContextInput.memories → constitutional: string; forwarded to buildPrompt. Callers (useTurnRunner, useResponseEditor) pass session.constitutional. The brains-isolation regression must stay byte-identical — it doesn't touch memories, the run proves it.
+  rail_panel:
+    file: src/client/components/MemoryPanel.tsx
+    changes: chips + add-input (lines 83-122) → preview block: the document's first ~5 lines (line-clamp, text-fg-3) or the empty-state sentence, plus an Edit button styled like the System Prompt button. Props: memories/onUpdate/onAdd/onRemove → constitutional: string, onOpenEditor: () => void, editorDisabled: boolean (same chatId gating as the prompt editor). Brains strip untouched.
+  editor_modal:
+    file: src/client/components/ConstitutionalEditorModal.tsx
+    new: true
+    changes: |
+      PromptEditorModal's frame (frosted glass, focus trap, Escape, dirty-state Cancel) minus
+      versions: one textarea (min-h ~300px, maxLength 20_000, spellCheck), header "Constitutional
+      Memories" + a one-line explainer ("What Sal knows about you in this chat — plain prose,
+      yours to edit."), Save → setConstitutional + close, Cancel/Escape discards. Saving is
+      state-level (the hook's debounce persists it); no await, no error surface needed beyond
+      the hook's existing console.warn — same contract the chips had.
+  begin_again:
+    file: src/client/components/ConfirmPersonaModal.tsx (+ SalienceGatedCognition.tsx wiring)
+    changes: |
+      - props gain currentConstitutional: string; onConfirm gains constitutional: string.
+      - new section between mask and brains: RAIL_LABEL "Constitutional memories" + a
+        ToggleSwitch (ui/toggle-switch) "Carry into the new chat" — rendered only when
+        currentConstitutional is non-blank (nothing to carry → no section, no dead toggle).
+        Toggle ON (default): editable textarea prefilled with currentConstitutional (reset per
+        open, like persona/mask). OFF: section collapses; confirm sends ''.
+      - root: confirmPersona handler threads the value into session.startNewChat as arg 4;
+        MemoryPanel + new modal wiring (open flag lives in the root, like the other modals).
+  types: src/client/lib/types.ts — delete Memory; EditResponseModal.tsx:242 copy ("current memories & prompt") stays accurate, no change.
+  docs:
+    claude_md: architecture section 1 rewritten (chips → per-chat document, carry-forward at Begin again); MemoryPanel/ConfirmPersonaModal one-liners updated; ConstitutionalEditorModal line added.
+    changelog: docs/changelogs/ entry on land.
+
+out_of_scope:
+  - promotion (Sal's turn-summary `persistent` observations → one-click append into the document) — its own raise: puts model-authored text somewhere durable. The document format is designed to receive it (appending a sentence to prose beats minting chip M14); recall telemetry should inform what gets proposed.
+  - version history for the document — persona-style audit trail only if friction appears.
+  - a global/default document shared across chats — rejected 2026-07-05 (per-chat "about me" is the point); carry-forward is the deliberate copy mechanism.
+  - markdown rendering of the preview — plain text; it's a prompt payload, not a document viewer.
+
+build_sequence:
+  - step: 1
+    target: src/server/db.ts (+ db.test.ts)
+    do: column + guarded ALTER; one-time migration (rows → column, drop table); detail/create/set helpers; delete the row helpers. Tests — migration from a seeded legacy memories table (multi-chat, ordering), idempotent re-run, fresh-DB path, setChatConstitutional unknown-chat throw, detail payload carries the text.
+  - step: 2
+    target: src/server/index.ts
+    do: route swap per design.server_route (+ createChat body field). Typecheck server.
+  - step: 3
+    target: src/client/lib/persistence.ts + types.ts + prompt.ts + turn-context.ts (+ their tests)
+    do: wire shapes, saveConstitutional, Memory deletion, buildPrompt/estimator/TurnContextInput signature swap. prompt.test.ts — verbatim block, trimmed, empty-state fallback, header unchanged. turn-context tests re-fixture; brains-isolation regression stays green.
+  - step: 4
+    target: src/client/hooks/useChatSession.ts
+    do: state/mutator/debounce/flush/load/startNewChat changes per design.session_hook. Typecheck; the dirty-ref races (edit-then-swap within 250ms) are covered by the flush shape being untouched — verify by reading, note in PR text.
+  - step: 5
+    target: MemoryPanel.tsx, ConstitutionalEditorModal.tsx (new), ConfirmPersonaModal.tsx, SalienceGatedCognition.tsx
+    do: per design. Architecture ratchet run (root stays composition-only; all files under budget).
+  - step: 6
+    target: manual smoke
+    do: |
+      - write 2 paragraphs in the editor → visible in preview; send a turn → inspector's system
+        prompt shows them verbatim under CONSTITUTIONAL MEMORIES; reload → text survives.
+      - edit then Begin Again within ~250ms → outgoing chat keeps the edit (flush race).
+      - Begin Again with text present → carry section shows, prefilled; prune a paragraph →
+        new chat's document is the pruned version; outgoing chat unchanged. Toggle OFF → new
+        chat starts "(none yet …)". Empty document → no carry section at all.
+      - legacy DB with chip rows (seed by hand) → first boot migrates them into the document,
+        newline-joined; chips table gone.
+      - delete-fallback path (delete last chat) → fresh default chat, empty document, no modal.
+  - step: 7
+    target: docs (CLAUDE.md, changelog)
+    do: per design.docs. Present; developer review → /pre-commit-qa on their invocation.
+
+surprises_to_log:
+  - file: AGENTS.md
+    entry_if_anything_surprises: |
+      Title pattern: "## <Short scannable title> (constitutional document, 2026-07-05)"
+      Candidates to watch for:
+        - better-sqlite3 ALTER TABLE inside the init transaction (DDL + the row migration must
+          not straddle transaction boundaries awkwardly — mirror how the legacy drop did it)
+        - contentEditable removal changing rail keyboard focus order (the panel loses its only
+          inputs; the Edit button inherits tab position)
+        - ConfirmPersonaModal focus-trap selector: the new textarea is already matched by
+          'textarea', but the ToggleSwitch must be a <button> to be trapped — verify
+        - startNewChat's 4-arg growth — if a 5th ever appears, switch to an options object then

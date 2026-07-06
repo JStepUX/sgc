@@ -14,7 +14,7 @@ reasoning instance:
 
 | Tier | What it is | Cost |
 |------|-----------|------|
-| **Constitutional Memories** | Curated, durable facts about the user — plain text the user edits; not model-scored | in-prompt |
+| **Constitutional Memories** | One freeform per-chat document about the user (prose, edited in a modal; carried forward at "Begin again" on request); not model-scored | in-prompt |
 | **Local Buffer** | The last 2 turns, verbatim | in-prompt |
 | **Cosine Grep ("Grepory")** | TF-IDF + cosine similarity over older history (Porter-stemmed tokens, so "needle" finds "needles") — pure math, no model; individual turns can be gated out of retrieval in the chat memory editor | 0 ms, 0 tokens |
 

@@ -15,12 +15,19 @@ React app under `src/`.
 Every turn, three memory tiers are assembled (client-side) into a single prompt
 and handed to one ephemeral reasoning instance:
 
-1. **Constitutional Memories** — a small, curated set of durable facts about the
-   user. Plain text the user edits/adds/deletes in the UI; **the model does not
-   score or grade them** (the former 0–100 per-turn confidence grading was
-   retired — see the turn-summary note below). They are **scoped per chat** —
-   each conversation owns its own set, a new chat starts empty (no seeded
-   defaults), and deleting a chat cascades its memories away.
+1. **Constitutional Memories** — a single freeform per-chat document: 2–3
+   paragraphs of durable prose about the user, edited in a modal textarea
+   (`ConstitutionalEditorModal`, up to 20k chars) and rendered **verbatim**
+   into the CONSTITUTIONAL MEMORIES prompt block — no chip list, no
+   reformatting; **the model does not score or grade it** (the former 0–100
+   per-turn confidence grading was retired — see the turn-summary note below).
+   It is **scoped per chat** — each conversation owns its own document, a new
+   chat starts blank by default, and deleting a chat cascades its document
+   away. "Begin again" offers an editable **carry-forward**: the outgoing
+   chat's document, prefilled and toggled on by default when non-empty, so a
+   new chat needn't start from a blank biography — an explicit copy made at
+   chat birth, not shared state (a co-worker chat and a conversational partner
+   legitimately need different "about me" text).
 2. **Local Buffer** — the last 2 turns (4 messages) passed verbatim. Immediate
    context, no retrieval.
 3. **Cosine Grep ("Grepory")** — TF-IDF + cosine similarity search over *older*
@@ -111,10 +118,14 @@ src/client/
                               components + owns modal open/close flags; no domain logic
   hooks/                      per-axis state hooks — namespaces over ONE shared session,
                               not isolated stores (useChatSession exposes its setters)
-    useChatSession.ts         persistence axis: hydration, chat create/load/delete, per-chat
-                              memories (+ debounced sync), persona versions, the in-memory logs
+    useChatSession.ts         persistence axis: hydration, chat create/load/delete, persona
+                              versions, the in-memory logs; composes the two per-axis hooks
+                              below and restores the outgoing chat if a create fails mid-swap
     useBrainMounts.ts         knowledge axis: the active chat's mounted packs + the ONE union
                               index (composed by useChatSession; adopt/clear/bind at load sites)
+    useConstitutionalDoc.ts   memory tier 1's state: the per-chat document + user-edit dirty
+                              flag + 250ms debounced save + swap-safety flush (composed by
+                              useChatSession, same pattern as useBrainMounts)
     useTurnRunner.ts          the live turn: tier assembly → single streamed model call →
                               promote reply → persist pair (processInput moved here verbatim)
     useResponseEditor.ts      edit/re-spin the latest reply (editTarget, respin, saveEdit)
@@ -125,8 +136,10 @@ src/client/
     AuroraBackground.tsx      the warm field behind the glass (memoized; pulse re-key)
     PhaseBar.tsx              title, provider chip, run-mode metadata, begin-again
     ProviderChip.tsx          anchored popover to switch/configure the model backing Sal
-    MemoryPanel.tsx           Constitutional Memories editor + a compact MOUNTED BRAINS summary
-                              (right rail) whose "Manage" button opens BrainManagerModal
+    MemoryPanel.tsx           the IDENTITY section: read-only document preview + [ Human ]
+                              (opens ConstitutionalEditorModal) and [ Agent ] (opens the prompt
+                              editor) buttons, plus a compact MOUNTED BRAINS summary (right
+                              rail) whose "Manage" button opens BrainManagerModal
     TurnInspector.tsx         per-turn diagnostics: trace, grep matches, spontaneity, savings
     TokenChart.tsx            payload-size-per-turn SVG bars (right rail)
     AssistantMessage.tsx      Sal's reply — ReactMarkdown + summary line + spontaneity marker
@@ -138,8 +151,12 @@ src/client/
     BrainManagerModal.tsx     knowledge-pack lifecycle: import/mount-toggle/delete-with-confirm,
                               opened from MemoryPanel's mounted-brains summary
     ConfirmPersonaModal.tsx   per-chat persona (system prompt) + optional mask + brain mount
-                              picker (incl. pack import), set at "Begin again" — a separate flow
-                              from BrainManagerModal (binds before a chat id exists)
+                              picker (incl. pack import) + constitutional-memory carry-forward
+                              (editable, default-on when non-empty), set at "Begin again" — a
+                              separate flow from BrainManagerModal (binds before a chat id exists)
+    ConstitutionalEditorModal.tsx  edit THIS chat's constitutional document: one freeform
+                              textarea (up to 20k chars), no version history; opened from
+                              MemoryPanel's [ Human ] button
     PromptEditorModal.tsx     edit THIS chat's persona mid-chat, forward-only version history
     EditResponseModal.tsx     edit the latest assistant reply — manual rewrite or "re-spin"
                               (re-run the model with this turn's history; current memories/persona)
@@ -149,7 +166,7 @@ src/client/
     ui/                       shadcn/ui primitives (button, card) + toggle-switch.tsx (the
                               shared ToggleSwitch, extracted from ChatMemoryEditor's turn gate)
   lib/
-    types.ts                  shared domain types (ChatEntry, Memory)
+    types.ts                  shared domain types (ChatEntry, TurnSummary, BrainPack)
     turn-data.ts              TurnData (the per-turn inspector blob) + the tolerant
                               inspector_json rehydration parsers (tested)
     provider.ts               provider types/labels/order shared by chip + hook
@@ -181,11 +198,11 @@ src/client/
                               first (the why + the accepted refusal-operator trade-off)
 src/server/
   index.ts                    Express server — holds the provider keys/URLs; /api/health,
-                              /api/turn (SSE), chat/turn/memory persistence routes; serves
-                              dist/client when built. Reads ALL config from env once at boot.
-  db.ts                       SQLite persistence (better-sqlite3) — chats/turns/memories +
-                              the chat_brains DDL, schema + pure helpers; SGC_DB_PATH
-                              overrides the ./data default
+                              /api/turn (SSE), chat/turn/constitutional persistence routes;
+                              serves dist/client when built. Reads ALL config from env once at boot.
+  db.ts                       SQLite persistence (better-sqlite3) — chats (incl. the
+                              constitutional document column) + turns + the chat_brains DDL,
+                              schema + pure helpers; SGC_DB_PATH overrides the ./data default
   db-brains.ts                the (chat_id, brain_id) mount-binding helpers
   brains-routes.ts            knowledge-pack routes — import/list/get/delete pack FILES in
                               <dirname(DB_PATH)>/brains (SGC_BRAINS_DIR overrides) + the
