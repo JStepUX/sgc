@@ -19,13 +19,8 @@ import cors from 'cors';
 import Anthropic from '@anthropic-ai/sdk';
 import { JSDOM } from 'jsdom';
 import { Readability } from '@mozilla/readability';
-import {
-  createAnthropicProvider,
-  createOpenAIProvider,
-  resolveTurnProvider,
-  type TurnProvider,
-  type ProviderId,
-} from './providers.js';
+import { createAnthropicProvider, createOpenAIProvider, type TurnProvider, type ProviderId } from './providers.js';
+import { registerTurnRoute } from './turn-route.js';
 import {
   MAX_CONSTITUTIONAL_CHARS,
   appendPromptVersion as dbAppendPromptVersion,
@@ -143,101 +138,12 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
-interface TurnRequestBody {
-  system?: unknown;
-  message?: unknown;
-  provider?: unknown;
-}
-
-app.post('/api/turn', async (req, res) => {
-  const { system, message, provider: rawProvider } = (req.body ?? {}) as TurnRequestBody;
-  if (typeof system !== 'string' || typeof message !== 'string') {
-    res.status(400).json({ error: 'Body must include string `system` and `message`.' });
-    return;
-  }
-
-  // Resolve which provider runs this turn. The client sends only a token
-  // ('anthropic' | 'openai'); the server holds keys/URLs. An EXPLICIT but
-  // unavailable token is rejected, not silently rerouted — a LOCAL request must
-  // never be answered by the cloud. Only an absent/unrecognised token falls
-  // back to the boot default. (spec: architecture.key_invariant; resolver +
-  // tests in providers.ts.) These guards stay plain JSON (pre-flushHeaders), so
-  // the client surfaces a clean error rather than a stream `error`.
-  const resolution = resolveTurnProvider(rawProvider, providerAvailable, DEFAULT_PROVIDER);
-  if (!resolution.ok) {
-    res.status(resolution.status).json({ error: resolution.error });
-    return;
-  }
-  const provider = providers[resolution.id]!;
-
-  // Open the SSE stream. The guards above stay plain JSON-over-HTTP — they run
-  // BEFORE flushHeaders, so a bad request still gets a clean 400/500. Everything
-  // past this point is an event stream: failures become an `error` frame,
-  // because the HTTP status line is already on the wire. The delta/done/error
-  // frame shapes are IDENTICAL regardless of provider — the wire contract to
-  // the browser is unchanged.
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no'); // disable proxy buffering if proxied
-  res.flushHeaders();
-
-  const send = (event: string, data: unknown): void => {
-    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-  };
-
-  // One reasoning call per turn — streamed. The provider yields text deltas and
-  // a final usage chunk; both map onto the same delta/done frames as before. No
-  // tools on either provider — see providers.ts.
-  //
-  // If the browser hangs up mid-turn, abort the upstream call so we don't pay
-  // for a completion nobody will read. This MUST hang off the response, not the
-  // request: req's 'close' fires as soon as the (already fully-read) POST body
-  // stream is destroyed — within a few ms of the handler starting, long before
-  // the turn finishes streaming — so a req-close abort would kill every normal
-  // turn. res's 'close' fires only when the response itself ends: cleanly
-  // (writableEnded === true) or because the client disconnected first.
-  const controller = new AbortController();
-  let settled = false;
-  res.on('close', () => {
-    if (!settled && !res.writableEnded) controller.abort();
-  });
-
-  try {
-    for await (const chunk of provider.streamTurn(system, message, controller.signal)) {
-      if (chunk.kind === 'delta') {
-        send('delta', { text: chunk.text });
-      } else {
-        settled = true;
-        send('done', {
-          inputTokens: chunk.usage.inputTokens,
-          outputTokens: chunk.usage.outputTokens,
-        });
-      }
-    }
-    settled = true;
-    if (!res.writableEnded) res.end();
-  } catch (err) {
-    settled = true;
-    // The stream is already open, so the error rides it as an `error` frame
-    // rather than an HTTP status. Surface the upstream message for an
-    // Anthropic.APIError (so the client can tell a 401 from a 529) or a local
-    // provider's fetch error; keep anything else generic.
-    let detail: string;
-    if (err instanceof Anthropic.APIError) {
-      detail = err.message;
-    } else if (err instanceof Error && resolution.id === 'openai') {
-      detail = err.message;
-    } else {
-      detail = 'Internal error generating the turn response.';
-      console.error('turn error:', err);
-    }
-    if (!res.writableEnded) {
-      send('error', { error: detail });
-      res.end();
-    }
-  }
-});
+// The single model-call route — split into turn-route.ts by the anti-god-
+// object ratchet (see src/architecture.test.ts; same pattern as
+// registerBrainRoutes below). This server still constructs the provider
+// registry (env, keys) right here; the route module only parses the wire
+// shape and frames the SSE response.
+registerTurnRoute(app, { providers, providerAvailable, defaultProvider: DEFAULT_PROVIDER });
 
 // ============================================================
 // URL PRE-FETCH (deterministic, NO model)
