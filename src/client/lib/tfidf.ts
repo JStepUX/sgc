@@ -33,7 +33,14 @@ interface TurnDoc {
 /** A cosine-similarity match returned by {@link cosineSearch}. */
 export interface GrepResult extends TurnDoc {
   score: number;
+  /** The top shared terms (capped at {@link MATCHED_TERMS_CAP}) by contribution
+   * to the match — provenance for the prompt's `via "…"` prefix and the recall
+   * tool results. Post-tokenization vocabulary (lowercased, stemmed). */
+  matchedTerms: string[];
 }
+
+/** How many shared terms {@link cosineSearch} reports as provenance. */
+const MATCHED_TERMS_CAP = 3;
 
 const STOP_WORDS = new Set<string>([
   'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had',
@@ -121,6 +128,16 @@ export function applyIDF(tf: TFVector, idf: IDFMap): TFVector {
   return tfidf;
 }
 
+/** The terms two TF-IDF vectors share, ranked by contribution to their dot
+ * product (queryVec[t] * docVec[t], descending), capped. Pure provenance —
+ * it reports WHY a match scored, it never changes what matches. */
+function topSharedTerms(queryVec: TFVector, docVec: TFVector, cap: number): string[] {
+  return Object.keys(queryVec)
+    .filter((t) => (queryVec[t] || 0) > 0 && (docVec[t] || 0) > 0)
+    .sort((a, b) => queryVec[b] * docVec[b] - queryVec[a] * docVec[a])
+    .slice(0, cap);
+}
+
 /**
  * Search the chat log for turns similar to `query`, returning the top matches
  * above `threshold`.
@@ -175,10 +192,14 @@ export function cosineSearch(
   const queryVec = applyIDF(buildTFVector(tokenize(query)), idf);
 
   return turnDocs
-    .map((doc): GrepResult => ({
-      ...doc,
-      score: cosineSimilarity(queryVec, applyIDF(doc.tf, idf)),
-    }))
+    .map((doc): GrepResult => {
+      const docVec = applyIDF(doc.tf, idf);
+      return {
+        ...doc,
+        score: cosineSimilarity(queryVec, docVec),
+        matchedTerms: topSharedTerms(queryVec, docVec, MATCHED_TERMS_CAP),
+      };
+    })
     .filter((d) => d.score >= threshold)
     .sort((a, b) => b.score - a.score)
     .slice(0, topK);

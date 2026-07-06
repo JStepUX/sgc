@@ -157,6 +157,39 @@ describe('cosineSearch', () => {
     expect(results.length).toBeLessThanOrEqual(1);
   });
 
+  // --- matchedTerms: provenance for the `via "…"` prefix (deliberate recall) ---
+  describe('matchedTerms', () => {
+    it('contains the planted rare term for an exact-match query', () => {
+      const results = cosineSearch('quantum particles physics', log);
+      // 'quantum' survives tokenize unchanged (Porter leaves it as 'quantum').
+      expect(results[0].matchedTerms).toContain('quantum');
+    });
+
+    it('reports only terms shared by query and document', () => {
+      const results = cosineSearch('quantum particles physics', log);
+      // 'physic' (stem of physics) appears in the query but no document —
+      // it must not be reported as provenance.
+      for (const r of results) {
+        expect(r.matchedTerms).not.toContain('physic');
+        expect(r.matchedTerms.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('is capped at 3 even when more terms overlap', () => {
+      const wide: ChatEntry[] = [
+        { role: 'user', content: 'maren glassblowing furnace crucible annealing kiln', createdAt: T0 },
+        { role: 'assistant', content: 'maren glassblowing furnace crucible annealing kiln', createdAt: T0 },
+        ...log.slice(4),
+      ];
+      const results = cosineSearch(
+        'maren glassblowing furnace crucible annealing kiln',
+        wide,
+      );
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0].matchedTerms).toHaveLength(3);
+    });
+  });
+
   // --- Gating: turns switched off in the chat memory editor are excluded ---
   describe('gating (active flag)', () => {
     it('excludes a turn whose both halves are gated off', () => {

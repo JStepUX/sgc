@@ -85,6 +85,9 @@ export interface ScoredResult {
   /** Manually-inserted memory (recency negated — timeScore forced to 1.0).
    * Forwarded so prompt.ts can tag it "timeless" instead of a relative time. */
   timeless: boolean;
+  /** Provenance forwarded from the cosine engine: the top shared terms behind
+   * this match, for the prompt's `via "…"` prefix. Stemmed vocabulary. */
+  matchedTerms: string[];
 }
 
 // ============================================================
@@ -222,6 +225,7 @@ export function searchScored(
         combinedScore: combined,
         createdAt,
         timeless,
+        matchedTerms: c.matchedTerms,
       };
     })
     .filter((r) => r.combinedScore >= threshold || r.conceptScore >= CONCEPT_RESCUE_THRESHOLD)

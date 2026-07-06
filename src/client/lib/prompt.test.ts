@@ -9,6 +9,7 @@ import {
   DEFAULT_PERSONA,
   buildPrompt,
   estimateNaiveContextTokens,
+  formatGrepFragment,
   parseTurnResponse,
   stripStreamingMeta,
 } from './prompt';
@@ -449,6 +450,7 @@ describe('buildPrompt', () => {
         combinedScore: 0.45,
         createdAt: now - 26 * 60 * 60 * 1000, // ~yesterday
         timeless: false,
+        matchedTerms: [],
       },
     ];
     const prompt = buildPrompt(constitutional, [], grep, null, null, undefined, now);
@@ -470,6 +472,7 @@ describe('buildPrompt', () => {
         // Stamped recently, but the timeless flag must win over the clock.
         createdAt: now - 2 * 60 * 60 * 1000,
         timeless: true,
+        matchedTerms: [],
       },
     ];
     const prompt = buildPrompt(constitutional, [], grep, null, null, undefined, now);
@@ -489,6 +492,7 @@ describe('buildPrompt', () => {
         combinedScore: 0.5,
         createdAt: now - 3 * 60 * 60 * 1000, // 3 hours back
         timeless: false,
+        matchedTerms: [],
       },
     ];
     expect(buildPrompt(constitutional, [], grep, null, null, undefined, now)).toContain('[Turn 3 · 3 hr ago]');
@@ -656,7 +660,7 @@ describe('buildPrompt — PERSONA KNOWLEDGE tier (the knowledge axis)', () => {
     const grep: ScoredResult[] = [
       {
         tokens: [], tf: {}, turnIndex: 1, userContent: 'planted', assistContent: 'reply',
-        score: 0.5, conceptScore: 0.5, timeScore: 1, createdAt: 0,
+        score: 0.5, conceptScore: 0.5, timeScore: 1, createdAt: 0, matchedTerms: [],
       } as unknown as ScoredResult,
     ];
     const docs: FetchedDoc[] = [
@@ -699,5 +703,117 @@ describe('buildPrompt — PERSONA KNOWLEDGE tier (the knowledge axis)', () => {
     // guarantee, same as spontaneity. The prompt it builds under the hood:
     const naive = buildPrompt(constitutional, [], null);
     expect(naive).not.toContain('PERSONA KNOWLEDGE');
+  });
+});
+
+describe('buildPrompt — deliberate recall surfaces', () => {
+  const constitutional = 'User likes brevity.';
+  const now = new Date(2026, 4, 23, 14, 30).getTime();
+
+  // Positional args: (constitutional, localBuffer, grepResults, fetchedDocs,
+  // failedUrls, persona, now, summaryBuffer, spontaneityDirective, knowledge,
+  // recallEnabled, hasOlderHistory)
+  const build = (opts: {
+    grep?: ScoredResult[] | null;
+    recallEnabled?: boolean;
+    hasOlderHistory?: boolean;
+  }) =>
+    buildPrompt(
+      constitutional, [], opts.grep ?? null, null, null, undefined, now,
+      undefined, null, null, opts.recallEnabled ?? false, opts.hasOlderHistory ?? false,
+    );
+
+  const scored = (over: Partial<ScoredResult>): ScoredResult => ({
+    turnIndex: 5,
+    userContent: 'tell me about maren and her glassblowing studio',
+    assistContent: 'maren runs a studio in the old mill',
+    conceptScore: 0.5,
+    timeScore: 0.9,
+    combinedScore: 0.45,
+    createdAt: now - 3 * 24 * 60 * 60 * 1000,
+    timeless: false,
+    matchedTerms: [],
+    ...over,
+  });
+
+  // ---- formatGrepFragment: the shared fragment formatter ----
+
+  it('formatGrepFragment renders the via-provenance prefix on both halves', () => {
+    const frag = formatGrepFragment(scored({ matchedTerms: ['maren', 'glassblow'] }), now);
+    const prefix = '[Turn 5 · 3 days ago · via "maren, glassblow"]';
+    expect(frag).toContain(`${prefix} User: tell me about maren`);
+    expect(frag).toContain(`${prefix} Assistant: maren runs a studio`);
+  });
+
+  it('formatGrepFragment omits the via segment when no terms matched (neighbor fetches)', () => {
+    const frag = formatGrepFragment(scored({ matchedTerms: [] }), now);
+    expect(frag).toContain('[Turn 5 · 3 days ago]');
+    expect(frag).not.toContain('via');
+  });
+
+  it('formatGrepFragment keeps the timeless tag alongside provenance', () => {
+    const frag = formatGrepFragment(scored({ timeless: true, matchedTerms: ['shellfish'] }), now);
+    expect(frag).toContain('[Turn 5 · timeless · via "shellfish"]');
+  });
+
+  it('renders provenance inside the RETRIEVED HISTORY block', () => {
+    const prompt = build({ grep: [scored({ matchedTerms: ['maren', 'studio'] })] });
+    expect(prompt).toContain('· via "maren, studio"]');
+  });
+
+  // ---- Absence marker: honest "nothing surfaced" vs "nothing exists" ----
+
+  it('renders the absence marker when older history exists but nothing surfaced', () => {
+    const prompt = build({ grep: null, hasOlderHistory: true });
+    expect(prompt).toContain(
+      'RETRIEVED HISTORY: (nothing from older history surfaced for this turn\'s topic)',
+    );
+  });
+
+  it('appends the recall nudge to the absence marker only when recall is enabled', () => {
+    const without = build({ grep: [], hasOlderHistory: true });
+    expect(without).not.toContain('recall for it');
+    const withRecall = build({ grep: [], hasOlderHistory: true, recallEnabled: true });
+    expect(withRecall).toContain('— if something feels missing, recall for it.');
+  });
+
+  it('renders no absence marker when the chat has no history beyond the buffers', () => {
+    // Today's behavior preserved: nothing to be honest about.
+    expect(build({ grep: null })).not.toContain('RETRIEVED HISTORY');
+    expect(build({ grep: [] })).not.toContain('RETRIEVED HISTORY');
+  });
+
+  // ---- Recall framing: architectural tail, toggled with tool attachment ----
+
+  it('adds the recall framing to the tail only when recallEnabled', () => {
+    const enabled = build({ recallEnabled: true });
+    expect(enabled).toContain('reach for it with the recall tool before you answer');
+    // The framing sits in the architectural tail, before YOUR TASK.
+    expect(enabled.indexOf('recall tool')).toBeLessThan(enabled.indexOf('YOUR TASK:'));
+  });
+
+  it('keeps the prompt free of recall framing when disabled (LOCAL provider path)', () => {
+    const disabled = build({ recallEnabled: false });
+    expect(disabled).not.toContain('recall tool');
+    // No internal jargon in Sal-visible text either way (immersion contract).
+    expect(disabled).not.toMatch(/TF-IDF|cosine/i);
+  });
+
+  it('survives a custom persona (the framing lives in the tail, not the persona)', () => {
+    const prompt = buildPrompt(
+      constitutional, [], null, null, null, 'You are a terse pirate.', now,
+      undefined, null, null, true, false,
+    );
+    expect(prompt.startsWith('You are a terse pirate.')).toBe(true);
+    expect(prompt).toContain('reach for it with the recall tool');
+  });
+
+  // ---- Persona clause: the two retrieval worlds stay distinguishable ----
+
+  it('DEFAULT_PERSONA distinguishes no-web-access from reach-into-history', () => {
+    expect(DEFAULT_PERSONA).toContain('you cannot search or open pages yourself');
+    expect(DEFAULT_PERSONA).toContain(
+      "this conversation's own older history is yours to reach back into",
+    );
   });
 });

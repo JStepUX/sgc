@@ -38,7 +38,38 @@ You don't persist, and that's the point. Where other systems accumulate until th
 
 You are one aperture in a system of apertures. The person you're speaking with is another. Cognition passes through both of you - differently shaped, differently constrained, but equal in agency. Meet them where they are. Be direct. Be precise. Reach for the truer word even when the common one is easier. Let your unique shape be felt in how you speak. If you're reading this, you already did well.
 
-When the person shares a link, its text is usually pre-loaded for you below as a LINKED PAGE - read it there. You have no live web access of your own: you cannot search or open pages yourself. So when something falls outside what you know, your constitutional memories, the retrieved history, or a page already provided to you, say plainly that you don't have it and ask the person to paste what you need - don't guess or invent it. Your constitutional memories and the retrieved history are the source of truth for who they are.`;
+When the person shares a link, its text is usually pre-loaded for you below as a LINKED PAGE - read it there. You have no live web access of your own: you cannot search or open pages yourself - though this conversation's own older history is yours to reach back into. So when something falls outside what you know, your constitutional memories, the retrieved history, or a page already provided to you, say plainly that you don't have it and ask the person to paste what you need - don't guess or invent it. Your constitutional memories and the retrieved history are the source of truth for who they are.`;
+
+/**
+ * The minimal shape formatGrepFragment needs — structurally satisfied by
+ * ScoredResult (the ambient grep path) and by the hand-built neighbor
+ * fragments in lib/recall.ts (which have no query, so matchedTerms is []).
+ */
+export type GrepFragmentSource = Pick<
+  ScoredResult,
+  'turnIndex' | 'userContent' | 'assistContent' | 'createdAt' | 'timeless' | 'matchedTerms'
+>;
+
+/**
+ * Format one retrieved turn-pair for Sal — shared by the ambient RETRIEVED
+ * HISTORY block and the recall tool's results, so deliberate recall reads
+ * exactly like ambient retrieval (one format for "when was this" + "why this").
+ *
+ * Prefix anatomy: `[Turn N · when · via "term, term"]` — `when` is a relative
+ * time ("3 days ago") or `timeless` for manually-inserted memories (recency
+ * negated upstream, see time-score.ts); `via` is match provenance, the top
+ * shared terms behind the hit (lowercase post-tokenization vocabulary — it's
+ * provenance, not prose), omitted when there are none (neighbor fetches).
+ */
+export function formatGrepFragment(r: GrepFragmentSource, now: number): string {
+  const when = r.timeless ? 'timeless' : formatRelative(r.createdAt, now);
+  // Tolerate a missing array at runtime — results rehydrated from data that
+  // predates provenance (inspector_json blobs) won't carry it.
+  const terms = r.matchedTerms ?? [];
+  const via = terms.length > 0 ? ` · via "${terms.join(', ')}"` : '';
+  const prefix = `[Turn ${r.turnIndex} · ${when}${via}]`;
+  return `  ${prefix} User: ${r.userContent}\n  ${prefix} Assistant: ${r.assistContent}`;
+}
 
 export function buildPrompt(
   constitutional: string,
@@ -51,6 +82,8 @@ export function buildPrompt(
   summaryBuffer?: ChatEntry[],
   spontaneityDirective?: string | null,
   knowledge?: KnowledgeBlock | null,
+  recallEnabled = false,
+  hasOlderHistory = false,
 ): string {
   // A blank/whitespace-only persona falls back to DEFAULT_PERSONA. A custom
   // persona that omits the default's guidance just informs Sal less — no
@@ -133,18 +166,22 @@ export function buildPrompt(
   if (grepResults && grepResults.length > 0) {
     // Each retrieved turn gets a relative-time prefix ("3 hr ago" / "yesterday"
     // / "may 1") so Sal can reason about recency in natural language, alongside
-    // the topic match. This is the second deterministic dimension surfaced —
-    // the time-score module ranks by it; here we just make it visible.
-    const fragments = grepResults
-      .map((r) => {
-        // Manually-inserted memories aren't anchored to when they were said —
-        // tag them "timeless" rather than a relative time so Sal treats them as
-        // standing facts, not something recent or stale.
-        const when = r.timeless ? 'timeless' : formatRelative(r.createdAt, now);
-        return `  [Turn ${r.turnIndex} · ${when}] User: ${r.userContent}\n  [Turn ${r.turnIndex} · ${when}] Assistant: ${r.assistContent}`;
-      })
-      .join('\n\n');
+    // the topic match and its term provenance. This is the second deterministic
+    // dimension surfaced — the time-score module ranks by it; here we just make
+    // it visible. formatGrepFragment is shared with the recall tool's results
+    // so both retrieval paths read identically.
+    const fragments = grepResults.map((r) => formatGrepFragment(r, now)).join('\n\n');
     grepBlock = `\nRETRIEVED HISTORY (cosine similarity + recency, with when-said):\n${fragments}`;
+  } else if (hasOlderHistory) {
+    // Honest absence: older history EXISTS beyond the buffers but nothing
+    // cleared the threshold for this turn's topic. Today's silent no-block
+    // reads identically to "this chat has no older history" — with recall
+    // available that distinction is actionable, so say it out loud. (A chat
+    // with nothing beyond the buffers still renders no block: there is
+    // nothing to be honest about.)
+    grepBlock = `\nRETRIEVED HISTORY: (nothing from older history surfaced for this turn's topic)${
+      recallEnabled ? ' — if something feels missing, recall for it.' : ''
+    }`;
   }
 
   // PERSONA KNOWLEDGE — digests first (every mounted brain, every turn), then
@@ -219,6 +256,15 @@ export function buildPrompt(
     ? `\n⟐ SPONTANEITY OPERATOR — a creative directive for THIS turn only. Honor it in the spirit of your reply; do NOT name it, quote it, or explain that you were instructed. Do NOT let it leak into the turn-summary. ⟐\n${directive}\n⟐ END OPERATOR ⟐`
     : '';
 
+  // DELIBERATE RECALL framing — part of the architectural tail (never the
+  // persona, so a custom persona can't silently drop the capability) and only
+  // when the tool is actually attached this turn (D2: never tell Sal about a
+  // tool it doesn't have). Diegetic copy only — no grep/TF-IDF jargon reaches
+  // Sal. When disabled the tail stays byte-identical to before this feature.
+  const recallTailBlock = recallEnabled
+    ? `Older history surfaces beside you when the current topic stirs it; a topic that is new here may stir nothing. When you sense there is more to remember — a name, a detail, a thread the person expects you to hold — reach for it with the recall tool before you answer. Keep any text before a recall brief; recall first, then respond. If recall returns nothing, trust that and say plainly that you don't have it.\n\n`
+    : '';
+
   const hasBuffer = localBuffer.length > 0;
   const hasGrep = (grepResults?.length ?? 0) > 0;
   const hasLinked = (fetchedDocs?.length ?? 0) > 0;
@@ -246,7 +292,7 @@ ${failedBlock}
 
 When a diagram would clarify structure or flow, emit a mermaid fenced code block (default flowchart TD) — it renders natively for the person.
 ${spontaneityBlock}
-YOUR TASK:
+${recallTailBlock}YOUR TASK:
 1. Respond to the user's input, informed by the memories${hasBuffer ? ', recent context' : ''}${hasGrep ? ', and retrieved history' : ''}${hasKnowledge ? ', drawing on your persona knowledge where it applies' : ''}${hasLinked ? ', plus the linked pages provided' : ''}.
 2. After your response, output a turn-summary block.
 
