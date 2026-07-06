@@ -38,6 +38,20 @@ wasn't worth it next to the free pre-fetch.) The "one API call" count is a
 guardrail, not the thesis; the thesis is Sal's per-turn ephemerality and the
 curated-tier context. See `CLAUDE.md` → Mission Brief.
 
+**Deliberate recall.** On top of the ambient grep, Sal carries a `recall` tool:
+when it senses there's more to remember — a name, a thread the person expects
+it to hold — it can pause mid-turn (the UI shows a quiet *Remembering…*) and
+re-query the **same deterministic engine** with a query it authors, or pull the
+immediate neighbors of a turn it has already seen (`around_turn`). Max two
+recall rounds per turn (worst case 3 API calls — the sanctioned tool-loop case
+in the Mission Brief), Anthropic-only for now, and results are deduplicated
+against what the prompt already carries. The invariant is untouched: the model
+proposes a *query*; what matches is still pure math. Retrieved fragments (both
+ambient and recalled) now carry term provenance — `[Turn 6 · 4 min ago · via
+"sister"]` — and when older history exists but nothing surfaced, the prompt
+says so honestly instead of staying silent, which is exactly the cue that makes
+the tool worth reaching for.
+
 Sal's persona — the head of the per-turn system prompt — is editable **per
 chat**: "Begin again" opens a Confirm Persona step where you can rewrite it and
 set an optional display-only name (a "mask") for the assistant's turns. It's

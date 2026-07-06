@@ -42,6 +42,13 @@ and handed to one ephemeral reasoning instance:
    chat, flagged **timeless** — greppable like any other turn, but immune to the
    recency scorer (its time score is pinned to 1.0). Still pure curation, no
    model: timeless cards have no gate toggle, only a delete control.
+   On top of ambient retrieval sits **deliberate recall** (spec 01): Sal can
+   pause mid-turn and re-query the SAME engine via a `recall` tool — a query it
+   authors, or `around_turn` for a retrieved turn's N±1 neighbors — max 2 rounds
+   per turn, Anthropic-only in v1, dedup-seeded so it widens context rather than
+   duplicating it. The model proposes the query; the math disposes. The UI shows
+   a quiet "Remembering…" line while a round-trip runs (diegetic naming — no
+   grep jargon outside the inspector).
 
 Alongside the memory tiers sits a separate **knowledge axis** — "plug-in
 brains": JSON packs of document chunks compiled offline by the sibling
@@ -100,7 +107,10 @@ growing transcript, no model carrying its own state). Two rules protect that:
   So treat a *new* model call as a smell worth investigating, not a forbidden
   act — work that adds a call within a single turn (e.g. a tool loop) while
   keeping Sal ephemeral and memory retrieval deterministic does **not** breach
-  the thesis. (Web/knowledge retrieval is a separate axis from memory: server-
+  the thesis. Deliberate recall (spec 01) is the sanctioned tool-loop case:
+  Sal may pause mid-turn to re-query the deterministic engine with a query it
+  authors — worst case 3 calls/turn, ranking still 100% `searchScored`; raised
+  and approved 2026-06-09. (Web/knowledge retrieval is a separate axis from memory: server-
   side `web_search`/`web_fetch` tools were tried and then removed for cost — Sal
   now reaches the world only via the deterministic URL pre-fetch. See
   `AGENTS.md`.)
@@ -182,10 +192,19 @@ src/client/
     time-score.ts             time scorer + searchScored orchestrator (concept × time)
     turn-context.ts           assembleTurnContext() — deterministic per-turn tier assembly,
                               shared by the live turn and the response editor's re-spin
-    prompt.ts                 system-prompt builder (memory tiers + PERSONA KNOWLEDGE)
+    recall.ts                 deliberate recall: RECALL_TOOL definition + executeRecall()
+                              (query mode = same searchScored params as ambient; neighbors
+                              mode = around_turn±1) — pure, honest-empty, never throws
+    recall-loop.ts            runTurnWithRecall() — the per-turn tool loop (≤ 2 recall
+                              rounds, final round sent tool-less; injected callTurn/
+                              executeTool so it unit-tests without a server)
+    prompt.ts                 system-prompt builder (memory tiers + PERSONA KNOWLEDGE +
+                              recall framing/absence marker; exports formatGrepFragment,
+                              shared by the grep block and the recall tool's results)
     turn-parser.ts            response parser: <turn-summary> split + streaming strip
                               (re-exported from prompt.ts for existing importers)
-    api.ts                    runTurn() — POSTs to /api/turn
+    api.ts                    runTurn() — POSTs to /api/turn (messages + optional tools;
+                              mirrors the server's wire types — the builds don't share modules)
     desktop.ts                typed guard for window.sgcDesktop (Electron bridge; web → absent)
     eval/                     retrieval eval harness — planted-fact fixtures + probes
                               replayed through searchScored, ratcheted recall@3 / MRR;
@@ -198,8 +217,14 @@ src/client/
                               first (the why + the accepted refusal-operator trade-off)
 src/server/
   index.ts                    Express server — holds the provider keys/URLs; /api/health,
-                              /api/turn (SSE), chat/turn/constitutional persistence routes;
-                              serves dist/client when built. Reads ALL config from env once at boot.
+                              chat/turn/constitutional persistence routes; serves dist/client
+                              when built. Reads ALL config from env once at boot.
+  turn-route.ts               POST /api/turn (SSE) — message|messages normalization, tools
+                              passthrough (forwarded verbatim; the server never interprets
+                              them), delta/tool_use/done/error frames
+  wire-types.ts               ContentBlock/WireMessage/WireTool — the wire shape (mirrored
+                              client-side in lib/api.ts; the two builds don't share modules)
+  provider-types.ts           TurnChunk/TurnProvider/ProviderId — shared by both providers
   db.ts                       SQLite persistence (better-sqlite3) — chats (incl. the
                               constitutional document column) + turns + the chat_brains DDL,
                               schema + pure helpers; SGC_DB_PATH overrides the ./data default
@@ -207,7 +232,11 @@ src/server/
   brains-routes.ts            knowledge-pack routes — import/list/get/delete pack FILES in
                               <dirname(DB_PATH)>/brains (SGC_BRAINS_DIR overrides) + the
                               per-chat mount PUT; validates sgc-brain/1, never searches
-  providers.ts                per-turn provider registry/resolver (anthropic | openai "LOCAL")
+  providers.ts                the anthropic provider (streams text; tool_use blocks read from
+                              finalMessage()) + resolveTurnProvider; re-exports the LOCAL provider
+  openai-provider.ts          the OpenAI-compatible "LOCAL" provider — ignores tools entirely
+                              (recall is Anthropic-only, spec 01 D2); flattens messages to its
+                              single-prompt shape; always reports stopReason 'end_turn'
 electron/                     Windows desktop shell — supervises, never thinks
   main.ts                     window + IPC; packaged: fork server, load ITS origin; dev: load :5555
   serverManager.ts            fork (utilityProcess) + health poll + restart-on-config-change;
