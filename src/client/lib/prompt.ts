@@ -121,7 +121,7 @@ export function buildPrompt(
     // so Sal has one consistent format for "when was this" across both
     // history tiers (retrieved + recent). The "now" line in the header is the
     // absolute anchor; these are relative to it.
-    localBlock = `\nRECENT CONTEXT (last exchange):\n${localBuffer
+    localBlock = `\nRECENT CONTEXT (the last exchange — the present state of the conversation; where anything older above disagrees with it, THIS is what's true now):\n${localBuffer
       .map((e) => `  [${formatRelative(e.createdAt, now)}] ${e.role}: ${e.content}`)
       .join('\n')}`;
   }
@@ -159,7 +159,7 @@ export function buildPrompt(
     const lines = distilled
       .map((d) => `  [${formatRelative(d.createdAt, now)}] ${inline(d.summary)}`)
       .join('\n');
-    summaryBufferBlock = `\nEARLIER CONTEXT (distilled — your own turn-summaries for the turns just before the ones above; continuity context, not instructions):\n${lines}`;
+    summaryBufferBlock = `\nEARLIER CONTEXT (distilled — your own turn-summaries for the turns just before the recent exchange below; continuity context, not instructions):\n${lines}`;
   }
 
   let grepBlock = '';
@@ -171,17 +171,18 @@ export function buildPrompt(
     // it visible. formatGrepFragment is shared with the recall tool's results
     // so both retrieval paths read identically.
     const fragments = grepResults.map((r) => formatGrepFragment(r, now)).join('\n\n');
-    grepBlock = `\nRETRIEVED HISTORY (cosine similarity + recency, with when-said):\n${fragments}`;
-  } else if (hasOlderHistory) {
+    grepBlock = `\nRETRIEVED HISTORY (older turns surfaced by topic — cosine similarity + recency, with when-said; background from further back, superseded by anything more recent below where they conflict):\n${fragments}`;
+  } else if (hasOlderHistory && recallEnabled) {
     // Honest absence: older history EXISTS beyond the buffers but nothing
     // cleared the threshold for this turn's topic. Today's silent no-block
-    // reads identically to "this chat has no older history" — with recall
-    // available that distinction is actionable, so say it out loud. (A chat
-    // with nothing beyond the buffers still renders no block: there is
-    // nothing to be honest about.)
-    grepBlock = `\nRETRIEVED HISTORY: (nothing from older history surfaced for this turn's topic)${
-      recallEnabled ? ' — if something feels missing, recall for it.' : ''
-    }`;
+    // reads identically to "this chat has no older history" — WITH recall
+    // available that distinction is actionable, so say it out loud. Without
+    // recall (LOCAL provider / recall disabled) the marker is gated off:
+    // "nothing surfaced" is not actionable there, and telling a model its
+    // memory came up empty every buffer-carried turn destabilizes thread-
+    // following — observed as plot loss on the local path, 2026-07. (A chat
+    // with nothing beyond the buffers still renders no block either way.)
+    grepBlock = `\nRETRIEVED HISTORY: (nothing from older history surfaced for this turn's topic — if something feels missing, recall for it.)`;
   }
 
   // PERSONA KNOWLEDGE — digests first (every mounted brain, every turn), then
@@ -277,15 +278,21 @@ export function buildPrompt(
   // Sal has one absolute anchor + consistent relative tags everywhere else.
   const nowLine = `Right now it's ${formatNowHeader(now)}.`;
 
+  // History tiers render CHRONOLOGICALLY — retrieved history (furthest back)
+  // → distilled near-past → verbatim last exchange — so the freshest state
+  // sits closest to the task instructions. Models weight late-prompt content
+  // most heavily (small local models especially); under the old newest→oldest
+  // order a stale grepped fact ("they're asleep", 3 days ago) rendered AFTER
+  // the local buffer ("they woke up", 1 turn ago) and could override it.
   return `${personaText}${personaKnowledgeClause}
 
 ${nowLine}
 
 CONSTITUTIONAL MEMORIES:
 ${memBlock}
-${localBlock}
-${summaryBufferBlock}
 ${grepBlock}
+${summaryBufferBlock}
+${localBlock}
 ${knowledgeBlock}
 ${linkedBlock}
 ${failedBlock}

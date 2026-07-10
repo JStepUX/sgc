@@ -763,24 +763,59 @@ describe('buildPrompt — deliberate recall surfaces', () => {
 
   // ---- Absence marker: honest "nothing surfaced" vs "nothing exists" ----
 
-  it('renders the absence marker when older history exists but nothing surfaced', () => {
-    const prompt = build({ grep: null, hasOlderHistory: true });
+  it('renders the absence marker (with the recall nudge) only when recall is enabled', () => {
+    const prompt = build({ grep: null, hasOlderHistory: true, recallEnabled: true });
     expect(prompt).toContain(
-      'RETRIEVED HISTORY: (nothing from older history surfaced for this turn\'s topic)',
+      "RETRIEVED HISTORY: (nothing from older history surfaced for this turn's topic",
     );
+    expect(prompt).toContain('— if something feels missing, recall for it.');
   });
 
-  it('appends the recall nudge to the absence marker only when recall is enabled', () => {
-    const without = build({ grep: [], hasOlderHistory: true });
-    expect(without).not.toContain('recall for it');
-    const withRecall = build({ grep: [], hasOlderHistory: true, recallEnabled: true });
-    expect(withRecall).toContain('— if something feels missing, recall for it.');
+  it('renders NO absence marker without recall (LOCAL path) — "nothing surfaced" is not actionable there', () => {
+    // Regression: an unconditional marker told buffer-carried turns their
+    // memory came up empty every turn — observed as plot loss on the local
+    // path (v1.3.0). Without recall the prompt must match pre-marker output.
+    const prompt = build({ grep: null, hasOlderHistory: true });
+    expect(prompt).not.toContain('RETRIEVED HISTORY');
+    expect(build({ grep: [], hasOlderHistory: true })).not.toContain('RETRIEVED HISTORY');
   });
 
   it('renders no absence marker when the chat has no history beyond the buffers', () => {
     // Today's behavior preserved: nothing to be honest about.
     expect(build({ grep: null })).not.toContain('RETRIEVED HISTORY');
     expect(build({ grep: [] })).not.toContain('RETRIEVED HISTORY');
+  });
+
+  // ---- History-tier ordering: chronological, freshest last ----
+
+  it('renders history tiers chronologically: retrieved → distilled → recent', () => {
+    // The verbatim last exchange must sit CLOSEST to the task instructions —
+    // late-prompt content carries the most weight, and a stale grepped fact
+    // rendered after the local buffer was observed overriding it (v1.3.0,
+    // local path: grep "they're asleep" beat buffer "they woke up").
+    const localBuffer: ChatEntry[] = [
+      { role: 'user', content: 'so-and-so woke up', createdAt: now - 60_000 },
+      { role: 'assistant', content: 'they are awake now', createdAt: now - 30_000 },
+    ] as ChatEntry[];
+    const summaryBuffer: ChatEntry[] = [
+      {
+        role: 'assistant',
+        content: '',
+        createdAt: now - 120_000,
+        summary: { persistent: ['the cabin is snowed in'], volatile: [], established_patterns: [] },
+      },
+    ] as ChatEntry[];
+    const prompt = buildPrompt(
+      constitutional, localBuffer, [scored({})], null, null, undefined, now,
+      summaryBuffer, null, null, false, true,
+    );
+    const grepAt = prompt.indexOf('RETRIEVED HISTORY');
+    const distilledAt = prompt.indexOf('EARLIER CONTEXT');
+    const recentAt = prompt.indexOf('RECENT CONTEXT');
+    expect(grepAt).toBeGreaterThan(-1);
+    expect(distilledAt).toBeGreaterThan(grepAt);
+    expect(recentAt).toBeGreaterThan(distilledAt);
+    expect(prompt.indexOf('YOUR TASK:')).toBeGreaterThan(recentAt);
   });
 
   // ---- Recall framing: architectural tail, toggled with tool attachment ----
