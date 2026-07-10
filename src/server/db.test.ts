@@ -100,6 +100,79 @@ describe('saveTurnPair', () => {
   });
 });
 
+describe('deleteLatestTurnPair (turn undo)', () => {
+  const pair = (n: number) => ({
+    user: { content: `question ${n}` },
+    assistant: { content: `answer ${n}`, inspectorJson: null },
+  });
+
+  it('deletes the latest pair and leaves earlier turns intact', () => {
+    const id = newChatId();
+    dbmod.createChat(id, null, null);
+    dbmod.saveTurnPair(id, pair(1));
+    const ids2 = dbmod.saveTurnPair(id, pair(2));
+    expect(dbmod.deleteLatestTurnPair(id, ids2.assistantId)).toBe(true);
+    const turns = dbmod.loadChat(id)!.turns;
+    expect(turns.map((t) => t.content)).toEqual(['question 1', 'answer 1']);
+  });
+
+  it('undoes repeatedly, back to an empty chat', () => {
+    const id = newChatId();
+    dbmod.createChat(id, null, null);
+    const ids1 = dbmod.saveTurnPair(id, pair(1));
+    const ids2 = dbmod.saveTurnPair(id, pair(2));
+    expect(dbmod.deleteLatestTurnPair(id, ids2.assistantId)).toBe(true);
+    expect(dbmod.deleteLatestTurnPair(id, ids1.assistantId)).toBe(true);
+    expect(dbmod.loadChat(id)!.turns).toEqual([]);
+  });
+
+  it('refuses a stale assistant id (a newer turn landed since) and deletes nothing', () => {
+    const id = newChatId();
+    dbmod.createChat(id, null, null);
+    const ids1 = dbmod.saveTurnPair(id, pair(1));
+    dbmod.saveTurnPair(id, pair(2));
+    expect(dbmod.deleteLatestTurnPair(id, ids1.assistantId)).toBe(false);
+    expect(dbmod.loadChat(id)!.turns.length).toBe(4);
+  });
+
+  it('refuses the user half\'s id — only the latest ASSISTANT id addresses the pair', () => {
+    const id = newChatId();
+    dbmod.createChat(id, null, null);
+    const ids = dbmod.saveTurnPair(id, pair(1));
+    expect(dbmod.deleteLatestTurnPair(id, ids.userId)).toBe(false);
+    expect(dbmod.loadChat(id)!.turns.length).toBe(2);
+  });
+
+  it('refuses a chat whose only turns are timeless manual memories', () => {
+    const id = newChatId();
+    dbmod.createChat(id, null, null);
+    dbmod.prependManualTurnPair(id, {
+      user: { content: 'remember this' },
+      assistant: { content: 'remembered' },
+    });
+    const assistantRow = dbmod.loadChat(id)!.turns.find((t) => t.role === 'assistant')!;
+    expect(dbmod.deleteLatestTurnPair(id, assistantRow.id)).toBe(false);
+    expect(dbmod.loadChat(id)!.turns.length).toBe(2);
+  });
+
+  it('never touches manual memories below a streamed pair being undone', () => {
+    const id = newChatId();
+    dbmod.createChat(id, null, null);
+    dbmod.prependManualTurnPair(id, {
+      user: { content: 'remember this' },
+      assistant: { content: 'remembered' },
+    });
+    const ids = dbmod.saveTurnPair(id, pair(1));
+    expect(dbmod.deleteLatestTurnPair(id, ids.assistantId)).toBe(true);
+    const turns = dbmod.loadChat(id)!.turns;
+    expect(turns.map((t) => t.content)).toEqual(['remember this', 'remembered']);
+  });
+
+  it('returns false for an unknown chat', () => {
+    expect(dbmod.deleteLatestTurnPair('does-not-exist', 1)).toBe(false);
+  });
+});
+
 describe('updateTurnContent', () => {
   it('rewrites content while preserving created_at and ordinal', () => {
     const id = newChatId();

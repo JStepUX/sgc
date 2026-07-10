@@ -1,5 +1,5 @@
 import { isValidElement, memo } from 'react';
-import { Pencil } from 'lucide-react';
+import { Pencil, Undo2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeQuotes from '../lib/rehype-quotes';
@@ -35,6 +35,8 @@ export const AssistantMessage = memo(function AssistantMessage({
   spontaneity,
   onEdit,
   canEdit = false,
+  onUndo,
+  canUndo = false,
 }: {
   text: string;
   streaming?: boolean;
@@ -52,6 +54,11 @@ export const AssistantMessage = memo(function AssistantMessage({
   onEdit?: () => void;
   /** Whether the pencil is actionable (turn persisted + no turn in progress). */
   canEdit?: boolean;
+  /** Undo this turn: delete the pair, return the user's text to the composer.
+   * Present only on the latest reply, same scope as onEdit. */
+  onUndo?: () => void;
+  /** Same gate as canEdit — the pair needs a DB id and an idle session. */
+  canUndo?: boolean;
 }) {
   const name = label && label.trim() ? label : 'Sal';
   const summaryLine = summary ? flattenSummary(summary) : '';
@@ -65,20 +72,38 @@ export const AssistantMessage = memo(function AssistantMessage({
       <span className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-fg-3">
         {name}
       </span>
-      {!streaming && onEdit && (
-        // Hover-revealed pencil on the latest reply — opens the response editor
-        // (manual edit / re-spin). Disabled until the turn has a DB id and no
-        // turn is in flight, so Save always has an addressable target.
-        <button
-          type="button"
-          onClick={onEdit}
-          disabled={!canEdit}
-          aria-label="Edit this response"
-          title="Edit this response"
-          className="absolute right-0 top-0 flex size-[26px] items-center justify-center rounded-full border border-hairline-strong bg-surface-thin text-fg-3 opacity-0 transition-opacity hover:border-ember hover:text-ember group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-0"
-        >
-          <Pencil className="size-[12.5px]" />
-        </button>
+      {!streaming && (onEdit || onUndo) && (
+        // Hover-revealed controls on the latest reply: the pencil opens the
+        // response editor (manual edit / re-spin); the undo arrow takes the
+        // whole turn back (pair deleted, user text returned to the composer).
+        // Both disabled until the turn has a DB id and no turn is in flight,
+        // so every action has an addressable target.
+        <div className="absolute right-0 top-0 flex gap-1.5">
+          {onUndo && (
+            <button
+              type="button"
+              onClick={onUndo}
+              disabled={!canUndo}
+              aria-label="Undo this turn"
+              title="Undo this turn — your message returns to the composer"
+              className="flex size-[26px] items-center justify-center rounded-full border border-hairline-strong bg-surface-thin text-fg-3 opacity-0 transition-opacity hover:border-ember hover:text-ember group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-0"
+            >
+              <Undo2 className="size-[12.5px]" />
+            </button>
+          )}
+          {onEdit && (
+            <button
+              type="button"
+              onClick={onEdit}
+              disabled={!canEdit}
+              aria-label="Edit this response"
+              title="Edit this response"
+              className="flex size-[26px] items-center justify-center rounded-full border border-hairline-strong bg-surface-thin text-fg-3 opacity-0 transition-opacity hover:border-ember hover:text-ember group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-0"
+            >
+              <Pencil className="size-[12.5px]" />
+            </button>
+          )}
+        </div>
       )}
       <div className="flex flex-col gap-3.5">
       <ReactMarkdown

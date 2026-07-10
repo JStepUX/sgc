@@ -31,6 +31,10 @@ interface ComposerProps {
   // refocus the textarea. A monotonic counter is the dependency-array
   // friendly shape — flipping it triggers the effect.
   resetSignal: number;
+  // Root-driven draft injection (the turn-undo control returns the removed
+  // user message here for editing). Same monotonic-counter shape as
+  // resetSignal; the text rides alongside and is read when the nonce bumps.
+  seed: { text: string; nonce: number };
   // History-toggle button — kept here so the composer row stays atomic.
   historyOpen: boolean;
   onToggleHistory: () => void;
@@ -42,6 +46,7 @@ export const Composer = memo(function Composer({
   onKeystroke,
   submitDisabled,
   resetSignal,
+  seed,
   historyOpen,
   onToggleHistory,
   historyButtonRef,
@@ -68,6 +73,21 @@ export const Composer = memo(function Composer({
     setInput('');
     inputRef.current?.focus();
   }, [resetSignal]);
+
+  // Root-driven draft injection (turn undo). Replaces the current input —
+  // the undo control is only actionable when no turn is in flight, so the
+  // draft it replaces is at most an unsent fragment the user just abandoned
+  // by choosing to undo. Skips the initial mount (nonce 0 = no seed yet).
+  const firstSeedMount = useRef(true);
+  useEffect(() => {
+    if (firstSeedMount.current) {
+      firstSeedMount.current = false;
+      return;
+    }
+    setInput(seed.text);
+    inputRef.current?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed.nonce]);
 
   const submit = useCallback(() => {
     const trimmed = input.trim();

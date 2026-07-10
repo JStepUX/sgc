@@ -24,6 +24,7 @@ import { useProvider } from './hooks/useProvider';
 import { useChatSession } from './hooks/useChatSession';
 import { useTurnRunner } from './hooks/useTurnRunner';
 import { useResponseEditor } from './hooks/useResponseEditor';
+import { useTurnUndo } from './hooks/useTurnUndo';
 
 // ============================================================
 // SALIENCE-GATED COGNITION — Phase 1.5
@@ -72,6 +73,18 @@ export default function SalienceGatedCognition() {
   });
   const runner = useTurnRunner(session, providerState, bumpComposerReset);
   const editor = useResponseEditor(session, providerState);
+  const { undoLatestTurn } = useTurnUndo(session);
+
+  // Turn undo: the pair is deleted (persist-first, inside the hook) and the
+  // removed user text is seeded back into the composer for editing. The seed
+  // rides a monotonic nonce, same shape as composerResetSignal.
+  const [composerSeed, setComposerSeed] = useState({ text: '', nonce: 0 });
+  const handleUndoTurn = useCallback(async () => {
+    const restored = await undoLatestTurn();
+    if (restored !== null) {
+      setComposerSeed((s) => ({ text: restored, nonce: s.nonce + 1 }));
+    }
+  }, [undoLatestTurn]);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const historyButtonRef = useRef<HTMLButtonElement>(null);
@@ -153,6 +166,8 @@ export default function SalienceGatedCognition() {
                           spontaneity={msg.spontaneity}
                           onEdit={i === lastAssistantIdx ? editor.openLatestEditor : undefined}
                           canEdit={i === lastAssistantIdx && !runner.isProcessing && typeof msg.id === 'number'}
+                          onUndo={i === lastAssistantIdx ? handleUndoTurn : undefined}
+                          canUndo={i === lastAssistantIdx && !runner.isProcessing && typeof msg.id === 'number'}
                         />,
                   );
                 })()}
@@ -193,6 +208,7 @@ export default function SalienceGatedCognition() {
               onKeystroke={aurora.handleKeystroke}
               submitDisabled={runner.isProcessing || !session.hydrated || !session.chatId}
               resetSignal={composerResetSignal}
+              seed={composerSeed}
               historyOpen={historyOpen}
               onToggleHistory={handleToggleHistory}
               historyButtonRef={historyButtonRef}

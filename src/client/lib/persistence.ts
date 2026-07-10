@@ -216,6 +216,15 @@ export function deleteManualTurn(chatId: string, turnId: number): Promise<{ ok: 
   );
 }
 
+// Undo the latest streamed turn pair. `assistantTurnId` is the id the client
+// believes is latest — the server verifies before deleting (409 when stale).
+export function deleteLatestTurn(chatId: string, assistantTurnId: number): Promise<{ ok: true }> {
+  return jsonFetch<{ ok: true }>(
+    `/api/chats/${encodeURIComponent(chatId)}/latest-turn/${assistantTurnId}`,
+    { method: 'DELETE' },
+  );
+}
+
 export interface UpdateTurnArgs {
   content: string;
   /** Present = overwrite inspector_json (string or null); absent = leave the

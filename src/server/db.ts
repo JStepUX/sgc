@@ -517,6 +517,34 @@ export function deleteManualTurnPair(chatId: string, turnId: number): boolean {
   return true;
 }
 
+const latestTurnRowStmt = db.prepare(
+  `SELECT id, ordinal, role, timeless FROM turns WHERE chat_id = ? ORDER BY ordinal DESC LIMIT 1`,
+);
+
+// Undo the chat's LATEST streamed turn pair. The caller names the assistant
+// turn id it believes is latest and the pair is deleted only if that's still
+// true — a stale client (a turn landed since, another window already undid)
+// gets `false`, never a wrong-pair delete. Both rows go, same alternation
+// reasoning as deleteManualTurnPair. Restricted to the max-ordinal row being a
+// non-timeless assistant: a chat whose latest rows are manual memories has no
+// streamed turn to undo. Does NOT bump updated_at — undo is curation of the
+// chat's tail, not new activity (same reasoning as prependManualTurnPair), and
+// the pair's own save already surfaced the chat when it landed.
+export function deleteLatestTurnPair(chatId: string, expectedAssistantId: number): boolean {
+  const row = latestTurnRowStmt.get(chatId) as
+    | { id: number; ordinal: number; role: 'user' | 'assistant'; timeless: number }
+    | undefined;
+  if (!row || row.role !== 'assistant' || row.timeless !== 0 || row.id !== expectedAssistantId) {
+    return false;
+  }
+  const txn = db.transaction(() => {
+    deleteTurnByOrdinalStmt.run(chatId, row.ordinal);
+    deleteTurnByOrdinalStmt.run(chatId, row.ordinal - 1);
+  });
+  txn();
+  return true;
+}
+
 // `AND timeless = 0` enforces the "manual memories are always retrievable"
 // invariant at the mutation itself, not just in the UI. A timeless (manually-
 // inserted) turn has no gate toggle and is excluded from mass actions, but an

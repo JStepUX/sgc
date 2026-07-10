@@ -26,6 +26,7 @@ import {
   appendPromptVersion as dbAppendPromptVersion,
   createChat as dbCreateChat,
   deleteChat as dbDeleteChat,
+  deleteLatestTurnPair as dbDeleteLatestTurnPair,
   deleteManualTurnPair as dbDeleteManualTurnPair,
   listChats as dbListChats,
   loadChat as dbLoadChat,
@@ -577,6 +578,29 @@ app.delete('/api/chats/:id/turns/:turnId', (req, res) => {
   } catch (err) {
     console.error('deleteManualTurn failed:', err);
     res.status(500).json({ error: 'Failed to delete memory.' });
+  }
+});
+
+// Undo the latest streamed turn pair (the thread's undo control). The client
+// names the assistant turn id it believes is latest; the DB helper verifies
+// that before deleting, so a stale client — a turn landed since, another
+// window already undid — 409s instead of deleting the wrong pair.
+app.delete('/api/chats/:id/latest-turn/:assistantTurnId', (req, res) => {
+  const assistantTurnId = Number(req.params.assistantTurnId);
+  if (!Number.isInteger(assistantTurnId)) {
+    res.status(400).json({ error: 'assistantTurnId must be an integer.' });
+    return;
+  }
+  try {
+    const ok = dbDeleteLatestTurnPair(req.params.id, assistantTurnId);
+    if (!ok) {
+      res.status(409).json({ error: 'That turn is no longer the latest — reload and try again.' });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('deleteLatestTurn failed:', err);
+    res.status(500).json({ error: 'Failed to undo the turn.' });
   }
 });
 
