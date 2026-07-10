@@ -154,3 +154,18 @@ QA), a plain `git add docs/` will NOT re-stage the file — the archive lands as
 a pure delete and the spec quietly becomes untracked on disk. Re-add with
 `git add -f docs/ignored/<spec>.yaml`. Check `git ls-files docs/ignored/`
 against the directory listing when landing an archival.
+
+## Always-on prompt copy is a behavioral change — and small local models take it harder (v1.3.0 plot-loss regression, 2026-07-10)
+
+The v1.3.0 absence marker ("nothing from older history surfaced") shipped
+unconditional and measurably degraded LOCAL-provider narrative consistency:
+a 7-13B model reads that line — rendered on most mid-plot turns, since the
+plot lives in the buffers, not the grep — as "you don't remember this" and
+starts dropping threads Opus carries fine. Two standing rules fell out of it:
+(1) any copy added to every turn's prompt is a behavioral change to BOTH
+providers and needs a LOCAL-path sanity pass, not just an Anthropic one;
+(2) prompt block ORDER is load-bearing — late-prompt position gets the most
+attention weight, so history tiers must render chronologically (stale grep
+first, live exchange last). Both are pinned in `prompt.test.ts` (the gating
+and ordering tests) and explained at the source (`lib/prompt.ts`); this entry
+is the cross-cutting heads-up.

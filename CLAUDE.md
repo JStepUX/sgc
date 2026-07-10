@@ -139,6 +139,8 @@ src/client/
     useTurnRunner.ts          the live turn: tier assembly → single streamed model call →
                               promote reply → persist pair (processInput moved here verbatim)
     useResponseEditor.ts      edit/re-spin the latest reply (editTarget, respin, saveEdit)
+    useTurnUndo.ts            undo the latest turn: delete the pair (server-verified latest,
+                              persist-first) + hand the user text back for the composer seed
     useProvider.ts            /api/health reconcile, provider token, config-modal state
     useAuroraPulse.ts         throttled aurora gate/typing/pulse signals
     useRailCollapse.ts        context-rail collapse, persisted to localStorage

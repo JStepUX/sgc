@@ -73,6 +73,12 @@ fresh one. It edits that one reply only — later turns aren't regenerated — a
 touches no memory-retrieval invariant: retrieval stays deterministic math, Sal
 stays ephemeral.
 
+The whole turn can also be **undone** — the ↺ beside the pencil deletes the
+latest user+assistant pair (from the thread, the DB, and therefore the grep
+corpus) and returns your message to the composer for editing: ask again,
+minus the answer you didn't want. Undo repeatedly to walk a chat back turn by
+turn. Pure curation, no model in the loop.
+
 **Plug-in brains (the knowledge axis).** A chat can mount **knowledge packs** —
 `sgc-brain/1` JSON files of document chunks compiled offline by the sibling
 Atlantis repo (`python -m atlantis export`; fully model-free `--stub` builds
