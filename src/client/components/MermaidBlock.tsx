@@ -15,6 +15,10 @@ function loadMermaid() {
         // 'strict' runs mermaid's output through DOMPurify, so the SVG we inject
         // below via dangerouslySetInnerHTML is sanitized at the source.
         securityLevel: 'strict',
+        // On a parse failure mermaid would otherwise inject its own "Syntax
+        // error" bomb diagram into document.body and never clean it up. We
+        // handle failures ourselves (the code-block fallback below).
+        suppressErrorRendering: true,
         theme: 'base',
         fontFamily: 'ui-sans-serif, system-ui, sans-serif',
         // Mapped to the Sal design tokens (src/client/index.css) so diagrams sit
