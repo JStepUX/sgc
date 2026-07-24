@@ -61,9 +61,17 @@ The flow and where each concern lives:
   *fired* operator — not the latest turn's, which may be dormant over an earlier
   fire). It is committed only after a reply is delivered, so a failed model call
   never records an operator it never produced.
-- **Re-spin replays, never redraws.** `handleRespin` passes the turn's
-  *snapshotted* `spontaneityDirective` (from its persisted `TurnData`) so a
-  re-spin reproduces the original perturbation to the byte.
+- **Re-spin drops or replays, never redraws.** By default a re-spin runs
+  WITHOUT the turn's fired operator (undoing the perturbation is the usual
+  reason to re-spin) and, on save, clears the turn's fired fields + ⟐ marker so
+  the record matches the regenerated text. Clearing follows *provenance*, not
+  verbatim-ness: a hand edit on top of a clean re-spin still descends from
+  unperturbed text, so it clears too. Clearing also re-pulls the no-repeat
+  cursor from the DB (same scan load/undo use) — the cleared fire no longer
+  counts as "last fired". The modal's replay toggle opts back into a faithful
+  reproduction: the *snapshotted* `spontaneityDirective` (from the persisted
+  `TurnData`) is re-injected to the byte. Neither path rolls a fresh operator.
+  (Default flipped from always-replay, 2026-07-24.)
 
 The three earlier wire-in cautions, now satisfied:
 

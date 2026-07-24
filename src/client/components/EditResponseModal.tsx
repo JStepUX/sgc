@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, RotateCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ToggleSwitch } from '@/components/ui/toggle-switch';
 import type { TurnSummary } from '../lib/types';
 
 // ============================================================
@@ -10,7 +11,9 @@ import type { TurnSummary } from '../lib/types';
 //   2. Re-spin — re-run the currently-selected model for THIS turn. The chat
 //      HISTORY is reconstructed for that turn (sliced before it, recency anchored
 //      at its original instant); memories/persona are current, not snapshotted.
-//      Streamed live into the field.
+//      A fired spontaneity operator is DROPPED by default (re-spin usually exists
+//      to undo the perturbation) — the replay toggle opts back into a verbatim
+//      re-injection. Never redrawn either way. Streamed live into the field.
 //
 // Whatever text is in the field on Save becomes the turn's content. The modal
 // reports back whether that text is the VERBATIM re-spin output (carry its fresh
@@ -30,6 +33,10 @@ export interface RespinResult {
   inputTokens: number;
   outputTokens: number;
   elapsed: number;
+  /** Whether the turn's fired spontaneity operator was re-injected into this
+   * run. False (the default path) means the re-spin ran clean — on save, the
+   * turn's fired fields and ⟐ marker are cleared to match. */
+  operatorReplayed: boolean;
 }
 
 interface EditResponseModalProps {
@@ -41,10 +48,19 @@ interface EditResponseModalProps {
   label: string;
   /** Whether a re-spin can run now (a provider is confirmed + no live turn streaming). */
   canRespin: boolean;
-  /** Run the re-spin: streams stripped preview text via onDelta, resolves with the result. */
-  onRespin: (onDelta: (preview: string) => void) => Promise<RespinResult>;
-  /** Commit. `respin` is non-null only when the saved text is the re-spin verbatim. */
-  onSave: (text: string, respin: RespinResult | null) => Promise<void>;
+  /** The operator that fired on this turn (human-facing name), or null when none
+   * did. Non-null renders the replay toggle — default OFF: a re-spin drops the
+   * operator unless the user opts back into a faithful replay. */
+  firedOperatorLabel: string | null;
+  /** Run the re-spin: streams stripped preview text via onDelta, resolves with
+   * the result. `replayOperator` re-injects the turn's snapshotted directive. */
+  onRespin: (onDelta: (preview: string) => void, replayOperator: boolean) => Promise<RespinResult>;
+  /** Commit. `respin` is non-null only when the saved text is the re-spin
+   * verbatim. `operatorCleared` is independent of that verbatim check: it is
+   * true whenever the LAST completed re-spin ran without the operator — a
+   * hand edit on top of a clean re-spin still descends from unperturbed text,
+   * so the turn's fired fields must still be cleared on save. */
+  onSave: (text: string, respin: RespinResult | null, operatorCleared: boolean) => Promise<void>;
 }
 
 const EYEBROW = 'font-mono text-[11px] tracking-[0.18em] uppercase text-fg-3';
@@ -56,11 +72,15 @@ export function EditResponseModal({
   initialText,
   label,
   canRespin,
+  firedOperatorLabel,
   onRespin,
   onSave,
 }: EditResponseModalProps) {
   const [draft, setDraft] = useState('');
   const [respinResult, setRespinResult] = useState<RespinResult | null>(null);
+  // Replay the fired operator on re-spin? Default OFF — re-spinning a perturbed
+  // turn usually means the perturbation is the thing being undone.
+  const [replayOperator, setReplayOperator] = useState(false);
   const [respinning, setRespinning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +98,12 @@ export function EditResponseModal({
   // The saved text counts as a re-spin only if it's the re-spin output untouched;
   // any hand-edit afterwards drops back to the manual path (summary cleared).
   const savingRespin = respinResult !== null && draft === respinResult.text;
+  // Operator provenance is looser than the verbatim check above: once a clean
+  // (operator-free) re-spin has replaced the draft, hand edits on top of it
+  // still descend from unperturbed text — the fired fields clear on save either
+  // way. `respinResult` holds the LAST completed re-spin regardless of edits,
+  // and a later replay re-spin overwrites it, flipping this back off.
+  const operatorCleared = respinResult !== null && !respinResult.operatorReplayed;
   const canSave = dirty && draft.trim().length > 0 && !saving && !respinning;
 
   // Seed the field from the live reply whenever the modal opens (or the target
@@ -89,6 +115,7 @@ export function EditResponseModal({
     respinSeqRef.current += 1;
     setDraft(initialText);
     setRespinResult(null);
+    setReplayOperator(false);
     setError(null);
     setRespinning(false);
     setSaving(false);
@@ -106,7 +133,7 @@ export function EditResponseModal({
       // Stream the regeneration straight into the field, then settle on the
       // canonical parsed text so the savingRespin equality holds exactly. Each
       // write is gated on this run still being current (not closed/reopened).
-      const result = await onRespin((preview) => { if (isCurrent()) setDraft(preview); });
+      const result = await onRespin((preview) => { if (isCurrent()) setDraft(preview); }, replayOperator);
       if (!isCurrent()) return;
       setDraft(result.text);
       setRespinResult(result);
@@ -122,7 +149,7 @@ export function EditResponseModal({
     setSaving(true);
     setError(null);
     try {
-      await onSave(draft, savingRespin ? respinResult : null);
+      await onSave(draft, savingRespin ? respinResult : null, operatorCleared);
       // The app closes the modal on success (it owns editTarget).
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save the reply.');
@@ -243,6 +270,21 @@ export function EditResponseModal({
                 : 'Re-spin needs an available model and no turn in progress.'}
             </p>
           </div>
+
+          {firedOperatorLabel && (
+            <div className="mt-3 flex items-center gap-3 rounded-[14px] border border-hairline bg-surface-thin px-4 py-2.5">
+              <ToggleSwitch
+                on={replayOperator}
+                onClick={() => setReplayOperator((v) => !v)}
+                ariaLabel={`Replay the ${firedOperatorLabel} operator on re-spin`}
+                disabled={respinning || saving}
+              />
+              <p className="min-w-0 text-[10.5px] leading-[1.4] text-fg-4">
+                <span className="text-fg-3">⟐ {firedOperatorLabel}</span> fired on this turn. Re-spin
+                leaves it out{replayOperator ? ' — switched ON, it will be replayed verbatim.' : '; switch on to replay it verbatim.'}
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-between gap-3 border-t border-hairline px-7 py-4">

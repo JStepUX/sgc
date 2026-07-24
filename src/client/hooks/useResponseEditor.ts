@@ -4,7 +4,9 @@ import type { TurnData } from '../lib/turn-data';
 import { assembleTurnContext } from '../lib/turn-context';
 import { parseTurnResponse, stripStreamingMeta } from '../lib/prompt';
 import { runTurn, extractUrls, fetchUrl } from '../lib/api';
-import { updateTurn as apiUpdateTurn, listChats as apiListChats } from '../lib/persistence';
+import { operatorLabel } from '../lib/spontaneity/flexDeck';
+import { lastFiredOperatorId } from '../lib/spontaneity/engine';
+import { updateTurn as apiUpdateTurn, listChats as apiListChats, loadChat as apiLoadChat } from '../lib/persistence';
 import type { RespinResult } from '../components/EditResponseModal';
 import type { ChatSession } from './useChatSession';
 import type { ProviderState } from './useProvider';
@@ -25,11 +27,15 @@ export function useResponseEditor(
   editTarget: { id: number; content: string; createdAt: number } | null;
   openLatestEditor: () => void;
   closeEditor: () => void;
-  respin: (onDelta: (preview: string) => void) => Promise<RespinResult>;
-  saveEdit: (text: string, respin: RespinResult | null) => Promise<void>;
+  /** The human-facing name of the operator that fired on the latest turn, or
+   * null when none did — drives the modal's replay toggle (hidden when null). */
+  firedOperatorLabel: string | null;
+  respin: (onDelta: (preview: string) => void, replayOperator: boolean) => Promise<RespinResult>;
+  saveEdit: (text: string, respin: RespinResult | null, operatorCleared: boolean) => Promise<void>;
 } {
   const {
     messages, chatLog, constitutional, activePersona, latestTurn, chatId, brainIndex,
+    spontaneityStateRef,
     setMessages, setChatLog, setLatestTurn, setChats,
   } = session;
   const { provider, health } = providerState;
@@ -52,6 +58,14 @@ export function useResponseEditor(
 
   const closeEditor = useCallback(() => setEditTarget(null), []);
 
+  // The modal's replay toggle only renders when the latest turn actually carries
+  // a fired operator (the pencil is latest-turn only, so latestTurn IS this
+  // turn's diagnostics). Label derived from the snapshotted directive, so it
+  // stays correct even if the deck has since changed.
+  const firedOperatorLabel = latestTurn?.spontaneityDirective
+    ? operatorLabel(latestTurn.spontaneityDirective)
+    : null;
+
   // Re-spin: re-run the currently-selected model for the target turn. The chat
   // HISTORY tier is reconstructed faithfully — sliced to before this turn, recency
   // anchored at its original instant, so no later turn can leak in. The
@@ -63,7 +77,7 @@ export function useResponseEditor(
   // keeps Sal ephemeral + memory retrieval pure math — inside the Phase 1.5
   // contract (the "one API call per turn" line is a guardrail, not the law).
   const respin = useCallback(
-    async (onDelta: (preview: string) => void): Promise<RespinResult> => {
+    async (onDelta: (preview: string) => void, replayOperator: boolean): Promise<RespinResult> => {
       if (!editTarget) throw new Error('No reply selected.');
       const assistantIdx = chatLog.findIndex((e) => e.id === editTarget.id);
       const userIdx = assistantIdx - 1;
@@ -82,6 +96,12 @@ export function useResponseEditor(
         else failedUrls.push(u);
       });
 
+      // Replay or DROP, never redraw. By default the fired operator is dropped —
+      // the usual reason to re-spin a perturbed turn is to undo the perturbation.
+      // The modal's toggle opts back into a faithful replay, re-injecting the
+      // snapshotted directive byte-for-byte rather than rolling a fresh one.
+      const directive = replayOperator ? (latestTurn?.spontaneityDirective ?? null) : null;
+
       const { systemPrompt } = assembleTurnContext({
         query: targetUser.content,
         priorLog: chatLog.slice(0, userIdx),
@@ -90,11 +110,7 @@ export function useResponseEditor(
         now: targetUser.createdAt,
         fetchedDocs,
         failedUrls,
-        // REPLAY, don't redraw: re-spin reproduces the turn faithfully, so it
-        // re-injects the operator that originally fired (snapshotted on the turn's
-        // inspector) rather than rolling a fresh one. The pencil is latest-turn
-        // only, so latestTurn is this turn's diagnostics. null → none fired.
-        spontaneityDirective: latestTurn?.spontaneityDirective ?? null,
+        spontaneityDirective: directive,
         // CURRENT mounts, not a per-turn snapshot (spec D8) — same convention
         // as the constitutional document/persona above; the modal copy says so.
         brainIndex,
@@ -114,6 +130,9 @@ export function useResponseEditor(
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,
         elapsed: result.elapsed,
+        // True only when a directive was actually injected into THIS run —
+        // saveEdit uses it to keep or clear the turn's fired fields.
+        operatorReplayed: directive !== null,
       };
     },
     [editTarget, chatLog, constitutional, activePersona, health, provider, latestTurn, brainIndex],
@@ -126,7 +145,7 @@ export function useResponseEditor(
   // the latest turn) so the right-rail diagnostics survive a reload; only
   // `summary` is rehydrated onto the message, so that's the load-bearing field.
   const saveEdit = useCallback(
-    async (text: string, respinResult: RespinResult | null) => {
+    async (text: string, respinResult: RespinResult | null, operatorCleared: boolean) => {
       if (!editTarget || !chatId) return;
       const turnId = editTarget.id;
       const newSummary = respinResult ? (respinResult.summary ?? undefined) : undefined;
@@ -148,6 +167,17 @@ export function useResponseEditor(
           spontaneityDirective: null,
           spontaneitySimilarity: 0,
         };
+      // `operatorCleared` (modal-supplied) — the saved text descends from an
+      // operator-free re-spin, even if hand-edited since (so it can be true on
+      // the manual path too). Clear the fired fields so the ⟐ marker and
+      // inspector don't claim an injection this text never saw. The similarity
+      // reading stays: it's the detector's measurement of the PRIOR log,
+      // independent of injection. A plain manual edit (no clean re-spin behind
+      // it) keeps the fields — the injected reply was hand-amended, not
+      // regenerated.
+      const clearedFields = operatorCleared
+        ? { spontaneityFired: false, spontaneityOperatorId: null as string | null, spontaneityDirective: null as string | null }
+        : {};
       const nextInspector: TurnData = respinResult
         ? {
             ...base,
@@ -155,8 +185,9 @@ export function useResponseEditor(
             outputTokens: respinResult.outputTokens,
             totalLatency: respinResult.elapsed,
             summary: respinResult.summary,
+            ...clearedFields,
           }
-        : { ...base, summary: null };
+        : { ...base, summary: null, ...clearedFields };
 
       await apiUpdateTurn(chatId, turnId, {
         content: text,
@@ -166,19 +197,46 @@ export function useResponseEditor(
       // Persisted — commit to the live logs (by id, so render + retrieval stay
       // in sync). Re-indexing for cosine grep is automatic (tfidf is uncached).
       const patch = (e: (typeof chatLog)[number]): (typeof chatLog)[number] =>
-        e.id !== turnId ? e : { ...e, content: text, summary: newSummary };
+        e.id !== turnId
+          ? e
+          : {
+              ...e,
+              content: text,
+              summary: newSummary,
+              // Mirror the inspector: an operator-free re-spin also drops the
+              // live "⟐ Name" marker (rehydration would drop it on reload anyway).
+              ...(operatorCleared ? { spontaneity: undefined } : {}),
+            };
       setMessages((prev) => prev.map(patch));
       setChatLog((prev) => prev.map(patch));
       setLatestTurn(nextInspector);
       setEditTarget(null);
+
+      // The live no-repeat cursor may still point at the operator we just
+      // cleared — the truth is now "the most recent fire among EARLIER turns",
+      // and their inspector blobs live in the DB, not in any in-memory log. A
+      // re-pull is the only honest refresh (same scan load/undo use). Awaited
+      // so a turn submitted right after the save draws against the fresh
+      // cursor; non-fatal on failure — the save landed, and a reload runs the
+      // identical scan anyway.
+      if (operatorCleared) {
+        try {
+          const detail = await apiLoadChat(chatId);
+          spontaneityStateRef.current = {
+            lastFiredId: lastFiredOperatorId(detail.turns.map((t) => t.inspectorJson)),
+          };
+        } catch (err) {
+          console.warn('no-repeat cursor rescan failed (reload reconciles):', err);
+        }
+      }
 
       // Refresh the history list so its snippet (the latest assistant content)
       // reflects the edit. updateTurnContent doesn't bump updated_at, so this
       // refreshes the snippet without reordering the list.
       apiListChats().then(setChats).catch((err) => console.warn('listChats refresh failed:', err));
     },
-    [editTarget, chatId, latestTurn, chatLog, setMessages, setChatLog, setLatestTurn, setChats],
+    [editTarget, chatId, latestTurn, chatLog, spontaneityStateRef, setMessages, setChatLog, setLatestTurn, setChats],
   );
 
-  return { editTarget, openLatestEditor, closeEditor, respin, saveEdit };
+  return { editTarget, openLatestEditor, closeEditor, firedOperatorLabel, respin, saveEdit };
 }
