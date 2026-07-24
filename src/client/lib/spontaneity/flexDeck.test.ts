@@ -46,7 +46,7 @@ describe('operatorLabel', () => {
 
   it('reads the exact name from the sigil', () => {
     expect(operatorLabel('@!OPERATOR: Offscreen Life!@ — body text')).toBe('Offscreen Life');
-    expect(operatorLabel('@!OPERATOR: Emotional Non-Sequitur!@ — x')).toBe('Emotional Non-Sequitur');
+    expect(operatorLabel('@!OPERATOR: Tonal Undertow!@ — x')).toBe('Tonal Undertow');
   });
 
   it('falls back to "Operator" when the sigil is missing', () => {

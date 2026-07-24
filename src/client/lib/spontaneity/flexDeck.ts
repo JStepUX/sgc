@@ -19,8 +19,9 @@ export interface Operator {
   /** The exact text injected into Sal's prompt when this operator fires. Carries
    * the `@!…!@` salience sigil inline. */
   directive: string;
-  /** Relative draw weight. Default 1.0 — reserved for future tuning. 0 removes
-   * an operator from the draw without deleting it. */
+  /** Relative draw weight. Default 1.0 — reserved for future tuning. Must be
+   * positive (the structural test enforces it); to remove an operator, delete
+   * its entry — old turns keep rendering from their snapshotted directives. */
   weight: number;
 }
 
@@ -61,8 +62,8 @@ export const FLEX_DECK: Operator[] = [
     weight: 1.0
   },
   {
-    id: "emotional_nonsequitur",
-    directive: `@!OPERATOR: Emotional Non-Sequitur!@ — Your emotional register does not match what this moment predicts. You are cheerful when gravity is expected, or quiet when energy is expected. The dissonance is the signal. Do not explain it.`,
+    id: "tonal_undertow",
+    directive: `@!OPERATOR: Tonal Undertow!@ — Your surface register fits the moment, but something else runs underneath it — a preoccupation, a warmth, a heaviness that doesn't belong to this topic. Let it color your word choice and rhythm without ever being named. Subtext, not performance.`,
     weight: 1.0
   },
   {
