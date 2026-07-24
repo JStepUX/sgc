@@ -171,7 +171,9 @@ src/client/
                               MemoryPanel's [ Human ] button
     PromptEditorModal.tsx     edit THIS chat's persona mid-chat, forward-only version history
     EditResponseModal.tsx     edit the latest assistant reply — manual rewrite or "re-spin"
-                              (re-run the model with this turn's history; current memories/persona)
+                              (re-run the model with this turn's history; current memories/
+                              persona; a fired spontaneity operator is dropped by default,
+                              with a toggle to replay it verbatim)
     ProviderConfigModal.tsx   configure either provider from the chip (desktop saves via the
                               Electron bridge → server restart; web mode shows .env guidance)
     MermaidBlock.tsx          lazy-loaded mermaid code blocks → themed SVG; streaming-gated, code-block fallback

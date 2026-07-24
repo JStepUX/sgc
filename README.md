@@ -69,9 +69,12 @@ its history reconstructed (the chat sliced to before the turn, recency anchored
 at its original instant — so no later turn leaks in) plus your current memories
 and persona. Whichever you keep becomes the turn and is re-indexed for the cosine
 grep going forward. A hand edit drops the turn's stale summary; a re-spin emits a
-fresh one. It edits that one reply only — later turns aren't regenerated — and it
-touches no memory-retrieval invariant: retrieval stays deterministic math, Sal
-stays ephemeral.
+fresh one. If a spontaneity operator fired on the turn, a re-spin runs *without*
+it by default — undoing the perturbation is the usual reason to re-spin — and a
+toggle in the editor replays the original directive verbatim instead. It edits
+that one reply only — later turns aren't regenerated — and it touches no
+memory-retrieval invariant: retrieval stays deterministic math, Sal stays
+ephemeral.
 
 The whole turn can also be **undone** — the ↺ beside the pencil deletes the
 latest user+assistant pair (from the thread, the DB, and therefore the grep
