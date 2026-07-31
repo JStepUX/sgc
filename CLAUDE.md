@@ -249,6 +249,8 @@ electron/                     Windows desktop shell — supervises, never thinks
                               holds the seededBrains ledger (stock-brain tombstones)
   stock-brains.ts             pre-fork stock-brain seeding — copies bundled packs into the
                               brains dir iff ledger[id] != pack.version (electron-free, + tests)
+  spellcheck.ts               the right-click suggestion menu Electron doesn't ship + en-GB
+                              language pick + dictionary-download logging (electron-free, + tests)
   preload.ts                  contextBridge → window.sgcDesktop (redacted state, whitelisted patches)
 resources/stock-brains/       committed sgc-brain/1 packs shipped in the installer via
                               electron-builder extraResources (content rules in its README)

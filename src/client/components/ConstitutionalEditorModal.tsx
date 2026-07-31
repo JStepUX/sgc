@@ -122,7 +122,7 @@ export function ConstitutionalEditorModal({ open, text, onSave, onClose }: Const
             ref={textareaRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            spellCheck={false}
+            spellCheck
             maxLength={20000}
             className="sal-scroll min-h-[300px] w-full resize-y rounded-[14px] border border-hairline-strong bg-surface px-4 py-3 font-mono text-[12.5px] leading-[1.6] text-fg-1 outline-none focus:border-ember/55"
           />

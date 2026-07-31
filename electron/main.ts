@@ -5,11 +5,12 @@
 // OWN origin so the renderer's relative /api fetches and static SPA serving
 // work unchanged, (3) apply config changes by restart + reload (D3/D5).
 
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { initConfig, readConfig, redactConfig, whitelistPatch, writeConfig } from './config';
 import * as serverManager from './serverManager';
+import { attachSpellcheck } from './spellcheck';
 
 const DEV_URL = 'http://localhost:5555';
 
@@ -31,8 +32,14 @@ function createWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // Chromium's default is already true; pinned so a future default flip
+      // can't silently take the squiggles away.
+      spellcheck: true,
     },
   });
+  // Squiggles come free with Chromium, but the fix-it menu does not — Electron
+  // ships no default context menu. See spellcheck.ts.
+  attachSpellcheck(window.webContents, Menu);
   window.on('closed', () => {
     if (win === window) win = null;
   });

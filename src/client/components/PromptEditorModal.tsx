@@ -207,7 +207,7 @@ export function PromptEditorModal({
               ref={textareaRef}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              spellCheck={false}
+              spellCheck
               maxLength={20000}
               className="sal-scroll min-h-[260px] flex-1 resize-none rounded-[14px] border border-hairline-strong bg-surface px-4 py-3 font-mono text-[12.5px] leading-[1.65] text-fg-1 outline-none focus:border-ember/55"
             />

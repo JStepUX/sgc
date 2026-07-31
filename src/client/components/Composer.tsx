@@ -137,6 +137,7 @@ export const Composer = memo(function Composer({
               }
             }}
             placeholder="Say something."
+            spellCheck
             rows={1}
             className="sal-scroll max-h-[220px] min-h-[22px] flex-1 resize-none border-0 bg-transparent py-1.5 text-[14.5px] leading-[1.55] text-fg-1 outline-none placeholder:text-fg-4"
           />
