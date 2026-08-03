@@ -34,11 +34,14 @@ import {
   saveTurnPair as dbSaveTurnPair,
   setChatConstitutional as dbSetChatConstitutional,
   setTurnsActive as dbSetTurnsActive,
-  updateTurnContent as dbUpdateTurnContent,
   type ManualTurnInput,
   type SaveTurnInput,
   type TurnActiveState,
 } from './db.js';
+import {
+  updateTurnContent as dbUpdateTurnContent,
+  updateTurnInspector as dbUpdateTurnInspector,
+} from './db-turn-edits.js';
 import { getChatBrains as dbGetChatBrains } from './db-brains.js';
 import { registerBrainRoutes } from './brains-routes.js';
 
@@ -616,6 +619,7 @@ app.delete('/api/chats/:id/latest-turn/:assistantTurnId', (req, res) => {
 interface UpdateTurnBody {
   content?: unknown;
   inspectorJson?: unknown;
+  expectedContent?: unknown;
 }
 
 app.patch('/api/chats/:id/turns/:turnId', (req, res) => {
@@ -625,6 +629,40 @@ app.patch('/api/chats/:id/turns/:turnId', (req, res) => {
     return;
   }
   const body = (req.body ?? {}) as UpdateTurnBody;
+
+  // Second body shape: { inspectorJson, expectedContent } and NO content — the
+  // post-reply state turn attaching its result. Conditional on the content
+  // being unchanged (one atomic UPDATE), so a state result can never land on —
+  // or revert — a reply that was edited while the call was in flight. 409 on a
+  // moved/missing row: the client abandons, it never retries.
+  if (body.content === undefined && 'expectedContent' in body) {
+    if (typeof body.expectedContent !== 'string' || !body.expectedContent.trim()) {
+      res.status(400).json({ error: 'expectedContent must be a non-empty string.' });
+      return;
+    }
+    if (body.inspectorJson !== null && typeof body.inspectorJson !== 'string') {
+      res.status(400).json({ error: 'inspectorJson must be a string or null.' });
+      return;
+    }
+    try {
+      const ok = dbUpdateTurnInspector(
+        req.params.id,
+        turnId,
+        body.inspectorJson as string | null,
+        body.expectedContent,
+      );
+      if (!ok) {
+        res.status(409).json({ error: 'The turn changed while this was being written — write discarded.' });
+        return;
+      }
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('updateTurnInspector failed:', err);
+      res.status(500).json({ error: 'Failed to update turn.' });
+    }
+    return;
+  }
+
   if (typeof body.content !== 'string' || !body.content.trim()) {
     res.status(400).json({ error: 'content must be a non-empty string.' });
     return;

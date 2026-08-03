@@ -579,45 +579,8 @@ export function setTurnsActive(chatId: string, states: TurnActiveState[]): void 
   txn();
 }
 
-// Replace a turn's content in place (assistant-response editor). created_at and
-// ordinal are intentionally left UNCHANGED: editing a reply is curation of an
-// existing turn, not new activity — the cosine corpus re-reads the new text
-// automatically (tfidf is recomputed fresh every search, no cache) while the
-// time scorer's recency anchor stays put. Scoped by chat_id as well as id so a
-// turn-id from another chat can't be rewritten through this chat's route. Does
-// NOT bump updated_at — same reasoning as setTurnsActive. Returns false when no
-// row matched.
-//
-// inspectorJson === undefined leaves the existing blob untouched; a string/null
-// overwrites it. A manual edit clears the turn-summary by overwriting with a
-// blob whose `summary` is null (the only field loadChat rehydrates); a re-spin
-// overwrites with fresh TurnData.
-//
-// `AND role = 'assistant' AND timeless = 0` scopes this to ordinary streamed
-// replies at the mutation itself — the editor only ever targets those. A user
-// row must never be rewritten through this route, and a timeless manual memory
-// is curated through the chat memory editor's insert/delete path (it has no
-// Sal-emitted summary and no original prompt to re-spin). Defense-in-depth,
-// mirroring setTurnActiveStmt / deleteManualTurnPair: build the check, don't
-// trust the caller — a UI bug or an API client can't reach past the intent.
-const updateTurnContentOnlyStmt = db.prepare(
-  `UPDATE turns SET content = ? WHERE id = ? AND chat_id = ? AND role = 'assistant' AND timeless = 0`,
-);
-const updateTurnContentAndInspectorStmt = db.prepare(
-  `UPDATE turns SET content = ?, inspector_json = ? WHERE id = ? AND chat_id = ? AND role = 'assistant' AND timeless = 0`,
-);
-
-export function updateTurnContent(
-  chatId: string,
-  turnId: number,
-  content: string,
-  inspectorJson?: string | null,
-): boolean {
-  if (inspectorJson === undefined) {
-    return updateTurnContentOnlyStmt.run(content, turnId, chatId).changes > 0;
-  }
-  return updateTurnContentAndInspectorStmt.run(content, inspectorJson, turnId, chatId).changes > 0;
-}
+// Turn REWRITES (updateTurnContent, updateTurnInspector) live in
+// db-turn-edits.ts — split out by the anti-god-object ratchet.
 
 // ============================================================
 // PROMPT-VERSION HELPERS — the edit history of a chat's persona.

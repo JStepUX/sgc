@@ -15,6 +15,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 let dbmod: typeof import('./db');
 let brainsmod: typeof import('./db-brains');
+let editsmod: typeof import('./db-turn-edits');
 let seq = 0;
 const newChatId = () => `chat-${++seq}`;
 
@@ -22,6 +23,7 @@ beforeAll(async () => {
   process.env.SGC_DB_PATH = ':memory:';
   dbmod = await import('./db');
   brainsmod = await import('./db-brains');
+  editsmod = await import('./db-turn-edits');
 });
 
 describe('prompt versions', () => {
@@ -183,7 +185,7 @@ describe('updateTurnContent', () => {
     });
     const before = dbmod.loadChat(id)!.turns.find((t) => t.id === assistantId)!;
 
-    const ok = dbmod.updateTurnContent(id, assistantId, 'edited answer');
+    const ok = editsmod.updateTurnContent(id, assistantId, 'edited answer');
     expect(ok).toBe(true);
 
     const after = dbmod.loadChat(id)!.turns.find((t) => t.id === assistantId)!;
@@ -203,10 +205,10 @@ describe('updateTurnContent', () => {
       assistant: { content: 'a', inspectorJson: '{"summary":{"persistent":["x"],"volatile":[],"established_patterns":[]}}' },
     });
 
-    dbmod.updateTurnContent(id, assistantId, 'a2', '{"summary":null}');
+    editsmod.updateTurnContent(id, assistantId, 'a2', '{"summary":null}');
     expect(dbmod.loadChat(id)!.turns.find((t) => t.id === assistantId)!.inspectorJson).toBe('{"summary":null}');
 
-    dbmod.updateTurnContent(id, assistantId, 'a3', null);
+    editsmod.updateTurnContent(id, assistantId, 'a3', null);
     expect(dbmod.loadChat(id)!.turns.find((t) => t.id === assistantId)!.inspectorJson).toBeNull();
   });
 
@@ -221,14 +223,14 @@ describe('updateTurnContent', () => {
     });
 
     // Same id, wrong chat → no-op, returns false; chat a's turn is untouched.
-    expect(dbmod.updateTurnContent(b, assistantId, 'hijacked')).toBe(false);
+    expect(editsmod.updateTurnContent(b, assistantId, 'hijacked')).toBe(false);
     expect(dbmod.loadChat(a)!.turns.find((t) => t.id === assistantId)!.content).toBe('a-answer');
   });
 
   it('returns false for an unknown turn id', () => {
     const id = newChatId();
     dbmod.createChat(id, null, null);
-    expect(dbmod.updateTurnContent(id, 999999, 'x')).toBe(false);
+    expect(editsmod.updateTurnContent(id, 999999, 'x')).toBe(false);
   });
 
   it('refuses to rewrite a user row (assistant-reply editor only)', () => {
@@ -238,7 +240,7 @@ describe('updateTurnContent', () => {
       user: { content: 'user question' },
       assistant: { content: 'a', inspectorJson: null },
     });
-    expect(dbmod.updateTurnContent(id, userId, 'hijacked user text')).toBe(false);
+    expect(editsmod.updateTurnContent(id, userId, 'hijacked user text')).toBe(false);
     expect(dbmod.loadChat(id)!.turns.find((t) => t.id === userId)!.content).toBe('user question');
   });
 
@@ -250,8 +252,59 @@ describe('updateTurnContent', () => {
       assistant: { content: 'memory a' },
     });
     const memory = dbmod.loadChat(id)!.turns.find((t) => t.role === 'assistant' && t.timeless)!;
-    expect(dbmod.updateTurnContent(id, memory.id, 'rewritten memory')).toBe(false);
+    expect(editsmod.updateTurnContent(id, memory.id, 'rewritten memory')).toBe(false);
     expect(dbmod.loadChat(id)!.turns.find((t) => t.id === memory.id)!.content).toBe('memory a');
+  });
+});
+
+describe('updateTurnInspector (the state turn’s conditional write)', () => {
+  it('attaches the blob when content still matches, leaving content untouched', () => {
+    const id = newChatId();
+    dbmod.createChat(id, null, null);
+    const { assistantId } = dbmod.saveTurnPair(id, {
+      user: { content: 'q' },
+      assistant: { content: 'the reply', inspectorJson: '{"summary":null}' },
+    });
+
+    const ok = editsmod.updateTurnInspector(id, assistantId, '{"summary":{"persistent":[],"volatile":[],"established_patterns":[]}}', 'the reply');
+    expect(ok).toBe(true);
+    const after = dbmod.loadChat(id)!.turns.find((t) => t.id === assistantId)!;
+    expect(after.content).toBe('the reply');
+    expect(after.inspectorJson).toContain('persistent');
+  });
+
+  it('refuses when the content has moved — the write-after-edit race, closed in SQLite', () => {
+    const id = newChatId();
+    dbmod.createChat(id, null, null);
+    const { assistantId } = dbmod.saveTurnPair(id, {
+      user: { content: 'q' },
+      assistant: { content: 'streamed reply', inspectorJson: '{"summary":null}' },
+    });
+    // The edit lands first (as it would mid-flight)…
+    editsmod.updateTurnContent(id, assistantId, 'edited reply', '{"summary":null,"edited":true}');
+
+    // …so the state chain's conditional write, carrying the OLD text, must
+    // match zero rows and change nothing.
+    expect(editsmod.updateTurnInspector(id, assistantId, '{"stale":true}', 'streamed reply')).toBe(false);
+    const after = dbmod.loadChat(id)!.turns.find((t) => t.id === assistantId)!;
+    expect(after.content).toBe('edited reply');
+    expect(after.inspectorJson).toBe('{"summary":null,"edited":true}');
+  });
+
+  it('is scoped like updateTurnContent: wrong chat, user rows, timeless rows all refuse', () => {
+    const a = newChatId();
+    const b = newChatId();
+    dbmod.createChat(a, null, null);
+    dbmod.createChat(b, null, null);
+    const { userId, assistantId } = dbmod.saveTurnPair(a, {
+      user: { content: 'q' },
+      assistant: { content: 'a-answer', inspectorJson: null },
+    });
+    expect(editsmod.updateTurnInspector(b, assistantId, '{}', 'a-answer')).toBe(false);
+    expect(editsmod.updateTurnInspector(a, userId, '{}', 'q')).toBe(false);
+    dbmod.prependManualTurnPair(a, { user: { content: 'mq' }, assistant: { content: 'ma' } });
+    const memory = dbmod.loadChat(a)!.turns.find((t) => t.role === 'assistant' && t.timeless)!;
+    expect(editsmod.updateTurnInspector(a, memory.id, '{}', 'ma')).toBe(false);
   });
 });
 
