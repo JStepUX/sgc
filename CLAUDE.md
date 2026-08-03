@@ -251,6 +251,8 @@ electron/                     Windows desktop shell — supervises, never thinks
                               brains dir iff ledger[id] != pack.version (electron-free, + tests)
   spellcheck.ts               the right-click suggestion menu Electron doesn't ship + en-GB
                               language pick + dictionary-download logging (electron-free, + tests)
+  build-contract.test.ts      pins the .cjs emit flag on build:electron (ESM package — a .js
+                              emit ships a packaged app dead at boot)
   preload.ts                  contextBridge → window.sgcDesktop (redacted state, whitelisted patches)
 resources/stock-brains/       committed sgc-brain/1 packs shipped in the installer via
                               electron-builder extraResources (content rules in its README)

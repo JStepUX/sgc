@@ -17,6 +17,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { searchScored } from '../time-score';
+import { tokenize } from '../tfidf';
 import { FIXED_NOW, FIXTURES } from './fixtures';
 import { recallAtK, mrr } from './metrics';
 import { PROBES, type Probe } from './probes';
@@ -143,6 +144,36 @@ describe('retrieval probes', () => {
             `[${probe.id}] gap closed — turnIndex ${ti} now surfaces; promote this probe from 'known-gap' to 'pass' — query: "${probe.query}"`,
           ).not.toContain(ti);
         }
+      }
+    });
+  }
+});
+
+// ============================================================
+// KNOWN-GAP PROBE HYGIENE — the pure-synonym rule, enforced
+//
+// A 'known-gap' probe claims the engine CANNOT bridge its query
+// to the planted fact. That claim is only honest when the query
+// shares zero vocabulary with the fact — measured on STEMS,
+// because tokenize() ends in Porter stemming and an inflection
+// collision (approval/approved → approv) is an ordinary
+// exact-term match, not a gap. This assertion replaces the old
+// "run the query through tokenize() before declaring a gap"
+// diligence rule: an impure probe now fails here by name.
+// ============================================================
+
+describe('known-gap probe hygiene (zero stems shared with the planted fact)', () => {
+  for (const probe of PROBES.filter((p) => p.expectation === 'known-gap')) {
+    it(probe.id, () => {
+      const queryStems = new Set(tokenize(probe.query));
+      for (const ti of probe.expectTurns) {
+        const log = FIXTURES[probe.fixture].log;
+        const turnText = `${log[2 * (ti - 1)].content} ${log[2 * ti - 1].content}`;
+        const shared = [...new Set(tokenize(turnText))].filter((s) => queryStems.has(s));
+        expect(
+          shared,
+          `[${probe.id}] query shares stem(s) [${shared.join(', ')}] with planted turn ${ti} — that's an exact-term match, not a gap; redesign the query to share zero stems`,
+        ).toEqual([]);
       }
     });
   }
