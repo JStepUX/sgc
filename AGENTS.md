@@ -90,6 +90,16 @@ That's why `npmRebuild` is `false` and `scripts/dist-win.mjs` force-rebuilds
 (`electron-rebuild -f`) before the pack and deletes the stale marker after the
 restore. Don't "simplify" either of those away.
 
+## A raw control byte in a source file silently breaks every grep over it (dynamic-state review, 2026-08-03)
+
+A junk-input test fixture written as a literal NUL byte (instead of the
+`'\u0000'` escape) made ripgrep classify the whole file as binary — every
+Grep over `dynamic-state.test.ts` returned "binary file matches" with no
+lines, while Vitest/tsc ran it happily. If a text search over a source file
+returns a binary-file result, suspect an embedded control character and
+re-encode it as an escape; don't trust "no matches" from a file grep can't
+actually read.
+
 ## Always-on prompt copy is a behavioral change — and small local models take it harder (v1.3.0 plot-loss regression, 2026-07-10)
 
 The v1.3.0 absence marker ("nothing from older history surfaced") shipped
