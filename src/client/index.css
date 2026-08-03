@@ -1,6 +1,9 @@
 @import "tailwindcss";
 
-/* Geist + Geist Mono are loaded via <link> in index.html. */
+/* Geist + Geist Mono are loaded via <link> in index.html — never @import a
+   web font here: Tailwind v4 inlines its own @import during processing, so a
+   later @import lands mid-stylesheet and Lightning CSS warns and may drop it
+   (a silently broken font). New fonts go in index.html's <head>. */
 
 /* ============================================================
    SAL DESIGN TOKENS — the warm earthy palette, exposed as

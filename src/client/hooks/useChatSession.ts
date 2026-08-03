@@ -380,8 +380,11 @@ export function useChatSession({ onSessionReset, onChatSwitched }: UseChatSessio
   // in-session turns are appended to chatLog without a DB id (so an id-match
   // would miss them) and a manual add/delete shifts the turn set wholesale.
   // Content of streamed turns is unchanged, so the visible thread is unaffected
-  // — only chatLog's flags/ids/membership refresh. Other chats are persisted
-  // and pick the change up on their next load, so there's nothing to do for them.
+  // — only chatLog's flags/ids/membership refresh. (Consequence: a just-added
+  // manual memory is retrievable immediately but APPEARS in the thread only on
+  // the chat's next load — intentional, so a memory isn't injected mid-scroll.)
+  // Other chats are persisted and pick the change up on their next load, so
+  // there's nothing to do for them.
   const resyncLiveChatLog = useCallback(
     async (editedChatId: string) => {
       if (editedChatId !== chatId) return;

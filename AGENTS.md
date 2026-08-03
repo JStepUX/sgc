@@ -27,37 +27,43 @@ documented:
 - **Write the entry only when neither works** — when the surprise is
   cross-cutting, environmental, or a one-shot heads-up with no natural home.
 
+An entry that gets its check built or its comment pushed to source is DELETED,
+not kept "for the record" — this file was audited to that standard 2026-08-02
+and entries here have survived it.
+
 ---
 
-## A just-added manual memory doesn't show in the live thread until reload (brain surgery, 2026-06-01)
+## Stopping a background `npm run dev` can orphan the Vite/tsx children on :5555/:3000 (package spinup, 2026-05-18)
 
-Adding a manual ("timeless") memory to the *currently-loaded* chat updates
-`chatLog` (the grep corpus) but NOT `messages` (the visible thread) — so the
-inserted turn is retrievable immediately but only *appears* in the thread on the
-next load of that chat (where it shows as the oldest messages). This is
-intentional, not a bug: the editor mutation path (`resyncLiveChatLog` in
-`src/client/hooks/useChatSession.ts`) rebuilds only `chatLog`, deliberately leaving the
-ongoing visual conversation untouched so a memory isn't retroactively injected
-mid-scroll. SGC keeps `messages` (display) and `chatLog` (retrieval) as separate
-state; don't assume mutating one mirrors the other.
+Killing the background task stops the `concurrently` parent but can leave the
+Vite client and tsx server processes alive, still holding their ports — the
+next `npm run dev` then dies with "Port 5555 is already in use". Don't trust
+the task-stop to free the ports; verify and, if needed, kill by port before
+relaunching (PowerShell):
+`Get-NetTCPConnection -LocalPort 5555,3000 -State Listen | %{ Stop-Process -Id $_.OwningProcess -Force }`.
 
-## Known-gap synonymy probes need pure-synonym queries — no overlapping terms (retrieval eval harness, 2026-06-09)
+## Model web tools were removed for their per-turn token tax — the URL pre-fetch is the world axis (web tools removed, 2026-05-21)
 
-When authoring 'known-gap' probes for synonym coverage, the probe query must contain ONLY
-the synonym word with no terms that also appear in the planted fact. For example, a fact
-containing "boss approved budget proposal" will match a query of "manager approved budget
-proposal" on TF-IDF shared terms ('approved', 'budget', 'proposal') — that is NOT a synonym
-gap, it is an ordinary exact-term match. Redesign synonym queries to share zero vocabulary
-with the planted fact text; test against the fixture before declaring a gap.
+Anthropic's server-side `web_search`/`web_fetch` tools once rode on
+`/api/turn`. Removed 2026-05-21: attached tools inject ~4–5k tokens of
+definitions and scaffolding into EVERY turn's `input_tokens` whether or not
+Sal browses (a turn-1 "capital of France?" question billed ~5.2k input). The
+deterministic `/api/fetch-url` pre-fetch (Readability extraction, no model)
+already covers "read this page", and with the tools gone the Anthropic input
+count ≈ the actual prompt again, so the Context-Savings tile compares
+honestly. If you're tempted to re-add model web tools, weigh that per-turn
+tax first — and note it's a world-axis change, not a memory-path one (the
+Phase 1.5 invariant is about how Sal recalls the PERSON; see CLAUDE.md).
 
-## Apostrophes in single-quoted TS string literals cause esbuild parse errors (retrieval eval harness, 2026-06-09)
+## `npm audit` reports a pre-existing "critical" — don't `audit fix --force` it (mermaid add, 2026-06-02)
 
-TypeScript fixture strings written as single-quoted literals must not contain apostrophes
-(e.g. `'Saturn's rings'`). esbuild terminates the string at the first `'` and fails with
-"Expected ')' but found 's'". Use double-quoted strings or remove the possessive form.
-The affected lines were in `src/client/lib/eval/fixtures.ts` — two instances fixed by
-dropping the possessive suffix. This does not affect retrieval behaviour because the
-apostrophised words were not the probe target terms.
+After `npm install`, `npm audit` shows ~4 moderate + 1 critical. They all live in
+the **dev toolchain** (`vitest` → `vite` → `esbuild`, the Vitest-UI advisory
+chain), not in any runtime dependency, and they predate recent feature work.
+`npm audit fix --force` "resolves" them by bumping `vitest` a major version (a
+breaking change) — don't run it. Adding `mermaid` (2026-06-02) pulled ~110
+transitive packages but introduced none of these. If a fresh `npm install` shows
+the same count, it's this, not something you broke.
 
 ## better-sqlite3 + Electron: prebuild-or-MSVC — pin Electron to an ABI with a prebuild (electron release, 2026-06-12)
 
@@ -83,77 +89,6 @@ the NODE binary → the installed app crashes at boot with ERR_DLOPEN_FAILED.
 That's why `npmRebuild` is `false` and `scripts/dist-win.mjs` force-rebuilds
 (`electron-rebuild -f`) before the pack and deletes the stale marker after the
 restore. Don't "simplify" either of those away.
-
-## The ESM server runs under utilityProcess.fork from inside asar — primary path shipped (electron release, 2026-06-12)
-
-The packaged app forks `dist/server/index.js` (ESM) with
-`utilityProcess.fork` and it loads cleanly from inside the asar because the
-asar root `package.json` (with `"type": "module"`) is in `build.files`. The
-spawn+`ELECTRON_RUN_AS_NODE` fallback in `electron/serverManager.ts` was NOT
-needed — it stays behind the single `launch` assignment; if you ever swap to
-it, also add `"dist/server/**"` to `asarUnpack`. The SPA static assets serve
-fine from inside the asar too; only the better-sqlite3 `.node` needs
-`asarUnpack`.
-
-## SGC_DB_PATH is mandatory in the packaged app; userData is %APPDATA%\sgc, not the productName (electron release, 2026-06-12)
-
-Without `SGC_DB_PATH` the server's `db.ts` falls back to `process.cwd()` —
-non-writable under Program Files — and crashes at import-time `mkdirSync`.
-`electron/serverManager.ts` always sets it to `<userData>/data/sgc.db`. Note
-the real path: Electron derives userData from package.json `name`, so it is
-`%APPDATA%\sgc\…`, NOT `%APPDATA%\Salience-Gated Cognition\…` as the spec's
-verification section assumed. sgc-config.json and logs/server.log live there
-too.
-
-## Electron main + preload ship as .cjs BY DESIGN (electron release, 2026-06-12)
-
-The root package.json is `"type": "module"`, so a `.js` emit from esbuild
-would load as ESM and CJS-in-.js deterministically fails. `build:electron`
-emits `dist/electron/{main,preload}.cjs` via `--out-extension:.js=.cjs`.
-"require is not defined" (main) or "contextBridge is not defined" (preload)
-means a `.js` emit slipped back in — check that flag is still on the script.
-
-## `npm audit` reports a pre-existing "critical" — don't `audit fix --force` it (mermaid add, 2026-06-02)
-
-After `npm install`, `npm audit` shows ~4 moderate + 1 critical. They all live in
-the **dev toolchain** (`vitest` → `vite` → `esbuild`, the Vitest-UI advisory
-chain), not in any runtime dependency, and they predate recent feature work.
-`npm audit fix --force` "resolves" them by bumping `vitest` a major version (a
-breaking change) — don't run it. Adding `mermaid` (2026-06-02) pulled ~110
-transitive packages but introduced none of these. If a fresh `npm install` shows
-the same count, it's this, not something you broke.
-
-## This file is missing 8 early entries — deleted by an unrelated commit, recoverable (setup review, 2026-07-02)
-
-Commit `2b368d6` ("Wrap \"quotes\" in orange.", 2026-05-22) deleted 138 lines —
-8 of the 10 entries this file held at the time — with no mention in the commit
-message. Nothing here from before that date survived, so don't treat this file
-as complete for early-project gotchas (key handling, naming rules, dev-server
-shape). Recover the text with `git show 2b368d6~1:AGENTS.md`; triage notes for
-which entries are still accurate live in
-`docs/setup-process-review-2026-07.md` (§1). Delete this entry once restored.
-
-## Post-stemming, probe-query "zero shared vocabulary" means zero shared STEMS (stemming, 2026-07-03)
-
-When Porter stemming landed in tokenize(), the known-gap probe
-`synonymy.boss-for-manager` flipped to passing — not because a synonym bridge
-appeared, but because its query word "approval" and the planted fact's
-"approved" both stem to `approv`. An inflection collision is an ordinary
-exact-term match now, so the pure-synonym rule (entry above) tightens: probe
-queries must share zero *stems* with the planted fact, not just zero surface
-words. Run the candidate query through `tokenize()` against the planted turn's
-tokens before declaring a gap. The flipped probe was repaired by swapping
-"approval" for "decision", keeping it an honest known-gap.
-
-## docs/ignored/ is gitignore-matched — an unstaged spec archive silently drops (plugin-brains landing, 2026-07-04)
-
-`.gitignore` line 52 ignores `docs/ignored/`, yet the archived specs there ARE
-tracked: `git mv` stages the destination even into an ignored directory. The
-trap: if that staged rename is later unstaged (e.g. to split commits during
-QA), a plain `git add docs/` will NOT re-stage the file — the archive lands as
-a pure delete and the spec quietly becomes untracked on disk. Re-add with
-`git add -f docs/ignored/<spec>.yaml`. Check `git ls-files docs/ignored/`
-against the directory listing when landing an archival.
 
 ## Always-on prompt copy is a behavioral change — and small local models take it harder (v1.3.0 plot-loss regression, 2026-07-10)
 

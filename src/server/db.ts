@@ -20,7 +20,10 @@ import { dirname, resolve } from 'node:path';
 
 // Exported so the brains routes (index.ts) can derive their pack directory
 // from the same location — <dirname(DB_PATH)>/brains — meaning the Electron
-// shell needs no change (it already sets SGC_DB_PATH).
+// shell needs no change (it already sets SGC_DB_PATH). The cwd fallback is a
+// DEV convenience only: packaged, cwd is Program Files (non-writable) and the
+// mkdirSync below crashes at import time — which is why serverManager.ts
+// treats SGC_DB_PATH as mandatory (<userData>/data/sgc.db, i.e. %APPDATA%\sgc).
 export const DB_PATH = process.env.SGC_DB_PATH || resolve(process.cwd(), 'data', 'sgc.db');
 
 // Ensure the parent directory exists — better-sqlite3 won't create it.

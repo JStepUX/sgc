@@ -128,6 +128,11 @@ memory of what you changed.
 - Check for untracked files that *should* be staged (new source/test files) and
   files that should NOT be (`.env`, API keys, build artifacts, editor temp files,
   `.claude/settings.local.json`, `.claude/state/`).
+- If the batch archives a spec (item 2's `git mv` into `docs/ignored/` — a
+  gitignore-matched directory), confirm it stayed tracked: `git ls-files
+  docs/ignored/` must list it. If the staged rename was unstaged mid-batch, a
+  plain `git add docs/` will NOT re-stage it (the archive lands as a pure
+  delete); re-add with `git add -f docs/ignored/<spec>.yaml`.
 - No partial changes left in mixed staged/unstaged state.
 - Run `git log --oneline -3` to confirm you're building on the expected base.
 
