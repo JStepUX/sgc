@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { X, RotateCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ToggleSwitch } from '@/components/ui/toggle-switch';
-import type { TurnSummary } from '../lib/types';
 
 // ============================================================
 // EDIT RESPONSE MODAL — rewrite the latest assistant reply, two ways:
@@ -17,7 +16,8 @@ import type { TurnSummary } from '../lib/types';
 //
 // Whatever text is in the field on Save becomes the turn's content. The modal
 // reports back whether that text is the VERBATIM re-spin output (carry its fresh
-// summary + token metrics) or a hand edit (the app clears the stale summary).
+// token metrics) or a hand edit. Either way the app clears the turn's stale
+// summary + inner state and re-derives both from the saved text (D9).
 //
 // Scope is the latest turn only: a re-spin rewrites THIS reply in isolation —
 // later turns already happened and are not regenerated (no cascade). Styled to
@@ -26,10 +26,10 @@ import type { TurnSummary } from '../lib/types';
 // ============================================================
 
 /** The product of a completed re-spin — handed to onSave so the app can persist
- *  the fresh summary + metrics when the saved text is the re-spin verbatim. */
+ *  the fresh metrics when the saved text is the re-spin verbatim. No summary
+ *  rides here: both branches get theirs from the post-save state turn (D9). */
 export interface RespinResult {
   text: string;
-  summary: TurnSummary | null;
   inputTokens: number;
   outputTokens: number;
   elapsed: number;
@@ -292,7 +292,7 @@ export function EditResponseModal({
             {error ? (
               <span className="text-danger">{error}</span>
             ) : (
-              <span>{savingRespin ? 'Saves the re-spun reply + its summary.' : 'Manual edit clears this turn’s summary.'}</span>
+              <span>Saving re-reads this turn: a fresh summary and inner state follow.</span>
             )}
           </div>
           <div className="flex shrink-0 items-center gap-3">

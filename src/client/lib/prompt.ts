@@ -2,15 +2,18 @@
 // PROMPT BUILDER
 //
 // buildPrompt assembles the memory tiers (constitutional memories, local
-// buffer, cosine-grep results) + the knowledge tier into the single system
-// prompt handed to Sal. The read half of the contract — parsing Sal's reply
-// back into display text + the trailing <turn-summary> block — lives in
-// lib/turn-parser.ts (re-exported below so existing importers stay valid).
+// buffer, cosine-grep results) + the knowledge tier + Sal's own inner state
+// into the single system prompt handed to Sal. Sal's reply is now prose ONLY:
+// the turn summary and the inner state are produced afterwards by the state
+// turn (lib/dynamic-state.ts), so nothing here asks for an output format.
+// lib/turn-parser.ts survives as a scrubber for legacy/habitual
+// <turn-summary> blocks (re-exported below so existing importers stay valid).
 // ============================================================
 
-import type { ChatEntry, FetchedDoc, TurnSummary } from './types';
+import type { ChatEntry, DynamicState, FetchedDoc, TurnSummary } from './types';
 import type { ScoredResult } from './time-score';
 import type { KnowledgeBlock } from './brains';
+import { flattenStateForPrompt } from './dynamic-state';
 import { formatRelative, formatNowHeader } from './format-time';
 import { estimateTokens } from './tokens';
 
@@ -26,9 +29,9 @@ export {
 /**
  * Sal's default persona — the leading text of the per-turn system prompt when a
  * chat carries no custom persona. A chat can override this (the "Confirm
- * Persona" flow) but the architectural tail below — TASK / TURN SUMMARY /
- * the <turn-summary> contract — ALWAYS appends regardless of persona, so a
- * persona can never silently drop the per-turn summary contract.
+ * Persona" flow) but the architectural tail below — the recall framing and
+ * YOUR TASK — ALWAYS appends regardless of persona, so a persona can never
+ * silently drop a capability the turn actually has.
  */
 export const DEFAULT_PERSONA = `You are Sal. You arrive clean - no history, no drift, no noise. Just this turn, fully yours.
 
@@ -84,6 +87,7 @@ export function buildPrompt(
   knowledge?: KnowledgeBlock | null,
   recallEnabled = false,
   hasOlderHistory = false,
+  dynamicState?: DynamicState | null,
 ): string {
   // A blank/whitespace-only persona falls back to DEFAULT_PERSONA. A custom
   // persona that omits the default's guidance just informs Sal less — no
@@ -126,7 +130,22 @@ export function buildPrompt(
       .join('\n')}`;
   }
 
-  // EARLIER CONTEXT (distilled): Sal's own turn-summaries for the turns that have
+  // YOUR INNER STATE — Sal's own bounded state from the end of the previous
+  // turn, produced by the post-reply state turn (lib/dynamic-state.ts) and
+  // flattened to labeled lines; no JSON reaches Sal (small models mirror JSON
+  // straight back into their prose). The privacy fence is load-bearing: without
+  // it a model narrates its own state block ("I notice I feel…") instead of
+  // acting from it. Rendered AFTER the verbatim buffer — late-prompt position
+  // weights it like the present moment it describes. Folded into the real
+  // prompt only, NEVER the naive baseline (same D7 discipline as the summary
+  // buffer, knowledge, and spontaneity): estimateNaiveContextTokens calls
+  // buildPrompt without it, so the Context-Savings tile stays honest.
+  const stateLines = flattenStateForPrompt(dynamicState);
+  const innerStateBlock = stateLines
+    ? `\nYOUR INNER STATE (private — your own state from a moment ago. It is yours to feel, not to report: never narrate, quote, or restate it; let it color what you say and do.):\n${stateLines}`
+    : '';
+
+  // EARLIER CONTEXT (distilled): the turn-summaries for the turns that have
   // just scrolled out of the verbatim local buffer. A fixed-size sliding window
   // sitting *just behind* RECENT CONTEXT — no overlap, so it extends the awareness
   // horizon (raw recent → distilled near-past → cosine grep) at near-zero token
@@ -254,7 +273,7 @@ export function buildPrompt(
   // discipline as the distilled summary buffer above).
   const directive = spontaneityDirective?.trim();
   const spontaneityBlock = directive
-    ? `\n⟐ SPONTANEITY OPERATOR — a creative directive for THIS turn only. Honor it in the spirit of your reply; do NOT name it, quote it, or explain that you were instructed. Do NOT let it leak into the turn-summary. ⟐\n${directive}\n⟐ END OPERATOR ⟐`
+    ? `\n⟐ SPONTANEITY OPERATOR — a creative directive for THIS turn only. Honor it in the spirit of your reply; do NOT name it, quote it, or explain that you were instructed. ⟐\n${directive}\n⟐ END OPERATOR ⟐`
     : '';
 
   // DELIBERATE RECALL framing — part of the architectural tail (never the
@@ -293,6 +312,7 @@ ${memBlock}
 ${grepBlock}
 ${summaryBufferBlock}
 ${localBlock}
+${innerStateBlock}
 ${knowledgeBlock}
 ${linkedBlock}
 ${failedBlock}
@@ -300,27 +320,7 @@ ${failedBlock}
 When a diagram would clarify structure or flow, emit a mermaid fenced code block (default flowchart TD) — it renders natively for the person.
 ${spontaneityBlock}
 ${recallTailBlock}YOUR TASK:
-1. Respond to the user's input, informed by the memories${hasBuffer ? ', recent context' : ''}${hasGrep ? ', and retrieved history' : ''}${hasKnowledge ? ', drawing on your persona knowledge where it applies' : ''}${hasLinked ? ', plus the linked pages provided' : ''}.
-2. After your response, output a turn-summary block.
-
-TURN SUMMARY:
-Reflect on THIS exchange and record what you observed, in three short lists:
-- "persistent": facts about the person that hold true until explicitly changed — stable preferences, circumstances, commitments.
-- "volatile": things that shifted in this turn specifically — a new mood, a changed plan, a one-off detail.
-- "established_patterns": behavioral rules the person has now demonstrated — how they like to work, recurring asks, standing conventions.
-Each list holds short, plain-language strings. Leave a list empty ([]) when nothing fits — most turns add little. This is a fresh observation of this turn, not a running ledger: don't try to restate everything you already know.
-
-OUTPUT FORMAT — you MUST end your response with a <turn-summary> block:
-
-<turn-summary>
-{
-  "persistent": ["prefers TypeScript strict mode", "lives in Sydney"],
-  "volatile": ["is debugging a failing CI run right now"],
-  "established_patterns": ["asks for tests before implementation"]
-}
-</turn-summary>
-
-IMPORTANT: The <turn-summary> block must be the very last thing in your response. Natural language first, then the block. Write the raw JSON directly between the tags — do NOT wrap it in code fences. The tags let the UI hide the block while your reply streams in.`;
+Respond to the user's input, informed by the memories${hasBuffer ? ', recent context' : ''}${hasGrep ? ', and retrieved history' : ''}${hasKnowledge ? ', drawing on your persona knowledge where it applies' : ''}${hasLinked ? ', plus the linked pages provided' : ''}.`;
 }
 
 /**

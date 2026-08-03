@@ -1,6 +1,6 @@
 import type { SpontaneityInspector } from './spontaneity/engine';
 import { operatorLabel } from './spontaneity/flexDeck';
-import type { ChatEntry, TurnSummary } from './types';
+import type { ChatEntry, DynamicState, TurnSummary } from './types';
 import type { ChatTurn } from './persistence';
 import type { RecallEvent } from './recall-loop';
 import { parseTurnResponse } from './turn-parser';
@@ -46,11 +46,28 @@ export interface TurnData extends SpontaneityInspector {
   grepMatches: number;
   grepDetails: GrepDetail[] | null;
   /**
-   * Sal's per-turn summary (persistent / volatile / established_patterns),
-   * parsed from the `<turn-summary>` block. Persisted in this turn's
+   * The per-turn summary (persistent / volatile / established_patterns),
+   * produced by the post-reply state turn. Persisted in this turn's
    * inspector_json so it survives reload and rehydrates onto the message.
+   * Null until that background call lands (and permanently if it failed).
    */
   summary: TurnSummary | null;
+  /**
+   * Sal's inner state after this turn — the state turn's other half, written
+   * into inspector_json by the same post-hoc PATCH as `summary`. Optional
+   * because turns persisted before the feature don't carry it; null when the
+   * state call failed. Consumed by the NEXT prompt (see turn-context.ts, D13)
+   * and editable from the rail's Dynamic State card.
+   */
+  dynamicState?: DynamicState | null;
+  /**
+   * Tokens the state call itself billed. Deliberately SEPARATE from
+   * inputTokens/outputTokens: the Context-Savings tile compares memory
+   * curation against the naive baseline, and folding a second call's usage
+   * into that comparison would make it dishonest. Rendered as a small dimmed
+   * footer in the Dynamic State card instead (D12).
+   */
+  stateTokens?: { input: number; output: number };
   /**
    * Estimated tokens the naive "send everything every turn" baseline would
    * have used (persona + memories + full chat history + user input). The
@@ -106,6 +123,7 @@ export function replayEntry(t: ChatTurn): ChatEntry {
     createdAt: t.createdAt,
     timeless: t.timeless,
     summary: summaryFromInspector(t.inspectorJson),
+    dynamicState: dynamicStateFromInspector(t.inspectorJson),
     spontaneity: spontaneityFromInspector(t.inspectorJson),
   };
 }
@@ -120,6 +138,22 @@ export function summaryFromInspector(inspectorJson: string | null): TurnSummary 
   if (!inspectorJson) return undefined;
   try {
     return (JSON.parse(inspectorJson) as Partial<TurnData>).summary ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Pull a turn's inner state back out of its persisted inspector_json — the
+ * mirror of summaryFromInspector, and the reason a reloaded chat's NEXT prompt
+ * still carries the state the last turn ended on. Equally tolerant: a null
+ * blob, a parse failure, a legacy turn, or an explicit null all yield
+ * undefined (no state renders, and the assembler scans further back).
+ */
+export function dynamicStateFromInspector(inspectorJson: string | null): DynamicState | undefined {
+  if (!inspectorJson) return undefined;
+  try {
+    return (JSON.parse(inspectorJson) as Partial<TurnData>).dynamicState ?? undefined;
   } catch {
     return undefined;
   }

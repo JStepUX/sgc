@@ -1,8 +1,10 @@
-import { useCallback, useState } from 'react';
-import type { FetchedDoc } from '../lib/types';
+import { useCallback, useMemo, useState } from 'react';
+import type { ChatEntry, DynamicState, FetchedDoc } from '../lib/types';
 import type { TurnData } from '../lib/turn-data';
 import { assembleTurnContext } from '../lib/turn-context';
 import { parseTurnResponse, stripStreamingMeta } from '../lib/prompt';
+import { STATE_CONTEXT_SIZE, newestDynamicState } from '../lib/dynamic-state';
+import { bumpWriteEpoch, runStateTurn, saveDynamicState as persistDynamicState, type StateTurnTarget } from '../lib/state-turn';
 import { runTurn, extractUrls, fetchUrl } from '../lib/api';
 import { operatorLabel } from '../lib/spontaneity/flexDeck';
 import { lastFiredOperatorId } from '../lib/spontaneity/engine';
@@ -10,6 +12,7 @@ import { updateTurn as apiUpdateTurn, listChats as apiListChats, loadChat as api
 import type { RespinResult } from '../components/EditResponseModal';
 import type { ChatSession } from './useChatSession';
 import type { ProviderState } from './useProvider';
+import type { StateCallTracker } from './useStateCalls';
 
 // ============================================================
 // RESPONSE EDITOR — edit the latest assistant reply (manual or re-spin).
@@ -20,6 +23,10 @@ import type { ProviderState } from './useProvider';
 export function useResponseEditor(
   session: ChatSession,
   providerState: Pick<ProviderState, 'provider' | 'health'>,
+  /** The shared per-chat reflecting registry — the post-save state chain (D9)
+   *  counts here exactly like the live turn's, so the rail's hint covers both
+   *  producers. */
+  stateCalls: StateCallTracker,
 ): {
   /** The assistant reply being edited (latest turn only). A snapshot of its id +
    * content + instant; null when the response editor is closed. The re-spin/save
@@ -32,6 +39,10 @@ export function useResponseEditor(
   firedOperatorLabel: string | null;
   respin: (onDelta: (preview: string) => void, replayOperator: boolean) => Promise<RespinResult>;
   saveEdit: (text: string, respin: RespinResult | null, operatorCleared: boolean) => Promise<void>;
+  /** Whether the Dynamic State editor has a persisted turn to write to. */
+  canEditDynamicState: boolean;
+  /** Commit a hand-edited inner state onto the latest assistant turn (D11). */
+  saveDynamicState: (state: DynamicState) => Promise<void>;
 } {
   const {
     messages, chatLog, constitutional, activePersona, latestTurn, chatId, brainIndex,
@@ -123,10 +134,11 @@ export function useResponseEditor(
         (raw) => onDelta(stripStreamingMeta(raw)),
         confirmedProvider,
       );
-      const { displayText, summary } = parseTurnResponse(result.text);
+      // Scrubber only — the re-spun text carries no summary contract; its
+      // summary and state come from the state turn fired after the save (D9).
+      const { displayText } = parseTurnResponse(result.text);
       return {
         text: displayText,
-        summary,
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,
         elapsed: result.elapsed,
@@ -139,16 +151,17 @@ export function useResponseEditor(
   );
 
   // Save the edited reply. Persist FIRST, then commit to state on success (a
-  // failure leaves the chat untouched and the modal open with the error). A
-  // re-spin carries a fresh summary + metrics; a manual edit clears the stale
-  // summary. inspector_json is rebuilt from the latest turn's TurnData (this IS
-  // the latest turn) so the right-rail diagnostics survive a reload; only
-  // `summary` is rehydrated onto the message, so that's the load-bearing field.
+  // failure leaves the chat untouched and the modal open with the error). Both
+  // branches clear the turn's stale summary AND inner state — the saved text is
+  // not the text they described — and both then fire the SAME background state
+  // turn for the new text (D9): a hand-crafted reply deserves a real summary and
+  // state as much as a streamed one. inspector_json is rebuilt from the latest
+  // turn's TurnData (this IS the latest turn) so the right-rail diagnostics
+  // survive a reload.
   const saveEdit = useCallback(
     async (text: string, respinResult: RespinResult | null, operatorCleared: boolean) => {
       if (!editTarget || !chatId) return;
       const turnId = editTarget.id;
-      const newSummary = respinResult ? (respinResult.summary ?? undefined) : undefined;
 
       const base: TurnData =
         latestTurn ?? {
@@ -178,17 +191,39 @@ export function useResponseEditor(
       const clearedFields = operatorCleared
         ? { spontaneityFired: false, spontaneityOperatorId: null as string | null, spontaneityDirective: null as string | null }
         : {};
+      // Stale summary/state are cleared on BOTH branches — the state turn fired
+      // below replaces them, and clearing first keeps the persist-first failure
+      // semantics clean (a failed write never leaves the old summary describing
+      // new text).
+      //
+      // Call accounting restarts honestly too: a re-spin's reply came from
+      // exactly ONE fresh call — no recall rounds, whatever the original turn
+      // did — so apiCalls resets to 1 and the recall trace drops (else a
+      // recall-free re-spin keeps reading "paused to remember"). A manual edit
+      // spends no call, so it keeps the original REPLY count only — the
+      // replaced state call is subtracted here and the replacement chain
+      // re-adds its own, otherwise every repeated edit inflates the count by
+      // one.
+      const replyCallsOnly = Math.max(1, (base.apiCalls ?? 1) - (base.stateTokens ? 1 : 0));
       const nextInspector: TurnData = respinResult
         ? {
             ...base,
             inputTokens: respinResult.inputTokens,
             outputTokens: respinResult.outputTokens,
             totalLatency: respinResult.elapsed,
-            summary: respinResult.summary,
+            apiCalls: 1,
+            recalls: undefined,
+            summary: null,
+            dynamicState: null,
+            stateTokens: undefined,
             ...clearedFields,
           }
-        : { ...base, summary: null, ...clearedFields };
+        : { ...base, apiCalls: replyCallsOnly, summary: null, dynamicState: null, stateTokens: undefined, ...clearedFields };
 
+      // Bump BEFORE the write: any state chain still in flight for this row
+      // (the live turn's, or a previous edit's) describes text this save is
+      // about to replace, and must abandon rather than revert it.
+      const writeEpoch = bumpWriteEpoch(turnId);
       await apiUpdateTurn(chatId, turnId, {
         content: text,
         inspectorJson: JSON.stringify(nextInspector),
@@ -202,7 +237,8 @@ export function useResponseEditor(
           : {
               ...e,
               content: text,
-              summary: newSummary,
+              summary: undefined,
+              dynamicState: undefined,
               // Mirror the inspector: an operator-free re-spin also drops the
               // live "⟐ Name" marker (rehydration would drop it on reload anyway).
               ...(operatorCleared ? { spontaneity: undefined } : {}),
@@ -211,6 +247,41 @@ export function useResponseEditor(
       setChatLog((prev) => prev.map(patch));
       setLatestTurn(nextInspector);
       setEditTarget(null);
+
+      // ---- POST-SAVE STATE TURN (D9, background) ----
+      // The same chain the live turn runs, over the text that was just saved.
+      // Built from the log as the patch left it: the edited reply in place, the
+      // previous state read from BEFORE this turn (its own is now cleared).
+      // Fired, not awaited — the modal has already closed.
+      const editedIdx = chatLog.findIndex((e) => e.id === turnId);
+      if (editedIdx >= 0) {
+        const patched = chatLog.map(patch);
+        const recentEntries = patched.slice(0, editedIdx + 1).slice(-STATE_CONTEXT_SIZE);
+        const target: StateTurnTarget = {
+          chatId,
+          assistantTurnId: turnId,
+          content: text,
+          expectedEpoch: writeEpoch,
+          baseTurnData: nextInspector,
+          matches: (e) => e.id === turnId,
+          setMessages,
+          setChatLog,
+          setLatestTurn,
+        };
+        const endStateCall = stateCalls.begin(chatId);
+        void runStateTurn(target, {
+          persona: activePersona,
+          constitutional,
+          recentEntries,
+          prevState: newestDynamicState(patched.slice(0, editedIdx)),
+          // Only a replayed operator actually perturbed the saved text.
+          spontaneityDirective:
+            respinResult && respinResult.operatorReplayed
+              ? (latestTurn?.spontaneityDirective ?? null)
+              : null,
+          provider: health?.providers[provider]?.available ? provider : undefined,
+        }).finally(endStateCall);
+      }
 
       // The live no-repeat cursor may still point at the operator we just
       // cleared — the truth is now "the most recent fire among EARLIER turns",
@@ -235,8 +306,60 @@ export function useResponseEditor(
       // refreshes the snippet without reordering the list.
       apiListChats().then(setChats).catch((err) => console.warn('listChats refresh failed:', err));
     },
-    [editTarget, chatId, latestTurn, chatLog, spontaneityStateRef, setMessages, setChatLog, setLatestTurn, setChats],
+    [
+      editTarget, chatId, latestTurn, chatLog, activePersona, constitutional, health, provider,
+      spontaneityStateRef, stateCalls, setMessages, setChatLog, setLatestTurn, setChats,
+    ],
   );
 
-  return { editTarget, openLatestEditor, closeEditor, firedOperatorLabel, respin, saveEdit };
+  // ---- DYNAMIC STATE EDITOR (D11) ----
+  // The rail's [ Edit ] writes to the latest PERSISTED assistant turn — the same
+  // target the pencil uses, for the same reason: it's the only turn whose state
+  // the next prompt will read. Timeless manual memories are skipped (they are
+  // curated in the chat memory editor and carry no state).
+  const latestAssistant: ChatEntry | null = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role === 'assistant' && !m.timeless && typeof m.id === 'number') return m;
+    }
+    return null;
+  }, [messages]);
+
+  // A TurnData to merge into is as necessary as a row to write to — without one
+  // there is no inspector blob to rebuild, so the button stays disabled.
+  const canEditDynamicState = Boolean(chatId && latestAssistant && latestTurn);
+
+  const saveDynamicState = useCallback(
+    async (state: DynamicState) => {
+      const turnId = latestAssistant?.id;
+      if (!chatId || !latestAssistant || typeof turnId !== 'number' || !latestTurn) {
+        throw new Error('No saved reply to attach a state to yet.');
+      }
+      await persistDynamicState(
+        {
+          chatId,
+          assistantTurnId: turnId,
+          // Content unchanged — this edits the state, not the reply.
+          content: latestAssistant.content,
+          // Hand curation outranks the machine: bumping kills any state chain
+          // still reflecting on this turn, so the model's own result can't land
+          // afterwards and overwrite what the user just wrote (D11 > D5). The
+          // cost when that happens is a summary-less turn, not wrong data.
+          expectedEpoch: bumpWriteEpoch(turnId),
+          baseTurnData: latestTurn,
+          matches: (e) => e.id === turnId,
+          setMessages,
+          setChatLog,
+          setLatestTurn,
+        },
+        state,
+      );
+    },
+    [chatId, latestAssistant, latestTurn, setMessages, setChatLog, setLatestTurn],
+  );
+
+  return {
+    editTarget, openLatestEditor, closeEditor, firedOperatorLabel, respin, saveEdit,
+    canEditDynamicState, saveDynamicState,
+  };
 }

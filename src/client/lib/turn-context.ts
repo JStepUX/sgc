@@ -20,6 +20,7 @@ import type { ChatEntry, FetchedDoc } from './types';
 import { LOCAL_BUFFER_SIZE, SUMMARY_BUFFER_SIZE } from './constants';
 import { searchScored, type ScoredResult } from './time-score';
 import { searchBrains, type BrainIndex, type KnowledgeBlock } from './brains';
+import { newestDynamicState } from './dynamic-state';
 import { buildPrompt } from './prompt';
 
 export interface TurnContextInput {
@@ -102,6 +103,14 @@ export function assembleTurnContext(input: TurnContextInput): TurnContextResult 
       ? { digests: brainIndex.digests, results: searchBrains(query, brainIndex) }
       : null;
 
+  // ---- INNER STATE: the newest one in the log, however old (D13) ----
+  // No horizon: a failed state call (or a run of them) must not blank Sal's
+  // inner life — the last good state holds until a new one lands. Derived from
+  // priorLog like everything else here, so a re-spin's sliced log reproduces
+  // exactly the state that turn saw. Not retrieval: it's a backward scan for
+  // the most recent value, no scoring, no corpus.
+  const dynamicState = newestDynamicState(priorLog);
+
   // Older history exists beyond BOTH buffers — the distinction the absence
   // marker needs: "nothing surfaced" is only worth saying when there was a
   // corpus to surface from (deliberate-recall spec, D7 rationale).
@@ -123,6 +132,7 @@ export function assembleTurnContext(input: TurnContextInput): TurnContextResult 
     knowledge,
     recallEnabled,
     hasOlderHistory,
+    dynamicState,
   );
 
   return { systemPrompt, grepResults, knowledge, localBufferSize: localBuffer.length };

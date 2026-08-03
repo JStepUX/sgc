@@ -249,6 +249,22 @@ export function updateTurn(
   );
 }
 
+// The state turn's write: attach an inspector blob WITHOUT touching content,
+// conditional on the content still being `expectedContent` (the text the state
+// call reflected on). The server refuses with 409 when the row moved or is
+// gone — the caller treats the rejection as "abandon", never retries.
+export function updateTurnInspector(
+  chatId: string,
+  turnId: number,
+  inspectorJson: string | null,
+  expectedContent: string,
+): Promise<{ ok: true }> {
+  return jsonFetch<{ ok: true }>(
+    `/api/chats/${encodeURIComponent(chatId)}/turns/${turnId}`,
+    { method: 'PATCH', body: JSON.stringify({ inspectorJson, expectedContent }) },
+  );
+}
+
 /** One turn's gate state for {@link setTurnsActive}. */
 export interface TurnActiveState {
   id: number;

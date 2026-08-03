@@ -13,7 +13,7 @@ import {
   parseTurnResponse,
   stripStreamingMeta,
 } from './prompt';
-import type { ChatEntry, FetchedDoc } from './types';
+import type { ChatEntry, DynamicState, FetchedDoc } from './types';
 import type { ScoredResult } from './time-score';
 import type { KnowledgeBlock } from './brains';
 
@@ -375,23 +375,27 @@ describe('buildPrompt', () => {
   });
 
   // ---- PERSONA (per-chat system prompt) ----
-  // LOAD-BEARING invariant: the architectural tail (TASK / TURN SUMMARY / the
-  // <turn-summary> contract) must append for EVERY persona — default, custom,
-  // or blank. A persona that could drop the <turn-summary> contract would
-  // silently kill the per-turn summary (parseTurnResponse would find nothing).
-  // These tests are the check that guards that, not a self-report.
+  // LOAD-BEARING invariant: the architectural tail (YOUR TASK + the environment
+  // capabilities) must append for EVERY persona — default, custom, or blank —
+  // so a persona can never silently drop a capability the turn actually has.
   const TAIL_MARKERS = [
     'YOUR TASK:',
+    'Respond to the user',
+    // Diagram capability is an environment fact, not a persona trait — it must
+    // survive a custom persona swap.
+    'flowchart TD',
+  ];
+
+  // The summary contract has LEFT this prompt: it is produced by the post-reply
+  // state turn (lib/dynamic-state.ts). Sal's reply is prose only, so no
+  // format burden — and no tail — may reappear here. These are the check.
+  const RETIRED_TAIL_MARKERS = [
     'TURN SUMMARY:',
     '<turn-summary>',
     '</turn-summary>',
-    'persistent',
-    'volatile',
-    'established_patterns',
+    'OUTPUT FORMAT',
     'must be the very last thing in your response',
-    // Diagram capability is an environment fact, not a persona trait — it must
-    // survive a custom persona swap, same as the <turn-summary> contract.
-    'flowchart TD',
+    'established_patterns',
   ];
 
   it('uses DEFAULT_PERSONA as the head when no persona is passed', () => {
@@ -399,14 +403,12 @@ describe('buildPrompt', () => {
     expect(prompt.startsWith(DEFAULT_PERSONA)).toBe(true);
   });
 
-  it('appends the full architectural tail for the DEFAULT persona', () => {
+  it('appends the architectural tail for the DEFAULT persona', () => {
     const prompt = buildPrompt(constitutional, [], null);
     for (const marker of TAIL_MARKERS) expect(prompt).toContain(marker);
   });
 
-  it('appends the full architectural tail for a CUSTOM persona', () => {
-    // A persona that says nothing about the summary still gets the
-    // <turn-summary> contract — it cannot opt out.
+  it('appends the architectural tail for a CUSTOM persona', () => {
     const custom = 'You are PERCIVAL, a terse medieval scribe. You do not editorialise.';
     const prompt = buildPrompt(constitutional, [], null, null, null, custom);
     expect(prompt.startsWith(custom)).toBe(true);
@@ -414,17 +416,11 @@ describe('buildPrompt', () => {
     for (const marker of TAIL_MARKERS) expect(prompt).toContain(marker);
   });
 
-  it('round-trips: a custom persona prompt still yields a parseable summary downstream', () => {
-    // The whole point of the tail: a turn built from a custom persona, when the
-    // model honors the <turn-summary> contract, parses cleanly. Simulate the
-    // model emitting the contracted block and confirm parseTurnResponse recovers it.
-    const custom = 'You are PERCIVAL.';
-    const prompt = buildPrompt(constitutional, [], null, null, null, custom);
-    expect(prompt).toContain('<turn-summary>');
-    const modelReply =
-      'A terse reply.\n\n<turn-summary>\n{"persistent":["scribes tersely"],"volatile":[],"established_patterns":[]}\n</turn-summary>';
-    const { summary } = parseTurnResponse(modelReply);
-    expect(summary?.persistent).toEqual(['scribes tersely']);
+  it('carries NO turn-summary contract, for any persona (it moved to the state turn)', () => {
+    for (const persona of [undefined, 'You are PERCIVAL.', '', '   ']) {
+      const prompt = buildPrompt(constitutional, [], null, null, null, persona);
+      for (const marker of RETIRED_TAIL_MARKERS) expect(prompt).not.toContain(marker);
+    }
   });
 
   it('falls back to DEFAULT_PERSONA for a blank or whitespace-only persona', () => {
@@ -518,8 +514,8 @@ describe('buildPrompt', () => {
     expect(prompt).toContain('⟐ SPONTANEITY OPERATOR');
     expect(prompt).toContain('carry context that predates this turn');
     expect(prompt).toContain('⟐ END OPERATOR ⟐');
-    // Must instruct Sal not to leak the mechanism into the turn-summary.
-    expect(prompt).toContain('turn-summary');
+    // Must instruct Sal not to name the mechanism.
+    expect(prompt).toContain('do NOT name it');
   });
 
   it('omits the spontaneity block when the directive is absent, null, or blank', () => {
@@ -528,6 +524,94 @@ describe('buildPrompt', () => {
       .not.toContain('SPONTANEITY OPERATOR');
     expect(buildPrompt(constitutional, [], null, null, null, undefined, undefined, undefined, '   '))
       .not.toContain('SPONTANEITY OPERATOR');
+  });
+});
+
+describe('buildPrompt — YOUR INNER STATE block (Dynamic State)', () => {
+  const constitutional = 'User likes brevity.';
+  const now = new Date(2026, 4, 23, 14, 30).getTime();
+
+  // Positional args: (constitutional, localBuffer, grepResults, fetchedDocs,
+  // failedUrls, persona, now, summaryBuffer, spontaneityDirective, knowledge,
+  // recallEnabled, hasOlderHistory, dynamicState)
+  const withState = (state: DynamicState | null, localBuffer: ChatEntry[] = []) =>
+    buildPrompt(
+      constitutional, localBuffer, null, null, null, undefined, now,
+      undefined, null, null, false, false, state,
+    );
+
+  const full: DynamicState = {
+    goal: 'find out whether the cabin is safe',
+    appraisal: 'uneasy, but steady',
+    association: 'the smell of woodsmoke',
+    passing_thought: 'they never answered about the dog',
+    noticed: ['they changed the subject twice', 'shorter sentences than usual'],
+    unexpressed_impulse: 'to ask outright',
+  };
+
+  it('renders the labelled state lines behind the privacy fence', () => {
+    const prompt = withState(full);
+    expect(prompt).toContain('YOUR INNER STATE (private');
+    expect(prompt).toContain('never narrate, quote, or restate it');
+    expect(prompt).toContain('goal: find out whether the cabin is safe');
+    expect(prompt).toContain('feeling: uneasy, but steady');
+    expect(prompt).toContain('association: the smell of woodsmoke');
+    expect(prompt).toContain('passing thought: they never answered about the dog');
+    expect(prompt).toContain('noticed: they changed the subject twice; shorter sentences than usual');
+    expect(prompt).toContain('impulse: to ask outright');
+  });
+
+  it('never renders the state as JSON (small models mirror JSON into prose)', () => {
+    const prompt = withState(full);
+    expect(prompt).not.toContain('"goal"');
+    expect(prompt).not.toContain('unexpressed_impulse');
+    expect(prompt).not.toContain('passing_thought');
+  });
+
+  it('omits null / empty fields rather than rendering empty labels', () => {
+    const prompt = withState({
+      goal: 'keep them talking',
+      appraisal: 'curious',
+      association: null,
+      passing_thought: null,
+      noticed: [],
+      unexpressed_impulse: null,
+    });
+    expect(prompt).toContain('goal: keep them talking');
+    expect(prompt).not.toContain('association:');
+    expect(prompt).not.toContain('passing thought:');
+    expect(prompt).not.toContain('noticed:');
+    expect(prompt).not.toContain('impulse:');
+  });
+
+  it('omits the whole block when there is no state, or nothing survives in it', () => {
+    expect(buildPrompt(constitutional, [], null)).not.toContain('YOUR INNER STATE');
+    expect(withState(null)).not.toContain('YOUR INNER STATE');
+    expect(
+      withState({
+        goal: '', appraisal: '  ', association: null, passing_thought: null,
+        noticed: [], unexpressed_impulse: null,
+      }),
+    ).not.toContain('YOUR INNER STATE');
+  });
+
+  it('sits AFTER the verbatim recent context — late position, present-moment weight', () => {
+    const buffer: ChatEntry[] = [
+      { role: 'user', content: 'is it still snowing', createdAt: now - 60_000 },
+      { role: 'assistant', content: 'harder now', createdAt: now - 30_000 },
+    ];
+    const prompt = withState(full, buffer);
+    const recentAt = prompt.indexOf('RECENT CONTEXT');
+    const stateAt = prompt.indexOf('YOUR INNER STATE');
+    expect(recentAt).toBeGreaterThan(-1);
+    expect(stateAt).toBeGreaterThan(recentAt);
+    expect(prompt.indexOf('YOUR TASK:')).toBeGreaterThan(stateAt);
+  });
+
+  it('never reaches the naive baseline (same D7 discipline as summary/knowledge/spontaneity)', () => {
+    // estimateNaiveContextTokens exposes no dynamicState param — the structural
+    // guarantee. The prompt it builds under the hood:
+    expect(buildPrompt(constitutional, [], null)).not.toContain('YOUR INNER STATE');
   });
 });
 

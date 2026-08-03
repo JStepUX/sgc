@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import type { DynamicState } from '../lib/types';
 import type { TurnData } from '../lib/turn-data';
 import { operatorLabel } from '../lib/spontaneity/flexDeck';
 import { DEFAULT_SLACK_THRESHOLD } from '../lib/spontaneity/slackDetector';
@@ -9,10 +10,76 @@ import { Card } from '@/components/ui/card';
 // TURN INSPECTOR — Architecture Trace, status, citations, deltas.
 // ============================================================
 
-export const TurnInspector = memo(function TurnInspector({ turnData }: { turnData: TurnData | null }) {
+/** The state fields in render order, with the labels the rail shows. Matches
+ *  flattenStateForPrompt's labelling so the card and the prompt agree. */
+const STATE_ROWS: { key: keyof DynamicState; label: string }[] = [
+  { key: 'goal', label: 'goal' },
+  { key: 'appraisal', label: 'feeling' },
+  { key: 'association', label: 'association' },
+  { key: 'passing_thought', label: 'passing thought' },
+  { key: 'noticed', label: 'noticed' },
+  { key: 'unexpressed_impulse', label: 'impulse' },
+];
+
+const STATE_EDIT_BUTTON =
+  'shrink-0 whitespace-nowrap rounded-md border border-hairline-strong px-2 py-1 font-mono text-[9px] uppercase tracking-[0.12em] text-ember transition-colors hover:border-ember/60 hover:bg-ember/[0.08] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-hairline-strong disabled:hover:bg-transparent';
+
+interface TurnInspectorProps {
+  turnData: TurnData | null;
+  /** A post-reply state turn is running for this turn (the "reflecting…" line). */
+  stateInFlight?: boolean;
+  /** Open the DynamicStateModal. */
+  onOpenStateEditor?: () => void;
+  /** No persisted turn to write a state to yet. */
+  stateEditorDisabled?: boolean;
+  /** The newest state anywhere in the log, shown (marked as carried) when THIS
+   *  turn has none — that is the state the next prompt will actually read
+   *  (D13), and hiding it would misreport a failed state call as a blank
+   *  inner life. */
+  carriedState?: DynamicState | null;
+}
+
+export const TurnInspector = memo(function TurnInspector({
+  turnData,
+  stateInFlight = false,
+  onOpenStateEditor,
+  stateEditorDisabled = false,
+  carriedState = null,
+}: TurnInspectorProps) {
   if (!turnData) {
     return <div className="py-2 text-[12.5px] italic text-fg-3">Nothing yet. Say something.</div>;
   }
+
+  // The Dynamic State card holds BOTH outputs of the state turn — and it is
+  // the recurrence's CONTROL surface, so it also renders whenever the editor
+  // is usable: a turn whose state call failed is exactly the turn that needs
+  // the [ Edit ] button still on screen.
+  const state = turnData.dynamicState ?? null;
+  const summary = turnData.summary ?? null;
+  const hasSummary =
+    summary !== null &&
+    (summary.persistent.length > 0 ||
+      summary.volatile.length > 0 ||
+      summary.established_patterns.length > 0);
+  // No state of its own → show the one being carried forward instead (D13).
+  const effectiveState = state ?? carriedState ?? null;
+  const stateIsCarried = !state && carriedState !== null;
+  const canEditState = !stateEditorDisabled && !!onOpenStateEditor;
+  const stateRows = effectiveState
+    ? STATE_ROWS.map(({ key, label }) => {
+        const v = effectiveState[key];
+        const text = Array.isArray(v) ? v.filter((s) => s.trim()).join('; ') : (v ?? '').trim();
+        return text ? { label, text } : null;
+      }).filter((r): r is { label: string; text: string } => r !== null)
+    : [];
+
+  // apiCalls counts EVERY call the turn made (D12), state turn included — but
+  // "paused to remember" is a recall fact, and the reply's own call count is
+  // what the savings tile compares. Subtract the state call where it landed
+  // (stateTokens present ⇔ it was counted) so neither display misreports an
+  // ordinary base turn as a recall turn.
+  const replyApiCalls = Math.max(1, (turnData.apiCalls ?? 1) - (turnData.stateTokens ? 1 : 0));
+  const recalled = (turnData.recalls?.length ?? 0) > 0;
 
   const metrics = [
     { value: turnData.inputTokens.toLocaleString(), label: 'Input tk' },
@@ -62,7 +129,7 @@ export const TurnInspector = memo(function TurnInspector({ turnData }: { turnDat
           <li className="flex items-center gap-2 font-mono text-[11px] tracking-[0.02em] text-fg-2">
             <span className="size-[5px] shrink-0 rounded-full bg-ember" />
             Deliberate recall: {turnData.recalls.length} recall{turnData.recalls.length !== 1 ? 's' : ''}
-            {typeof turnData.apiCalls === 'number' ? ` (${turnData.apiCalls} API calls)` : ''}
+            {typeof turnData.apiCalls === 'number' ? ` (${replyApiCalls} reply calls)` : ''}
           </li>
         )}
         {typeof turnData.spontaneitySimilarity === 'number' && (
@@ -176,13 +243,14 @@ export const TurnInspector = memo(function TurnInspector({ turnData }: { turnDat
         const sent = turnData.inputTokens;
         const naive = turnData.naiveTokens ?? 0;
         const hasNaive = naive > 0;
-        // Old turns predate the field; the base loop is 1 call. Recall turns
-        // bill each round's input, so Sent reads visibly larger on them —
-        // expected, and worth saying rather than leaving the number odd.
-        const apiCalls = turnData.apiCalls ?? 1;
-        const callsLine = apiCalls === 1
-          ? '1 API call this turn — Sal only.'
-          : `${apiCalls} API calls this turn — Sal paused to remember (tokens are summed across rounds).`;
+        // The tile compares MEMORY CURATION, so it speaks in reply calls only
+        // (replyApiCalls — the state call is excluded here and accounted on
+        // the Dynamic State card, D12). Recall turns bill each round's input,
+        // so Sent reads visibly larger on them — expected, and worth saying
+        // rather than leaving the number odd.
+        const callsLine = recalled
+          ? `${replyApiCalls} API calls for the reply — Sal paused to remember (reply tokens are summed across rounds).`
+          : `${replyApiCalls} API call${replyApiCalls !== 1 ? 's' : ''} for the reply.`;
         const savedPct = hasNaive && naive > sent
           ? Math.round(((naive - sent) / naive) * 100)
           : 0;
@@ -225,9 +293,9 @@ export const TurnInspector = memo(function TurnInspector({ turnData }: { turnDat
               </>
             ) : (
               <>
-                <div className="mt-1.5 font-mono text-[22px] font-semibold text-ember">{apiCalls}</div>
+                <div className="mt-1.5 font-mono text-[22px] font-semibold text-ember">{replyApiCalls}</div>
                 <div className="mt-0.5 text-[10.5px] text-fg-3">
-                  {apiCalls === 1 ? 'Sal only. Grep is TF-IDF (0 ms).' : 'Sal paused to remember. Retrieval is still TF-IDF (0 ms).'}
+                  {recalled ? 'Sal paused to remember. Retrieval is still TF-IDF (0 ms).' : 'Sal only. Grep is TF-IDF (0 ms).'}
                 </div>
               </>
             )}
@@ -235,40 +303,104 @@ export const TurnInspector = memo(function TurnInspector({ turnData }: { turnDat
         );
       })()}
 
-      {turnData.summary &&
-        (turnData.summary.persistent.length > 0 ||
-          turnData.summary.volatile.length > 0 ||
-          turnData.summary.established_patterns.length > 0) && (
-          <Card className="gap-0 rounded-xl border px-[14px] py-3 shadow-none">
-            {/* The structured view of Sal's per-turn summary. The inspector is
-                the diagnostics surface, so labelled lists are fine here — the
-                in-message render stays a flat dimmed line. Empty sections are
-                omitted so the card only shows what this turn actually observed. */}
-            <div className={RAIL_SUB}>Turn Summary</div>
-            {(
-              [
-                ['persistent', turnData.summary.persistent],
-                ['volatile', turnData.summary.volatile],
-                ['patterns', turnData.summary.established_patterns],
-              ] as const
-            ).map(([label, items]) =>
-              items.length > 0 ? (
-                <div key={label} className="mt-2">
-                  <div className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-fg-4">
-                    {label}
-                  </div>
-                  <ul className="mt-0.5 space-y-0.5">
-                    {items.map((it, i) => (
-                      <li key={i} className="text-[11px] leading-[1.4] text-fg-2">
-                        {it}
-                      </li>
-                    ))}
-                  </ul>
+      {(state || hasSummary || stateInFlight || canEditState) && (
+        // DYNAMIC STATE — both outputs of the post-reply state turn in one
+        // card: Sal's inner state (which the NEXT prompt reads) above, this
+        // turn's observation below. The state is editable because the
+        // recurrence is only safe while it stays a control surface, not just a
+        // display one. Diegetic copy — "state turn" never reaches the user.
+        <Card className="gap-0 rounded-xl border px-[14px] py-3 shadow-none">
+          <div className="flex items-center justify-between gap-2">
+            <div className={RAIL_SUB}>Dynamic State</div>
+            <button
+              type="button"
+              onClick={onOpenStateEditor}
+              disabled={stateEditorDisabled || !onOpenStateEditor}
+              aria-label="Edit Sal's inner state for this turn"
+              className={STATE_EDIT_BUTTON}
+            >
+              <span className="text-fg-4">[</span> Edit <span className="text-fg-4">]</span>
+            </button>
+          </div>
+
+          {stateInFlight && (
+            <div className="mt-2 animate-pulse font-mono text-[10.5px] tracking-wide text-fg-3">
+              reflecting…
+            </div>
+          )}
+
+          {stateRows.length > 0 ? (
+            <>
+              {stateIsCarried && (
+                // The next prompt still reads this older state — say so rather
+                // than showing a blank that isn't what Sal will feel.
+                <div className="mt-2 font-mono text-[9.5px] uppercase tracking-[0.14em] text-fg-4">
+                  carried from an earlier turn
                 </div>
-              ) : null,
-            )}
-          </Card>
-        )}
+              )}
+              <div className={`mt-2 flex flex-col gap-1${stateIsCarried ? ' opacity-60' : ''}`}>
+                {stateRows.map((r) => (
+                  <div key={r.label} className="flex gap-2">
+                    <span className="w-[68px] shrink-0 pt-px font-mono text-[9.5px] uppercase leading-[1.5] tracking-[0.12em] text-fg-4">
+                      {r.label}
+                    </span>
+                    <span className="min-w-0 text-[11px] leading-[1.45] text-fg-2">{r.text}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            !stateInFlight && (
+              <div className="mt-2 text-[11px] leading-[1.4] text-fg-4">
+                {canEditState
+                  ? '(no state yet — it forms after a reply, or write one with Edit)'
+                  : '(no state yet — forms after the next turn)'}
+              </div>
+            )
+          )}
+
+          {hasSummary && summary && (
+            <div className="mt-3 border-t border-hairline pt-2">
+              {/* The structured view of this turn's summary. The inspector is
+                  the diagnostics surface, so labelled lists are fine here — the
+                  in-message render stays a flat dimmed line. Empty sections are
+                  omitted so it only shows what this turn actually observed. */}
+              {(
+                [
+                  ['persistent', summary.persistent],
+                  ['volatile', summary.volatile],
+                  ['patterns', summary.established_patterns],
+                ] as const
+              ).map(([label, items]) =>
+                items.length > 0 ? (
+                  <div key={label} className="mt-2 first:mt-0">
+                    <div className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-fg-4">
+                      {label}
+                    </div>
+                    <ul className="mt-0.5 space-y-0.5">
+                      {items.map((it, i) => (
+                        <li key={i} className="text-[11px] leading-[1.4] text-fg-2">
+                          {it}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null,
+              )}
+            </div>
+          )}
+
+          {turnData.stateTokens && (
+            // Kept OUT of the Context-Savings tile on purpose (D12): that tile
+            // compares memory curation, and a second call's usage would muddy
+            // the comparison. It still gets said, just here.
+            <div className="mt-2.5 font-mono text-[9.5px] tracking-[0.02em] text-fg-4">
+              reflection · {turnData.stateTokens.input.toLocaleString()} in ·{' '}
+              {turnData.stateTokens.output.toLocaleString()} out
+            </div>
+          )}
+        </Card>
+      )}
     </section>
   );
 });

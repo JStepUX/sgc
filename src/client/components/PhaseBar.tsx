@@ -23,9 +23,10 @@ export const PhaseBar = memo(function PhaseBar({
   onSelectProvider: (p: ProviderId) => void;
   onConfigureProvider: (p: ProviderId) => void;
 }) {
-  // All three remain true on the local path (one request to one model; TF-IDF
-  // grep and the 2-turn buffer are client-side and provider-agnostic).
-  const meta = ['1 API call/turn', 'TF-IDF Grep', '2-turn buffer'];
+  // All three remain true on the local path (reply + post-reply reflection to
+  // one model; TF-IDF grep and the 2-turn buffer are client-side and
+  // provider-agnostic). 2 calls = the base loop since the state turn (spec 03).
+  const meta = ['2 API calls/turn', 'TF-IDF Grep', '2-turn buffer'];
   return (
     <header className="sal-topbar relative z-30 flex shrink-0 flex-wrap items-center justify-between gap-y-2 border-b border-hairline px-7 pt-[18px] pb-4 backdrop-blur-[8px]">
       <div className="flex items-center gap-[14px]">

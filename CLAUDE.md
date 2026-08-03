@@ -20,7 +20,7 @@ and handed to one ephemeral reasoning instance:
    (`ConstitutionalEditorModal`, up to 20k chars) and rendered **verbatim**
    into the CONSTITUTIONAL MEMORIES prompt block — no chip list, no
    reformatting; **the model does not score or grade it** (the former 0–100
-   per-turn confidence grading was retired — see the turn-summary note below).
+   per-turn confidence grading was retired — see the state-turn note below).
    It is **scoped per chat** — each conversation owns its own document, a new
    chat starts blank by default, and deleting a chat cascades its document
    away. "Begin again" offers an editable **carry-forward**: the outgoing
@@ -67,22 +67,39 @@ brains is Phase 2b: a separate raise that must beat this lexical baseline on
 the brain eval probes first.
 
 These feed **Sal**, an ephemeral reasoning instance that exists for exactly one
-turn, then is retired — it has no memory of prior turns. Sal responds in natural
-language, then emits a `<turn-summary>` block: a fresh per-turn observation in
-three lists — `persistent` (true until explicitly changed), `volatile` (shifted
-this turn), `established_patterns` (behavioral rules demonstrated). Each summary
-is produced fresh (Sal stays ephemeral — it carries no state of its own), but the
-summaries of the **last couple of turns** are then fed *back* into later prompts
-as a small **distilled summary buffer** sitting just behind the verbatim local
-buffer (offset, no overlap). So a turn that scrolls out of full-text recency
-survives as its summary instead of dropping straight to the cosine grep — a
-resolution falloff (raw recent → distilled near-past → grep), not a cliff. This
-is bounded curated context, **not accumulated model state**. The UI renders the
-current turn's summary flattened to one dimmed line beneath the reply (and
-structured in the inspector). In the base
-loop that's **one API call per turn**, total — streamed to the browser as
-Server-Sent Events; the TF-IDF retrieval costs 0 ms and 0 tokens. (That
-single-call count is a guardrail, not the thesis — see Mission Brief.)
+turn, then is retired — it has no memory of prior turns. Sal's reply is **prose
+only**: it carries no output format, no summary block. Once the reply has
+streamed, a second small call — the **state turn** (`lib/dynamic-state.ts` +
+`lib/state-turn.ts`) — reads that exchange back and returns two things:
+
+- the **turn summary** — a fresh per-turn observation in three lists,
+  `persistent` (true until explicitly changed), `volatile` (shifted this turn),
+  `established_patterns` (behavioral rules demonstrated). Each summary is a
+  fresh read of one turn and never consumes prior summaries, but the summaries
+  of the **last couple of turns** are fed *back* into later prompts as a small
+  **distilled summary buffer** sitting just behind the verbatim local buffer
+  (offset, no overlap). So a turn that scrolls out of full-text recency
+  survives as its summary instead of dropping straight to the cosine grep — a
+  resolution falloff (raw recent → distilled near-past → grep), not a cliff.
+- **Dynamic State** — Sal's bounded inner state (goal / feeling / association /
+  passing thought / noticed / impulse), rendered into the NEXT prompt as a
+  private, labeled-lines block just after the local buffer. Unlike the summary
+  this is a **deliberate recurrence**: the state prompt consumes the previous
+  state, so continuity accrues. Accepted 2026-08-02 with three bounds — schema
+  caps, per-turn regeneration from live context (not an accreting document),
+  and **user curation**: the rail's Dynamic State card shows it and edits it in
+  place, so the drift surface is also a control surface.
+
+Both persist inside the turn's `inspector_json` and rehydrate on load; the
+state turn is fired after the reply is promoted and **never blocks** — a
+failure leaves the turn summary-less and the previous state standing. This is
+bounded curated context, **not accumulated model state**: Sal is still rebuilt
+fresh every turn and retired. The UI renders the current turn's summary
+flattened to one dimmed line beneath the reply (and both, structured, in the
+inspector). In the base loop that's **two API calls per turn** — the reply
+(streamed to the browser as Server-Sent Events) and the state turn; the TF-IDF
+retrieval costs 0 ms and 0 tokens. (The call count is a guardrail, not the
+thesis — see Mission Brief.)
 
 > **Naming:** the model's identity is **Sal** (used everywhere a user sees it).
 > "Turn" is the codebase's neutral word for the mechanism — one user input → one
@@ -110,7 +127,11 @@ growing transcript, no model carrying its own state). Two rules protect that:
   the thesis. Deliberate recall (spec 01) is the sanctioned tool-loop case:
   Sal may pause mid-turn to re-query the deterministic engine with a query it
   authors — worst case 3 calls/turn, ranking still 100% `searchScored`; raised
-  and approved 2026-06-09. (Web/knowledge retrieval is a separate axis from memory: server-
+  and approved 2026-06-09. The **state turn** (spec 03) is the second sanctioned
+  case: one small post-reply call that distils the finished exchange into the
+  turn summary + Dynamic State — base loop 2 calls/turn, worst case 4 with
+  recall. It retrieves nothing, so the memory path stays pure math; raised and
+  approved 2026-08-02. (Web/knowledge retrieval is a separate axis from memory: server-
   side `web_search`/`web_fetch` tools were tried and then removed for cost — Sal
   now reaches the world only via the deterministic URL pre-fetch. See
   `AGENTS.md`.)
@@ -136,9 +157,12 @@ src/client/
     useConstitutionalDoc.ts   memory tier 1's state: the per-chat document + user-edit dirty
                               flag + 250ms debounced save + swap-safety flush (composed by
                               useChatSession, same pattern as useBrainMounts)
-    useTurnRunner.ts          the live turn: tier assembly → single streamed model call →
-                              promote reply → persist pair (processInput moved here verbatim)
-    useResponseEditor.ts      edit/re-spin the latest reply (editTarget, respin, saveEdit)
+    useStateCalls.ts          the shared per-chat "reflecting" registry — both state-turn
+                              producers report into it; the rail reads the active chat only
+    useTurnRunner.ts          the live turn: tier assembly → streamed model call → promote
+                              reply → persist pair ‖ fire the state turn (joined, non-blocking)
+    useResponseEditor.ts      edit/re-spin the latest reply (editTarget, respin, saveEdit —
+                              which re-fires the state turn) + the Dynamic State editor's save
     useTurnUndo.ts            undo the latest turn: delete the pair (server-verified latest,
                               persist-first) + hand the user text back for the composer seed
     useProvider.ts            /api/health reconcile, provider token, config-modal state
@@ -152,7 +176,8 @@ src/client/
                               (opens ConstitutionalEditorModal) and [ Agent ] (opens the prompt
                               editor) buttons, plus a compact MOUNTED BRAINS summary (right
                               rail) whose "Manage" button opens BrainManagerModal
-    TurnInspector.tsx         per-turn diagnostics: trace, grep matches, spontaneity, savings
+    TurnInspector.tsx         per-turn diagnostics: trace, grep matches, spontaneity, savings,
+                              and the DYNAMIC STATE card (state fields + [ Edit ] + summary)
     TokenChart.tsx            payload-size-per-turn SVG bars (right rail)
     AssistantMessage.tsx      Sal's reply — ReactMarkdown + summary line + spontaneity marker
     UserPill.tsx              the user's centred pill
@@ -169,6 +194,9 @@ src/client/
     ConstitutionalEditorModal.tsx  edit THIS chat's constitutional document: one freeform
                               textarea (up to 20k chars), no version history; opened from
                               MemoryPanel's [ Human ] button
+    DynamicStateModal.tsx     edit the latest turn's inner state by hand (one field per schema
+                              key, noticed = 3 inputs) — the curation half of the recurrence;
+                              opened from the inspector's Dynamic State card
     PromptEditorModal.tsx     edit THIS chat's persona mid-chat, forward-only version history
     EditResponseModal.tsx     edit the latest assistant reply — manual rewrite or "re-spin"
                               (re-run the model with this turn's history; current memories/
@@ -180,7 +208,8 @@ src/client/
     ui/                       shadcn/ui primitives (button, card) + toggle-switch.tsx (the
                               shared ToggleSwitch, extracted from ChatMemoryEditor's turn gate)
   lib/
-    types.ts                  shared domain types (ChatEntry, TurnSummary, BrainPack)
+    types.ts                  shared domain types (ChatEntry, TurnSummary, DynamicState,
+                              BrainPack)
     turn-data.ts              TurnData (the per-turn inspector blob) + the tolerant
                               inspector_json rehydration parsers (tested)
     provider.ts               provider types/labels/order shared by chip + hook
@@ -202,11 +231,23 @@ src/client/
     recall-loop.ts            runTurnWithRecall() — the per-turn tool loop (≤ 2 recall
                               rounds, final round sent tool-less; injected callTurn/
                               executeTool so it unit-tests without a server)
-    prompt.ts                 system-prompt builder (memory tiers + PERSONA KNOWLEDGE +
-                              recall framing/absence marker; exports formatGrepFragment,
-                              shared by the grep block and the recall tool's results)
-    turn-parser.ts            response parser: <turn-summary> split + streaming strip
-                              (re-exported from prompt.ts for existing importers)
+    dynamic-state.ts          the state turn's PURE half: buildStatePrompt, parseStateResponse
+                              (tolerant, never throws), flattenStateForPrompt (labeled lines,
+                              never JSON), newestDynamicState, STATE_CONTEXT_SIZE
+    dynamic-state.test.ts     parser tolerance (fenced/prose-wrapped/truncated/junk), caps,
+                              builder determinism + recurrence, flattener null-omission
+    state-turn.ts             the state turn's IMPURE half: callStateTurn (plain call, no
+                              tools — LOCAL-safe) + commitStateTurn (PATCH → stamp → rail),
+                              split so the live turn can run it PARALLEL with saveTurn; also
+                              saveDynamicState for the hand-edit path. Never blocks, never
+                              retries, never surfaces
+    prompt.ts                 system-prompt builder (memory tiers + PERSONA KNOWLEDGE + YOUR
+                              INNER STATE + recall framing/absence marker; exports
+                              formatGrepFragment, shared by the grep block and the recall tool)
+    turn-parser.ts            <turn-summary> SCRUBBER (the contract left the main prompt —
+                              this keeps legacy rows + habitual models from leaking a block)
+                              + streaming strip; re-exported from prompt.ts. Also exports
+                              coerceSummary/completeJson, reused by dynamic-state.ts
     api.ts                    runTurn() — POSTs to /api/turn (messages + optional tools;
                               mirrors the server's wire types — the builds don't share modules)
     desktop.ts                typed guard for window.sgcDesktop (Electron bridge; web → absent)
@@ -233,6 +274,10 @@ src/server/
                               constitutional document column) + turns + the chat_brains DDL,
                               schema + pure helpers; SGC_DB_PATH overrides the ./data default
   db-brains.ts                the (chat_id, brain_id) mount-binding helpers
+  db-turn-edits.ts            rewrites of an existing assistant row: the editor's content
+                              replace + the state turn's conditional inspector-only write
+                              (`AND content = ?` — the atomic check that closes the
+                              edit-vs-state-write race)
   brains-routes.ts            knowledge-pack routes — import/list/get/delete pack FILES in
                               <dirname(DB_PATH)>/brains (SGC_BRAINS_DIR overrides) + the
                               per-chat mount PUT; validates sgc-brain/1, never searches

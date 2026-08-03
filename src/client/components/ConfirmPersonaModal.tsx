@@ -14,8 +14,8 @@ import type { BrainManifest, BrainPack } from '../lib/types';
 // INVARIANT: the mask is DISPLAY-ONLY. This modal hands it back via onConfirm
 // for the UI label; it must never reach the prompt or the model. The persona,
 // by contrast, becomes the head of the per-turn system prompt — but the
-// architectural tail (TASK / TURN SUMMARY / <turn-summary>) always appends
-// downstream in buildPrompt, so a persona can't drop the summary contract.
+// architectural tail (TASK + the environment capabilities) always appends
+// downstream in buildPrompt, so a persona can't drop one silently.
 // Brains are the knowledge axis: mounting here binds packs to the NEW chat
 // (chat_brains) — retrieval over them stays client-side deterministic math.
 // ============================================================

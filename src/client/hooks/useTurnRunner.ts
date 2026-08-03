@@ -1,8 +1,10 @@
 import { useCallback, useRef, useState } from 'react';
-import type { FetchedDoc } from '../lib/types';
+import type { ChatEntry, FetchedDoc } from '../lib/types';
 import type { TurnData } from '../lib/turn-data';
 import { assembleTurnContext } from '../lib/turn-context';
 import { estimateNaiveContextTokens, parseTurnResponse, stripStreamingMeta } from '../lib/prompt';
+import { STATE_CONTEXT_SIZE, newestDynamicState } from '../lib/dynamic-state';
+import { callStateTurn, commitStateTurn } from '../lib/state-turn';
 import { extractUrls, fetchUrl } from '../lib/api';
 import { executeRecall, RECALL_TOOL } from '../lib/recall';
 import { runTurnWithRecall } from '../lib/recall-loop';
@@ -11,12 +13,14 @@ import { operatorLabel } from '../lib/spontaneity/flexDeck';
 import { saveTurn as apiSaveTurn, listChats as apiListChats } from '../lib/persistence';
 import type { ChatSession } from './useChatSession';
 import type { ProviderState } from './useProvider';
+import type { StateCallTracker } from './useStateCalls';
 
 // ============================================================
 // TURN RUNNER — the live turn: assemble the three tiers, run the model call
 // (streamed; up to two extra rounds when Sal deliberately recalls), promote
-// the reply, persist the pair. Operates on the shared session (see
-// useChatSession — the hooks are namespaces, not stores).
+// the reply, persist the pair, and fire the post-reply state turn. Operates on
+// the shared session (see useChatSession — the hooks are namespaces, not
+// stores).
 // ============================================================
 
 export function useTurnRunner(
@@ -24,6 +28,9 @@ export function useTurnRunner(
   providerState: Pick<ProviderState, 'provider' | 'health'>,
   /** Bumps the composer's resetSignal (clear + refocus its textarea). */
   bumpComposerReset: () => void,
+  /** The shared per-chat reflecting registry (see useStateCalls) — the rail
+   *  reads it via the root; this hook only reports starts/ends into it. */
+  stateCalls: StateCallTracker,
 ): {
   isProcessing: boolean;
   streamingText: string | null;
@@ -218,38 +225,35 @@ export function useTurnRunner(
         executeTool: (input, surfaced) => executeRecall(input, chatLog, turnStartedAt, surfaced),
         initialSurfaced: grepResults.map((r) => r.turnIndex),
       });
-      // The <turn-summary> contract binds the FINAL round — parse the full
-      // cross-round concatenation (D6): one turn, one reply, one summary.
-      const { displayText, summary } = parseTurnResponse(turnResult.text);
+      // Sal's reply is prose only now — the summary contract moved to the state
+      // turn below. parseTurnResponse stays as a SCRUBBER: a model that emits a
+      // <turn-summary> block from habit must not leak it into the thread. Its
+      // summary result is deliberately unused here.
+      const { displayText } = parseTurnResponse(turnResult.text);
 
       turnData.inputTokens = turnResult.inputTokens;
       turnData.outputTokens = turnResult.outputTokens;
       turnData.totalLatency = turnResult.elapsed;
       turnData.recalls = turnResult.recalls;
       turnData.apiCalls = turnResult.apiCalls;
-      // Sal's fresh per-turn observation. Stored on turnData (→ inspector_json,
-      // so it persists + rehydrates) and carried on the message below so it
-      // renders as a dimmed one-line appendage beneath this reply. It is NOT
-      // fed back into any later prompt — a snapshot of this turn only.
-      turnData.summary = summary;
+      // turnData.summary stays null until the state turn lands and PATCHes it
+      // in (below) — the same for turnData.dynamicState.
 
-      // Promote the streamed reply to a finalized message, carrying its summary.
-      // The transient streaming bubble is cleared in `finally`, batched into this
-      // same render — so the bubble swaps to a message with no flicker.
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant' as const, content: displayText, createdAt: turnStartedAt, summary: summary ?? undefined, spontaneity: spontDisplay },
-      ]);
+      // Promote the streamed reply to a finalized message. The transient
+      // streaming bubble is cleared in `finally`, batched into this same render
+      // — so the bubble swaps to a message with no flicker. Summary + state are
+      // stamped on afterwards, when the state turn returns.
+      const assistantEntry: ChatEntry = {
+        role: 'assistant',
+        content: displayText,
+        createdAt: turnStartedAt,
+        spontaneity: spontDisplay,
+      };
+      const userEntry: ChatEntry = { role: 'user', content: userInput, createdAt: turnStartedAt };
+      setMessages((prev) => [...prev, assistantEntry]);
 
       // ---- APPEND TO PERSISTENT CHAT LOG ----
-      // The assistant entry carries its summary so a LATER turn's summary window
-      // can slice it from chatLog in-session (matching the reload path, where
-      // summaryFromInspector rehydrates it). The user entry has none.
-      setChatLog((prev) => [
-        ...prev,
-        { role: 'user' as const, content: userInput, createdAt: turnStartedAt },
-        { role: 'assistant' as const, content: displayText, createdAt: turnStartedAt, summary: summary ?? undefined, spontaneity: spontDisplay },
-      ]);
+      setChatLog((prev) => [...prev, userEntry, assistantEntry]);
 
       setTokenHistory((prev) => [...prev, { turn: newTurnNumber, inputTokens: turnData.inputTokens }]);
       setLatestTurn(turnData);
@@ -258,19 +262,21 @@ export function useTurnRunner(
       // that never produced a reply. Unchanged from the prior value when dormant.
       spontaneityStateRef.current = spont.state;
 
-      // ---- PERSIST THE TURN (non-blocking) ----
-      // Fired after the UI has rendered the new turn so the network round-trip
-      // never stalls a streaming response. Failures log but do not surface —
-      // the in-memory session continues; only durability is at risk.
+      // ---- PERSIST THE TURN + RUN THE STATE TURN (both non-blocking) ----
+      // Fired after the UI has rendered the new turn so neither round-trip
+      // stalls a streaming response. Failures log but do not surface — the
+      // in-memory session continues; only durability is at risk.
       if (chatId) {
         const persistChatId = chatId;
-        apiSaveTurn(persistChatId, {
+        const savePromise = apiSaveTurn(persistChatId, {
           user: { content: userInput },
           assistant: {
             content: displayText,
             inspectorJson: JSON.stringify(turnData),
           },
-        })
+        });
+
+        savePromise
           .then(({ userId, assistantId }) => {
             // Stamp the freshly-streamed pair with its DB ids so the
             // assistant-response editor can address this turn by id WITHOUT a
@@ -286,6 +292,50 @@ export function useTurnRunner(
           })
           .then(setChats)
           .catch((err) => console.warn('saveTurn failed:', err));
+
+        // The STATE TURN (D5): one small second call that distils this exchange
+        // into the turn summary + Sal's inner state. Started NOW, in parallel
+        // with the save — it needs no id, only prompt inputs — and joined with
+        // it because the PATCH that attaches the result needs the assistant row
+        // id save returns. Never awaited by the composer; a race with the next
+        // submission just means that turn reads a one-turn-stale state (D6).
+        const recentEntries = [...chatLog, userEntry, assistantEntry].slice(-STATE_CONTEXT_SIZE);
+        const endStateCall = stateCalls.begin(persistChatId);
+        const statePromise = callStateTurn({
+          persona: activePersona,
+          constitutional,
+          recentEntries,
+          // The state this turn began from — the newest in the log BEFORE the
+          // pair just appended (which carries none yet).
+          prevState: newestDynamicState(chatLog),
+          spontaneityDirective: spont.directive,
+          provider: confirmedProvider,
+        });
+
+        void Promise.all([savePromise, statePromise])
+          .then(([{ assistantId }, outcome]) => {
+            if (!outcome) return;
+            return commitStateTurn(
+              {
+                chatId: persistChatId,
+                assistantTurnId: assistantId,
+                content: displayText,
+                // The row was born from this very save — nothing can have
+                // rewritten it at an epoch this chain didn't see.
+                expectedEpoch: 0,
+                baseTurnData: turnData,
+                // Assistant half only — the summary and the state belong to the
+                // reply, not to the person's message (which shares the instant).
+                matches: (entry) => entry.role === 'assistant' && entry.createdAt === turnStartedAt,
+                setMessages,
+                setChatLog,
+                setLatestTurn,
+              },
+              outcome,
+            );
+          })
+          .catch((err) => console.warn('state turn could not be attached:', err))
+          .finally(endStateCall);
       }
     } catch (err) {
       console.error('SGC Error:', err);

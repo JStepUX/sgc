@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { DEFAULT_PERSONA } from './lib/prompt';
+import { newestDynamicState } from './lib/dynamic-state';
 import { PROVIDER_LABEL } from './lib/provider';
 import { isDesktop } from './lib/desktop';
 import { AuroraBackground } from './components/AuroraBackground';
@@ -15,6 +16,7 @@ import { ChatHistoryModal } from './components/ChatHistoryModal';
 import { BrainManagerModal } from './components/BrainManagerModal';
 import { ConfirmPersonaModal } from './components/ConfirmPersonaModal';
 import { ConstitutionalEditorModal } from './components/ConstitutionalEditorModal';
+import { DynamicStateModal } from './components/DynamicStateModal';
 import { PromptEditorModal } from './components/PromptEditorModal';
 import { ProviderConfigModal } from './components/ProviderConfigModal';
 import { EditResponseModal } from './components/EditResponseModal';
@@ -22,6 +24,7 @@ import { useAuroraPulse } from './hooks/useAuroraPulse';
 import { useRailCollapse } from './hooks/useRailCollapse';
 import { useProvider } from './hooks/useProvider';
 import { useChatSession } from './hooks/useChatSession';
+import { useStateCalls } from './hooks/useStateCalls';
 import { useTurnRunner } from './hooks/useTurnRunner';
 import { useResponseEditor } from './hooks/useResponseEditor';
 import { useTurnUndo } from './hooks/useTurnUndo';
@@ -29,7 +32,7 @@ import { useTurnUndo } from './hooks/useTurnUndo';
 // ============================================================
 // SALIENCE-GATED COGNITION — Phase 1.5
 // Ephemeral Sal + TF-IDF Cosine Grep + 2-Turn Local Buffer
-// No model-based retrieval. One reasoning component. One API call.
+// No model-based retrieval. One reasoning component, rebuilt fresh each turn.
 //
 // This file is the COMPOSITION ROOT only: it wires the per-axis hooks
 // (./hooks — session, turn runner, response editor, provider, aurora, rail)
@@ -47,6 +50,7 @@ export default function SalienceGatedCognition() {
   const [promptEditorOpen, setPromptEditorOpen] = useState(false);
   const [constitutionalEditorOpen, setConstitutionalEditorOpen] = useState(false);
   const [brainManagerOpen, setBrainManagerOpen] = useState(false);
+  const [dynamicStateOpen, setDynamicStateOpen] = useState(false);
 
   // Composer reset signal: bumped after a successful submit (and after a chat
   // reset) to clear + refocus the textarea inside Composer. Owned here because
@@ -62,6 +66,8 @@ export default function SalienceGatedCognition() {
   const handleOpenConstitutionalEditor = useCallback(() => setConstitutionalEditorOpen(true), []);
   const handleOpenBrainManager = useCallback(() => setBrainManagerOpen(true), []);
   const handleCloseBrainManager = useCallback(() => setBrainManagerOpen(false), []);
+  const handleOpenDynamicState = useCallback(() => setDynamicStateOpen(true), []);
+  const handleCloseDynamicState = useCallback(() => setDynamicStateOpen(false), []);
 
   // --- The axes (see each hook's header for its contract) ---
   const aurora = useAuroraPulse();
@@ -71,9 +77,17 @@ export default function SalienceGatedCognition() {
     onSessionReset: bumpComposerReset,
     onChatSwitched: handleCloseHistory,
   });
-  const runner = useTurnRunner(session, providerState, bumpComposerReset);
-  const editor = useResponseEditor(session, providerState);
+  // The shared reflecting registry — both state-turn producers report into it;
+  // the rail reads the ACTIVE chat's count only, so another chat's slow call
+  // can't mark this one as reflecting.
+  const stateCalls = useStateCalls();
+  const reflecting = stateCalls.inFlightFor(session.chatId);
+  const runner = useTurnRunner(session, providerState, bumpComposerReset, stateCalls);
+  const editor = useResponseEditor(session, providerState, stateCalls);
   const { undoLatestTurn } = useTurnUndo(session);
+  // The state the next prompt will actually read (D13) — shown as "carried"
+  // when the latest turn has none, and the modal's seed when repairing one.
+  const carriedState = useMemo(() => newestDynamicState(session.chatLog), [session.chatLog]);
 
   // Turn undo: the pair is deleted (persist-first, inside the hook) and the
   // removed user text is seeded back into the composer for editing. The seed
@@ -140,9 +154,8 @@ export default function SalienceGatedCognition() {
               <div className="mx-auto flex max-w-[680px] flex-col gap-[18px] px-8">
                 {session.messages.length === 0 && (
                   <div className="mx-auto mt-[12vh] max-w-[440px] text-center text-pretty text-sm leading-[1.7] text-fg-3">
-                    One API call per turn. A local buffer holds what's near; cosine
-                    grep reaches for what's far. The only mind here is Sal — and Sal
-                    begins again every turn.
+                    A local buffer holds what's near; cosine grep reaches for what's
+                    far. The only mind here is Sal — and Sal begins again every turn.
                   </div>
                 )}
 
@@ -254,7 +267,13 @@ export default function SalienceGatedCognition() {
               onOpenBrainManager={handleOpenBrainManager}
               brainsDisabled={!session.chatId}
             />
-            <TurnInspector turnData={session.latestTurn} />
+            <TurnInspector
+              turnData={session.latestTurn}
+              stateInFlight={reflecting}
+              onOpenStateEditor={handleOpenDynamicState}
+              stateEditorDisabled={!editor.canEditDynamicState || reflecting}
+              carriedState={carriedState}
+            />
             <TokenChart tokenHistory={session.tokenHistory} />
           </aside>
         </div>
@@ -286,6 +305,16 @@ export default function SalienceGatedCognition() {
         text={session.constitutional}
         onSave={session.setConstitutional}
         onClose={() => setConstitutionalEditorOpen(false)}
+      />
+
+      <DynamicStateModal
+        open={dynamicStateOpen}
+        // Seed from the state that is actually LIVE (the latest turn's, else
+        // the carried one) — repairing a failed state call should start from
+        // what Sal will otherwise feel, not from blank fields.
+        state={session.latestTurn?.dynamicState ?? carriedState}
+        onSave={editor.saveDynamicState}
+        onClose={handleCloseDynamicState}
       />
 
       <BrainManagerModal

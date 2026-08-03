@@ -1,20 +1,22 @@
 // ============================================================
-// TURN-RESPONSE PARSER — the read half of the prompt contract.
+// TURN-RESPONSE SCRUBBER — the <turn-summary> reader, now a defensive layer.
 //
-// buildPrompt (lib/prompt.ts) writes the <turn-summary> contract into the
-// system prompt; this module reads Sal's side of it back out: splitting a
-// finished reply into display text + the trailing summary block, and hiding
-// the block (and partial opening tags) while a reply is still streaming.
-// Split from prompt.ts by the anti-god-object ratchet — builder and parser
-// are one contract but two concerns.
+// The main prompt NO LONGER asks Sal for a <turn-summary> block: summaries are
+// produced by the post-reply state turn (lib/dynamic-state.ts). This module
+// stays in the live path as a SCRUBBER — legacy rows persisted under the old
+// contract, and models that emit the block from habit, must never leak a raw
+// tagged block into the thread. Its summary result is unused on the live path;
+// only `displayText` is load-bearing there.
 //
-// Sal's turn summary is delimited by an explicit <turn-summary>…
-// </turn-summary> tag pair rather than a ```json fence. The tags are
-// unambiguous: the streaming UI can hide the block the instant the opening
-// tag appears (see stripStreamingMeta), and the parser never has to guess
-// which fenced block is the summary versus an example block inside Sal's
-// prose. The block runs fresh every turn and is NOT fed back into the next
-// prompt — it's a per-turn observation surface, not accumulated memory.
+// The block is delimited by an explicit <turn-summary>…</turn-summary> tag
+// pair rather than a ```json fence. The tags are unambiguous: the streaming UI
+// can hide the block the instant the opening tag appears (see
+// stripStreamingMeta), and the parser never has to guess which fenced block is
+// the summary versus an example block inside Sal's prose.
+//
+// coerceSummary and completeJson are exported for lib/dynamic-state.ts, which
+// reuses them to read the state turn's JSON — one coercion contract, one
+// truncation repair, two producers.
 // ============================================================
 
 import type { TurnSummary } from './types';
@@ -30,15 +32,19 @@ export interface ParsedTurn {
 }
 
 /**
- * Coerce one parsed JSON field into a clean string[] — drop non-strings, trim,
- * drop empties. Missing or non-array input yields []. This keeps a malformed
- * single list from failing the whole summary parse.
+ * Coerce one parsed JSON field into a clean string[] — drop non-strings,
+ * collapse whitespace runs (incl. newlines) to single spaces, trim, drop
+ * empties. Missing or non-array input yields []. This keeps a malformed
+ * single list from failing the whole summary parse; the whitespace collapse
+ * is structural sanitization — summary strings re-enter later system prompts
+ * as the distilled EARLIER CONTEXT lines, and a string carrying newlines
+ * could fabricate lines that block never wrote.
  */
 function toStringList(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
   return v
     .filter((x): x is string => typeof x === 'string')
-    .map((s) => s.trim())
+    .map((s) => s.replace(/\s+/g, ' ').trim())
     .filter((s) => s.length > 0);
 }
 
@@ -47,7 +53,7 @@ function toStringList(v: unknown): string[] {
  * Accepted only if it looks like a summary — at least one of the three known
  * keys present — so a stray JSON object in prose isn't mistaken for the block.
  */
-function coerceSummary(parsed: unknown): TurnSummary | null {
+export function coerceSummary(parsed: unknown): TurnSummary | null {
   if (parsed === null || typeof parsed !== 'object') return null;
   const o = parsed as Record<string, unknown>;
   if (!('persistent' in o || 'volatile' in o || 'established_patterns' in o)) return null;
@@ -64,7 +70,7 @@ function coerceSummary(parsed: unknown): TurnSummary | null {
  * mechanical — if the result still doesn't parse, the caller cuts the fragment
  * back to its last structural boundary and tries once more.
  */
-function completeJson(s: string): string {
+export function completeJson(s: string): string {
   const closers: string[] = [];
   let inString = false;
   let escaped = false;

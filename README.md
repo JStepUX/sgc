@@ -5,7 +5,8 @@ A research prototype for a conversational memory architecture. SGC explores
 salience-gated memory feeding a single ephemeral reasoning call.
 
 > **Phase 1.5** — Ephemeral Sal + TF-IDF Cosine Grep + 2-turn local buffer.
-> No model-based *memory* retrieval. One reasoning component. One API call per turn.
+> No model-based *memory* retrieval. One reasoning component per turn, rebuilt
+> fresh each time.
 
 ## The idea
 
@@ -19,13 +20,31 @@ reasoning instance:
 | **Cosine Grep ("Grepory")** | TF-IDF + cosine similarity over older history (Porter-stemmed tokens, so "needle" finds "needles") — pure math, no model; individual turns can be gated out of retrieval in the chat memory editor | 0 ms, 0 tokens |
 
 These feed **Sal**, an ephemeral reasoning instance that exists for exactly one
-turn and is then retired. Sal replies in natural language and emits a per-turn
-`<turn-summary>` (persistent / volatile / established_patterns) — a fresh
-observation produced each turn (Sal carries no state of its own). The last couple
-of turns' summaries are fed back as a small **distilled buffer** just behind the
-verbatim local buffer, so a turn that scrolls out of full-text recency survives
-as its summary rather than dropping straight to grep — bounded context, not
-accumulated memory. One API call per turn, total.
+turn and is then retired. Sal's reply is prose only — no output format, no
+metadata block. Once it has streamed, a second small call (below) reads the
+exchange back and produces a per-turn summary (persistent / volatile /
+established_patterns). The last couple of turns' summaries are fed back as a
+small **distilled buffer** just behind the verbatim local buffer, so a turn that
+scrolls out of full-text recency survives as its summary rather than dropping
+straight to grep — bounded context, not accumulated memory.
+
+**Dynamic State.** That same post-reply call also returns Sal's **inner state**:
+a small, schema-capped snapshot — goal, feeling, association, passing thought,
+what it noticed, what it wanted to say and didn't. The state is rendered into
+the *next* turn's prompt as a private block, in labelled prose rather than JSON,
+with an explicit instruction never to narrate or quote it: it colours the reply
+instead of being reported in it.
+
+This is a **deliberate recurrence** — unlike the turn summaries, the state
+prompt consumes the previous state, which is exactly what makes slow-burn
+continuity possible and exactly what could drift. It's bounded three ways:
+the schema caps it, it's regenerated every turn from live context (never an
+accreting document), and it is **yours to edit** — the right rail's *Dynamic
+State* card shows the current state and opens an editor on it, so the drift
+surface is also a control surface. Sal is still rebuilt fresh every turn: the
+state is data in a prompt, not a model carrying its own memory. Two API calls
+per turn in the base loop, and the call count remains a guardrail, not the
+thesis.
 
 Sal has no live web access of its own. The one way a page reaches a turn is a
 deterministic, SSRF-guarded **URL pre-fetch**: when the person pastes a link,
@@ -34,7 +53,7 @@ the prompt as a LINKED PAGE, read in one pass. No model, no search loop — the
 web-knowledge analogue of the cosine grep. (Anthropic's server-side
 `web_search`/`web_fetch` tools were tried and removed: they injected ~4–5k
 tokens of scaffolding into every turn's input whether or not Sal browsed, which
-wasn't worth it next to the free pre-fetch.) The "one API call" count is a
+wasn't worth it next to the free pre-fetch.) The per-turn call count is a
 guardrail, not the thesis; the thesis is Sal's per-turn ephemerality and the
 curated-tier context. See `CLAUDE.md` → Mission Brief.
 
@@ -43,8 +62,9 @@ when it senses there's more to remember — a name, a thread the person expects
 it to hold — it can pause mid-turn (the UI shows a quiet *Remembering…*) and
 re-query the **same deterministic engine** with a query it authors, or pull the
 immediate neighbors of a turn it has already seen (`around_turn`). Max two
-recall rounds per turn (worst case 3 API calls — the sanctioned tool-loop case
-in the Mission Brief), Anthropic-only for now, and results are deduplicated
+recall rounds per turn (worst case 3 reply calls — 4 total with the post-reply
+state turn; both are sanctioned raises in the Mission Brief), Anthropic-only
+for now, and results are deduplicated
 against what the prompt already carries. The invariant is untouched: the model
 proposes a *query*; what matches is still pure math. Retrieved fragments (both
 ambient and recalled) now carry term provenance — `[Turn 6 · 4 min ago · via
@@ -68,8 +88,9 @@ the text by hand, or **re-spin** it: re-run the current model for that turn with
 its history reconstructed (the chat sliced to before the turn, recency anchored
 at its original instant — so no later turn leaks in) plus your current memories
 and persona. Whichever you keep becomes the turn and is re-indexed for the cosine
-grep going forward. A hand edit drops the turn's stale summary; a re-spin emits a
-fresh one. If a spontaneity operator fired on the turn, a re-spin runs *without*
+grep going forward. Either way the turn's stale summary and inner state are
+cleared and re-derived from the text you kept. If a spontaneity operator fired
+on the turn, a re-spin runs *without*
 it by default — undoing the perturbation is the usual reason to re-spin — and a
 toggle in the editor replays the original directive verbatim instead. It edits
 that one reply only — later turns aren't regenerated — and it touches no

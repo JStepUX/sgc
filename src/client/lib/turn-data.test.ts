@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { summaryFromInspector, spontaneityFromInspector, type TurnData } from './turn-data';
-import type { TurnSummary } from './types';
+import {
+  dynamicStateFromInspector,
+  replayEntry,
+  summaryFromInspector,
+  spontaneityFromInspector,
+  type TurnData,
+} from './turn-data';
+import type { ChatTurn } from './persistence';
+import type { DynamicState, TurnSummary } from './types';
 
 // Behavioral contract of the inspector_json rehydration parsers: tolerant of
 // null blobs, garbage, and pre-feature turns — a reload must never throw over
@@ -35,6 +42,47 @@ describe('summaryFromInspector', () => {
 
   it('round-trips a persisted summary', () => {
     expect(summaryFromInspector(blob({ summary }))).toEqual(summary);
+  });
+});
+
+describe('dynamicStateFromInspector', () => {
+  const dynamicState: DynamicState = {
+    goal: 'find the thread again',
+    appraisal: 'patient',
+    association: null,
+    passing_thought: null,
+    noticed: ['they went quiet'],
+    unexpressed_impulse: null,
+  };
+
+  it('returns undefined for a null blob, malformed JSON, and a pre-feature turn', () => {
+    expect(dynamicStateFromInspector(null)).toBeUndefined();
+    expect(dynamicStateFromInspector('{not json')).toBeUndefined();
+    expect(dynamicStateFromInspector(blob({ turnNumber: 3 }))).toBeUndefined();
+  });
+
+  it('returns undefined when the state call failed and null was persisted', () => {
+    expect(dynamicStateFromInspector(blob({ dynamicState: null }))).toBeUndefined();
+  });
+
+  it('round-trips a persisted state', () => {
+    expect(dynamicStateFromInspector(blob({ dynamicState }))).toEqual(dynamicState);
+  });
+
+  it('replayEntry rehydrates the state onto the entry — the next prompt reads it after a reload', () => {
+    const row: ChatTurn = {
+      id: 7,
+      ordinal: 3,
+      role: 'assistant',
+      content: 'a reply',
+      createdAt: 1_700_000_000_000,
+      inspectorJson: blob({ summary, dynamicState }),
+      active: true,
+      timeless: false,
+    };
+    const entry = replayEntry(row);
+    expect(entry.dynamicState).toEqual(dynamicState);
+    expect(entry.summary).toEqual(summary);
   });
 });
 

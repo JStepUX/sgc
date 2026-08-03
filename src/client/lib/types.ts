@@ -1,20 +1,45 @@
 // Shared domain types for the SGC memory architecture.
 
 /**
- * The turn summary Sal appends to every response — a fresh, per-turn structured
- * observation, never fed back into the next prompt and never accumulated:
+ * The turn summary produced for every completed turn — a fresh, per-turn
+ * structured observation, never accumulated:
  *  - persistent: things true until explicitly changed
  *  - volatile: things that shifted this turn
  *  - established_patterns: behavioral rules that have been demonstrated
  *
- * Parsed out of Sal's `<turn-summary>` block (see lib/prompt.ts) and rendered
- * as a dimmed one-line appendage beneath the reply. Observation only — it does
- * NOT touch retrieval or the next prompt.
+ * Produced by the post-reply state turn (lib/dynamic-state.ts) alongside the
+ * DynamicState below — Sal's own reply no longer carries a `<turn-summary>`
+ * block. Rendered as a dimmed one-line appendage beneath the reply and fed
+ * forward (last couple of turns only) as the distilled summary buffer. It does
+ * NOT touch retrieval.
  */
 export interface TurnSummary {
   persistent: string[];
   volatile: string[];
   established_patterns: string[];
+}
+
+/**
+ * Sal's bounded inner state after a turn — the OTHER half of the post-reply
+ * state turn's output (lib/dynamic-state.ts). Regenerated every turn from live
+ * context (not an accreting document) and rendered into the NEXT prompt as the
+ * private YOUR INNER STATE block, flattened to labeled lines — never as JSON.
+ *
+ * This is a deliberate recurrence: the state prompt consumes the previous
+ * state, which turn summaries never do. It is bounded three ways — schema caps,
+ * per-turn regeneration, and user curation (the rail's Dynamic State card is
+ * editable), so the drift surface is also a control surface.
+ *
+ * Nullable fields are genuinely absent when nothing fits; the flattener omits
+ * them rather than rendering an empty label.
+ */
+export interface DynamicState {
+  goal: string;
+  appraisal: string;
+  association: string | null;
+  passing_thought: string | null;
+  noticed: string[];
+  unexpressed_impulse: string | null;
 }
 
 /** One message in the conversation log. */
@@ -61,12 +86,22 @@ export interface ChatEntry {
    */
   timeless?: boolean;
   /**
-   * The turn summary Sal emitted alongside this (assistant) message, rendered as
-   * a dimmed one-line appendage beneath the reply. Display-only: absent on user
-   * rows, ignored by the cosine grep / local buffer / prompt builder. Persisted
-   * inside the turn's `inspector_json` blob and rehydrated on load.
+   * The turn summary produced for this (assistant) message by the post-reply
+   * state turn, rendered as a dimmed one-line appendage beneath the reply.
+   * Absent on user rows and ignored by the cosine grep; the prompt builder
+   * reads it only for the distilled summary buffer. Persisted inside the turn's
+   * `inspector_json` blob and rehydrated on load.
    */
   summary?: TurnSummary;
+  /**
+   * Sal's inner state after this (assistant) turn — the other half of the
+   * post-reply state turn. Mirrors `summary`'s lifecycle exactly (assistant
+   * rows only, persisted in `inspector_json`, rehydrated on load) and is
+   * likewise invisible to the cosine grep. Unlike `summary` it IS consumed by a
+   * later prompt: assembleTurnContext takes the newest one in the log and
+   * renders it as the next turn's private inner-state block.
+   */
+  dynamicState?: DynamicState;
   /**
    * The spontaneity operator that fired on this (assistant) turn, if any —
    * rendered as a dimmed "⟐ Name" marker beneath the reply so a perturbed turn is

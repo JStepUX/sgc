@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { assembleTurnContext } from './turn-context';
 import { buildBrainIndex } from './brains';
 import { LOCAL_BUFFER_SIZE } from './constants';
-import type { BrainPack, ChatEntry } from './types';
+import type { BrainPack, ChatEntry, DynamicState } from './types';
 
 const HOUR = 3_600_000;
 const NOW = 1_700_000_000_000;
@@ -83,6 +83,65 @@ describe('assembleTurnContext', () => {
     // No directive → no block. (Re-spin passes the snapshotted directive here to
     // reproduce a turn; a fresh turn passes its draw. Either way it's caller-supplied.)
     expect(assembleTurnContext(base).systemPrompt).not.toContain('SPONTANEITY OPERATOR');
+  });
+});
+
+describe('assembleTurnContext — inner state (D13: newest wins, no horizon)', () => {
+  const state = (goal: string): DynamicState => ({
+    goal,
+    appraisal: 'steady',
+    association: null,
+    passing_thought: null,
+    noticed: [],
+    unexpressed_impulse: null,
+  });
+
+  // Stamp a state onto the assistant half of a pair.
+  const statefulPair = (u: string, a: string, ageHours: number, goal: string): ChatEntry[] => {
+    const pair = turnPair(u, a, ageHours);
+    pair[1] = { ...pair[1], dynamicState: state(goal) };
+    return pair;
+  };
+
+  const base = { query: 'anything', constitutional, persona: 'P', now: NOW, fetchedDocs: [], failedUrls: [] };
+
+  it('renders the NEWEST state in the log', () => {
+    const log = [
+      ...statefulPair('q1', 'a1', 40, 'the older goal'),
+      ...statefulPair('q2', 'a2', 20, 'the newer goal'),
+    ];
+    const { systemPrompt } = assembleTurnContext({ ...base, priorLog: log });
+    expect(systemPrompt).toContain('goal: the newer goal');
+    expect(systemPrompt).not.toContain('the older goal');
+  });
+
+  it('reaches back over turns that carry none — a failed state call must not blank it', () => {
+    const log = [
+      ...statefulPair('q1', 'a1', 60, 'the surviving goal'),
+      ...turnPair('q2', 'a2', 40), // state call failed
+      ...turnPair('q3', 'a3', 20), // and again
+    ];
+    const { systemPrompt } = assembleTurnContext({ ...base, priorLog: log });
+    expect(systemPrompt).toContain('YOUR INNER STATE');
+    expect(systemPrompt).toContain('goal: the surviving goal');
+  });
+
+  it('omits the block entirely when no turn in the log carries a state', () => {
+    const log = [...turnPair('q1', 'a1', 40), ...turnPair('q2', 'a2', 20)];
+    expect(assembleTurnContext({ ...base, priorLog: log }).systemPrompt).not.toContain('YOUR INNER STATE');
+    expect(assembleTurnContext({ ...base, priorLog: [] }).systemPrompt).not.toContain('YOUR INNER STATE');
+  });
+
+  it('re-spin reconstruction: a state from AFTER the target turn cannot leak in', () => {
+    // Same leak guard as the history tiers — the state is derived from priorLog
+    // only, so slicing the log to before a turn reproduces the state that turn saw.
+    const full = [
+      ...statefulPair('q1', 'a1', 60, 'the goal that turn had'),
+      ...statefulPair('q2', 'a2', 10, 'a goal from the future'),
+    ];
+    const reconstructed = assembleTurnContext({ ...base, priorLog: full.slice(0, 2) });
+    expect(reconstructed.systemPrompt).toContain('goal: the goal that turn had');
+    expect(reconstructed.systemPrompt).not.toContain('a goal from the future');
   });
 });
 

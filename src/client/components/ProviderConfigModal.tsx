@@ -385,7 +385,7 @@ export function ProviderConfigModal({
                 className={INPUT}
               />
               <p className={HELP}>
-                512 can truncate the reply + turn-summary block — 1024+ recommended.
+                512 can truncate the reply, and the state turn's JSON — 1024+ recommended.
               </p>
 
               <div className="mt-5">
