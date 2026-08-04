@@ -174,10 +174,10 @@ src/client/    React + TypeScript UI; lib/ holds the memory-architecture logic
 src/server/    Express server — provider keys/URLs, /api/turn (SSE), SQLite persistence
 electron/      Windows desktop shell — forks the server, supervises, never thinks
 resources/     stock brains — sgc-brain/1 packs bundled into the installer
-docs/          phase-1-5-reference.jsx (frozen original artifact) + changelogs
+docs/          frozen reference artifact, YAML specs, changelogs — see docs/README.md
 scripts/agent/ Bash utilities for codebase recon and checks
 .claude/       Agents, skills, and the pre-commit QA gate
-CLAUDE.md      Architecture + conventions for AI agents
+CLAUDE.md      Standing orders for agents — project brief, invariants, values, tooling
 AGENTS.md      Confusion pointers — gotchas worth knowing
 ```
 

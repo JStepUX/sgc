@@ -74,7 +74,7 @@ that you assumed it doesn't.
 | Document | Path | Update when... |
 |---|---|---|
 | Changelog | `docs/changelogs/YYYY-MM.md` (current month) | Any user- or developer-facing change (always) |
-| Agent Guide | `CLAUDE.md` | Project structure, architecture, or conventions changed |
+| Agent Guide | `CLAUDE.md` | The project brief, invariants, or working conventions changed (per-file detail belongs in file headers, the narrative in README — not here) |
 | Confusion Pointers | `AGENTS.md` | You hit a surprise a future agent would also hit |
 | README | `README.md` | Setup, how-to-run, or project description changed |
 | Agent Scripts | `scripts/agent/` | Files moved/renamed, or what a script greps for changed |
