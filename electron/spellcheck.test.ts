@@ -3,11 +3,11 @@ import { PREFERRED_LANGUAGES, pickSpellcheckLanguages, spellcheckMenuTemplate } 
 
 describe('pickSpellcheckLanguages', () => {
   it('picks the most-preferred available language', () => {
-    expect(pickSpellcheckLanguages(['en-US', 'en-GB', 'fr'])).toEqual(['en-GB']);
+    expect(pickSpellcheckLanguages(['en-GB', 'en-US', 'fr'])).toEqual(['en-US']);
   });
 
   it('falls back to the next preference when the first is unavailable', () => {
-    expect(pickSpellcheckLanguages(['en-US', 'de'])).toEqual(['en-US']);
+    expect(pickSpellcheckLanguages(['en-GB', 'de'])).toEqual(['en-GB']);
   });
 
   it('resolves to exactly one language — enabling several accepts words from any of them', () => {

@@ -24,14 +24,15 @@ import type {
   WebContents,
 } from 'electron';
 
-// Most-wanted first. Chromium defaults to en-US; the fallback exists only for
-// the case where a machine has no en-GB dictionary available at all.
+// Most-wanted first. en-US is the deliberate choice (an early version shipped
+// en-GB first without that ever being decided — flagging "favor" et al.); the
+// fallback exists only for a machine with no en-US dictionary available at all.
 //
 // Note this resolves to exactly ONE language, not the whole list: Chromium
 // accepts a word that is valid in ANY enabled language, so enabling en-GB and
 // en-US together would pass both "colour" and "color" and make the choice
 // meaningless.
-export const PREFERRED_LANGUAGES = ['en-GB', 'en-US'];
+export const PREFERRED_LANGUAGES = ['en-US', 'en-GB'];
 
 export interface SpellcheckActions {
   replace(suggestion: string): void;
