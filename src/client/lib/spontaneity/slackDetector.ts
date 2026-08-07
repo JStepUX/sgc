@@ -35,13 +35,15 @@ export const DEFAULT_SLACK_WINDOW = 3;
 /**
  * Default firing threshold on the average pairwise cosine similarity.
  *
- * PROVISIONAL — pending calibration against real conversation logs. Raw TF
- * cosine between varied turns runs low; between turns that recycle vocabulary it
- * climbs. 0.3 is a conservative "notably alike" line picked by reasoning, not
- * data — expect to retune once there are real transcripts to measure against
- * ("let friction drive the architecture, not speculation"). Callers can override.
+ * First dogfooding retune, 2026-08-07: raised 0.3 → 0.35 after real sessions
+ * fired too often (paired with the subtlety rewording of the deck — see
+ * flexDeck.ts). The 2026-07-03 stemming replay measured the dev-chat mean at
+ * 0.338, so 0.3 sat below the fat of that (admittedly inflated) distribution;
+ * 0.35 moves the line just above it — a deliberate "slightly less often", not a
+ * silencing. Still expect further retuning against real transcripts as
+ * dogfooding accumulates. Callers can override.
  */
-export const DEFAULT_SLACK_THRESHOLD = 0.3;
+export const DEFAULT_SLACK_THRESHOLD = 0.35;
 
 export interface SlackOptions {
   /** Number of most-recent turn-pairs to compare. Default DEFAULT_SLACK_WINDOW. */

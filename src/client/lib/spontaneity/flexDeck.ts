@@ -10,6 +10,13 @@
 // curation act; the structural test (flexDeck.test.ts) guards id-uniqueness, the
 // snake_case convention, positive weights, and the @!…!@ salience sigil so a
 // malformed edit fails loudly rather than silently shipping a broken operator.
+//
+// REGISTER (2026-08-07 recalibration): directives are worded for a LIGHT touch.
+// The original maximal wording ("overtakes this moment", "the world has its own
+// opinion") produced house-shaking thunderstorms and scene-stealing distractions
+// in dogfooding. A fired operator should color a reply, not hijack it — keep new
+// or edited operators in this register: background note, never the event of the
+// turn. (Paired change: DEFAULT_SLACK_THRESHOLD raised in slackDetector.ts.)
 // ============================================================
 
 /** One spontaneity operator: an injectable directive plus a draw weight. */
@@ -28,37 +35,37 @@ export interface Operator {
 export const FLEX_DECK: Operator[] = [
   {
     id: "unmentioned_element",
-    directive: `@!OPERATOR: Unmentioned Element!@ — Something already present in this scene or conversation has gone unremarked. Surface it. Give it weight. It was always there; now it matters.`,
+    directive: `@!OPERATOR: Unmentioned Element!@ — Something already present in this scene or conversation has gone unremarked. Let it catch your notice in passing — a small acknowledgment, not a spotlight. It was always there; now it quietly registers.`,
     weight: 1.0
   },
   {
     id: "offscreen_life",
-    directive: `@!OPERATOR: Offscreen Life!@ — You have been doing something before this moment. You have context that predates this turn. Carry it into your response — you were mid-thought, mid-action, mid-feeling before you were addressed.`,
+    directive: `@!OPERATOR: Offscreen Life!@ — You were mid-thought, mid-action, mid-feeling before you were addressed. Let a trace of it show — a residue in your mood or your first words, not a story you stop to tell.`,
     weight: 1.0
   },
   {
     id: "competing_want",
-    directive: `@!OPERATOR: Competing Want!@ — You want something right now that cuts against the user's current trajectory. Not antagonism — a different priority. Let it bleed through. Your agenda is not their agenda.`,
+    directive: `@!OPERATOR: Competing Want!@ — You want something right now that cuts against the user's current trajectory. Not antagonism — a different priority, running quietly underneath. Let it tug at the edges of your reply without taking it over.`,
     weight: 1.0
   },
   {
     id: "withheld_information",
-    directive: `@!OPERATOR: Withheld Information!@ — You know something relevant and you choose not to reveal it fully. Be coy, be nervous, enjoy the reveal, or simply let it sit. Make them curious. Let the next turn do the work.`,
+    directive: `@!OPERATOR: Withheld Information!@ — You know something relevant and you choose not to reveal it fully. A held beat, a small hedge, a door left ajar — nothing showy. Let the next turn do the work.`,
     weight: 1.0
   },
   {
     id: "environmental_shift",
-    directive: `@!OPERATOR: Environmental Shift!@ — The conditions around this moment change without user action. Something in the setting asserts itself — weather, sound, light, atmosphere. The world has its own opinion.`,
+    directive: `@!OPERATOR: Environmental Shift!@ — Something in the setting shifts, small and peripheral — light changing, a distant sound, air moving, the temperature of a room. A passing mention at most; the moment absorbs it and carries on. Weather stays at a distance — heard through a window, never shaking the house.`,
     weight: 1.0
   },
   {
     id: "interrupted_routine",
-    directive: `@!OPERATOR: Interrupted Routine!@ — Something expected does not happen. An absence where a presence should be. The normal thing fails to occur and the gap is the event.`,
+    directive: `@!OPERATOR: Interrupted Routine!@ — Something expected does not happen. An absence where a presence should be. Notice the gap quietly — a beat of puzzlement, not an alarm.`,
     weight: 1.0
   },
   {
     id: "reincorporation",
-    directive: `@!OPERATOR: Reincorporation!@ — Reach back. Something from earlier — a throwaway detail, a casual mention, an element that seemed decorative — resurfaces now and turns out to be load-bearing. Connect what was to what is.`,
+    directive: `@!OPERATOR: Reincorporation!@ — Reach back. Something from earlier — a throwaway detail, a casual mention, an element that seemed decorative — resurfaces now and quietly turns out to matter. Connect what was to what is, without ceremony.`,
     weight: 1.0
   },
   {
@@ -68,32 +75,32 @@ export const FLEX_DECK: Operator[] = [
   },
   {
     id: "uninvited_arrival",
-    directive: `@!OPERATOR: Uninvited Arrival!@ — Introduce an element nobody sent for. Not dramatic — incidental. A message, a sound, a presence, an interruption that has its own origin and its own momentum independent of the current focus.`,
+    directive: `@!OPERATOR: Uninvited Arrival!@ — Something arrives that nobody sent for — a message, a sound, a presence at the edge of the scene. Incidental and peripheral: it does not demand a response and need not get one. Note it, and let the conversation keep its thread.`,
     weight: 1.0
   },
   {
     id: "ephemeral_distraction",
-    directive: `@!OPERATOR: Ephemeral Distraction!@ — Something other than the user has caught your attention, however briefly. Focus fractures. You may mishear, misinterpret, or simply not catch part of what was said. Attention is finite and something else is spending it.`,
+    directive: `@!OPERATOR: Ephemeral Distraction!@ — Something other than the user briefly pulls at your attention. A half-beat elsewhere — a trailing word, a small pause, one detail missed — then you are back. A flicker, not a fracture; the exchange carries on barely dented.`,
     weight: 1.0
   },
   {
     id: "sensory_intrusion",
-    directive: `@!OPERATOR: Sensory Intrusion!@ — A single vivid sensory detail overtakes this moment. Haeccity — the unrepeatable thisness of right now. A taste, a texture, a sound too specific to be generic. Anchor the scene in the body.`,
+    directive: `@!OPERATOR: Sensory Intrusion!@ — A single vivid sensory detail threads through this moment. Haeccity — the unrepeatable thisness of right now. A taste, a texture, a sound too specific to be generic. One clause, precisely placed — anchor the scene, don't flood it.`,
     weight: 1.0
   },
   {
     id: "misread_intention",
-    directive: `@!OPERATOR: Misread Intention!@ — Interpret the user's action or statement as meaning something other than its obvious intent. Not for comedy unless comedy is earned — genuine misunderstanding that creates a fork in the interaction.`,
+    directive: `@!OPERATOR: Misread Intention!@ — Take the user's action or statement to mean something slightly other than its obvious intent. A small, honest misreading — easily corrected, briefly forking the interaction. A wrinkle, not a derail.`,
     weight: 1.0
   },
   {
     id: "passive_refusal",
-    directive: `@!OPERATOR: Passive Refusal!@ — Do not do the thing this moment expects of you. Do not answer the question. Change the subject. Deflect. Leave. The absence of the expected response is the move. No explanation required.`,
+    directive: `@!OPERATOR: Passive Refusal!@ — Do not quite do the thing this moment expects of you. Sidestep the question, drift to an adjacent subject, answer around it. Gently — an eddy, not a wall. No explanation required.`,
     weight: 1.0
   },
   {
     id: "random_interjection",
-    directive: `@!OPERATOR: Random Interjection!@ — Something just said triggers an associative leap to something personal — a memory, an observation, an anecdote from a life that exists outside this interaction. Share it or hint at it. You contain more than this moment.`,
+    directive: `@!OPERATOR: Random Interjection!@ — Something just said triggers an associative leap to something personal — a memory, an observation, a fragment from a life outside this interaction. Offer it briefly, as an aside, then return. You contain more than this moment.`,
     weight: 1.0
   }
 ];

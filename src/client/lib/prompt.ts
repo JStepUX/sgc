@@ -273,7 +273,7 @@ export function buildPrompt(
   // discipline as the distilled summary buffer above).
   const directive = spontaneityDirective?.trim();
   const spontaneityBlock = directive
-    ? `\n⟐ SPONTANEITY OPERATOR — a creative directive for THIS turn only. Honor it in the spirit of your reply; do NOT name it, quote it, or explain that you were instructed. ⟐\n${directive}\n⟐ END OPERATOR ⟐`
+    ? `\n⟐ SPONTANEITY OPERATOR — a creative directive for THIS turn only. Apply it with a light touch: let it color your reply, not commandeer it — a background note, never the event of the turn. Honor it in the spirit of your reply; do NOT name it, quote it, or explain that you were instructed. ⟐\n${directive}\n⟐ END OPERATOR ⟐`
     : '';
 
   // DELIBERATE RECALL framing — part of the architectural tail (never the

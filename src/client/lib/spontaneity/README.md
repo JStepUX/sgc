@@ -32,9 +32,10 @@ point recon is most likely to find it.
   computation.
 
 **The tension to keep your eyes open about:** some operators (`passive_refusal`
-— "Do not answer the question"; `withheld_information`; `misread_intention`) cut
+— "Sidestep the question"; `withheld_information`; `misread_intention`) cut
 directly against the persona's "say plainly… don't guess." Firing these on an
-ordinary task turn can degrade Sal's usefulness/trustworthiness.
+ordinary task turn can degrade Sal's usefulness/trustworthiness. (The 2026-08-07
+subtlety rewording softened *how hard* they cut, not *whether* they cut.)
 
 > **Decision (reviewed, accepted):** these stay in the default deck at weight
 > 1.0 *by deliberate choice*. This is a research prototype the author runs
@@ -102,16 +103,24 @@ There's no UI toggle. To silence it without removing code, raise
 `DEFAULT_SLACK_THRESHOLD` toward 1.0 (never fires) or remove the
 `runSpontaneity` call in `processInput`.
 
-## Calibration caveat
+## Calibration history
 
-`DEFAULT_SLACK_THRESHOLD` (0.3) is **provisional** — reasoned, not measured. Raw
-TF cosine between turns runs low; the right firing line needs real transcripts.
-Retune before trusting the default firing rate.
+`DEFAULT_SLACK_THRESHOLD` started at 0.3 — reasoned, not measured, and flagged
+provisional from day one.
 
 Measured 2026-07-03, when Porter stemming landed in the shared tokenizer
 (stemming-spec D4): replaying the 9 dev chats in `data/sgc.db` (290 detector
 windows), mean window similarity rose 0.294 → 0.338 and firings at 0.3 went
 135 → 200. The dev chats are repetitive by design, so the absolute rates are
-inflated — but the threshold clearly sits in the fat of the distribution, where
-the stemming lift flips many windows. When the retune happens, it should be
-measured against post-stemming similarity.
+inflated — but the threshold clearly sat in the fat of the distribution, where
+the stemming lift flips many windows.
+
+Retuned 2026-08-07, first dogfooding pass: real sessions confirmed the engine
+fired too often *and* too loud — characters visibly derailed by ambient events,
+weather always arriving as a house-shaking thunderstorm. Two paired changes:
+the deck was reworded into a light-touch register (plus a global "color, don't
+commandeer" clause in the `⟐` prompt block — see flexDeck.ts's REGISTER note),
+and the threshold went 0.3 → 0.35, just above the measured dev-chat mean.
+Wording was deliberately the bigger lever; the threshold raise is the "slightly
+less often" half. Further retuning should be measured against post-stemming
+similarity as real transcripts accumulate.
