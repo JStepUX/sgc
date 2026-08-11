@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { PanelRightClose, PanelRightOpen, Split } from 'lucide-react';
 import { DEFAULT_PERSONA } from './lib/prompt';
 import { newestDynamicState } from './lib/dynamic-state';
 import { PROVIDER_LABEL } from './lib/provider';
@@ -28,6 +28,8 @@ import { useStateCalls } from './hooks/useStateCalls';
 import { useTurnRunner } from './hooks/useTurnRunner';
 import { useResponseEditor } from './hooks/useResponseEditor';
 import { useTurnUndo } from './hooks/useTurnUndo';
+import { useMemoryEditSync } from './hooks/useMemoryEditSync';
+import { useTangent } from './hooks/useTangent';
 
 // ============================================================
 // SALIENCE-GATED COGNITION — Phase 1.5
@@ -85,6 +87,15 @@ export default function SalienceGatedCognition() {
   const runner = useTurnRunner(session, providerState, bumpComposerReset, stateCalls);
   const editor = useResponseEditor(session, providerState, stateCalls);
   const { undoLatestTurn } = useTurnUndo(session);
+  const memorySync = useMemoryEditSync(session);
+  const tangentAxis = useTangent(session);
+  // Wipe is destructive → inline confirm (UI choreography, so root-owned).
+  // Reset whenever the tangent closes by ANY path (resolve, chat switch,
+  // Begin again) so a later tangent never opens straight into the confirm.
+  const [wipeConfirmOpen, setWipeConfirmOpen] = useState(false);
+  useEffect(() => {
+    if (session.tangent === null) setWipeConfirmOpen(false);
+  }, [session.tangent]);
   // The state the next prompt will actually read (D13) — shown as "carried"
   // when the latest turn has none, and the modal's seed when repairing one.
   const carriedState = useMemo(() => newestDynamicState(session.chatLog), [session.chatLog]);
@@ -148,8 +159,14 @@ export default function SalienceGatedCognition() {
         />
 
         <div className="relative flex min-h-0 flex-1 flex-col lg:flex-row">
-          {/* Thread */}
-          <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col">
+          {/* Thread. The tangent wash tints the WHOLE column (scroll area,
+              resolution strip, composer) — tinting only the scroll region
+              leaves the composer on an untinted band with a visible seam. */}
+          <div
+            className={`relative z-10 flex min-h-0 min-w-0 flex-1 flex-col transition-colors duration-500 ${
+              session.tangent !== null ? 'bg-ember/[0.045]' : ''
+            }`}
+          >
             <div className="sal-scroll flex-1 overflow-x-hidden overflow-y-auto pt-[30px] pb-3">
               <div className="mx-auto flex max-w-[680px] flex-col gap-[18px] px-8">
                 {session.messages.length === 0 && (
@@ -168,7 +185,12 @@ export default function SalienceGatedCognition() {
                     // Skip timeless manual memories — the pencil is for streamed replies.
                     if (session.messages[i].role === 'assistant' && !session.messages[i].timeless) { lastAssistantIdx = i; break; }
                   }
-                  return session.messages.map((msg, i) =>
+                  // A tangent open with ZERO tangent pairs: the latest turn is
+                  // still CANON, so undo/pencil must not reach across the
+                  // boundary (spec 04, D6 — the only guard the tangent needs).
+                  const tangentAtZero = session.tangent !== null
+                    && session.messages.length === session.tangent.canonEntries;
+                  const nodes = session.messages.map((msg, i) =>
                     msg.role === 'user'
                       ? <UserPill key={i} text={msg.content} />
                       : <AssistantMessage
@@ -178,11 +200,29 @@ export default function SalienceGatedCognition() {
                           summary={msg.summary}
                           spontaneity={msg.spontaneity}
                           onEdit={i === lastAssistantIdx ? editor.openLatestEditor : undefined}
-                          canEdit={i === lastAssistantIdx && !runner.isProcessing && typeof msg.id === 'number'}
+                          canEdit={i === lastAssistantIdx && !runner.isProcessing && typeof msg.id === 'number' && !tangentAtZero}
                           onUndo={i === lastAssistantIdx ? handleUndoTurn : undefined}
-                          canUndo={i === lastAssistantIdx && !runner.isProcessing && typeof msg.id === 'number'}
+                          canUndo={i === lastAssistantIdx && !runner.isProcessing && typeof msg.id === 'number' && !tangentAtZero}
                         />,
                   );
+                  // Boundary divider — tangent entries are always the visible
+                  // tail, so it sits at index canonEntries (equal to length on
+                  // a fresh tangent: the divider then closes the thread).
+                  if (session.tangent !== null) {
+                    nodes.splice(session.tangent.canonEntries, 0, (
+                      <div
+                        key="tangent-divider"
+                        role="separator"
+                        aria-label="Tangent begins"
+                        className="flex items-center gap-3 py-1"
+                      >
+                        <div className="h-px flex-1 bg-ember/40" />
+                        <span className="font-mono text-[10px] tracking-[0.18em] text-ember/90">TANGENT</span>
+                        <div className="h-px flex-1 bg-ember/40" />
+                      </div>
+                    ));
+                  }
+                  return nodes;
                 })()}
 
                 {runner.streamingText !== null && (
@@ -216,15 +256,76 @@ export default function SalienceGatedCognition() {
               </div>
             </div>
 
+            {/* Tangent resolution strip (spec 04, D7). Both actions disable
+                mid-stream: an in-flight pair hasn't persisted yet, so resolving
+                under it would let the pair land AFTER the boundary cleared and
+                silently become canon. */}
+            {session.tangent !== null && (
+              <div className="mx-auto w-full max-w-[680px] px-8">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-[16px] border border-ember/45 bg-ember/[0.07] px-4 py-2 backdrop-blur-[10px]">
+                  <Split className="size-[13px] shrink-0 text-ember" />
+                  <span className="font-mono text-[11px] tracking-[0.04em] text-ember">
+                    Ephemeral tangent · {tangentAxis.tangentTurns} {tangentAxis.tangentTurns === 1 ? 'turn' : 'turns'}
+                  </span>
+                  <div className="ml-auto flex items-center gap-2">
+                    {wipeConfirmOpen ? (
+                      <>
+                        <span className="text-[11.5px] text-fg-2">
+                          Wipe {tangentAxis.tangentTurns === 1 ? 'this turn' : `these ${tangentAxis.tangentTurns} turns`} permanently?
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => { setWipeConfirmOpen(false); void tangentAxis.wipe(); }}
+                          disabled={runner.isProcessing || tangentAxis.resolving}
+                          className="rounded-full border border-ember bg-ember/15 px-3 py-1 font-mono text-[11px] text-ember transition-colors hover:bg-ember hover:text-bone disabled:opacity-40"
+                        >
+                          Wipe
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setWipeConfirmOpen(false)}
+                          className="rounded-full border border-hairline-strong px-3 py-1 font-mono text-[11px] text-fg-2 transition-colors hover:border-ember hover:text-ember"
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void tangentAxis.makeCanon()}
+                          disabled={runner.isProcessing || tangentAxis.resolving}
+                          className="rounded-full border border-hairline-strong px-3 py-1 font-mono text-[11px] text-fg-2 transition-colors hover:border-ember hover:text-ember disabled:opacity-40"
+                        >
+                          Make canon
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setWipeConfirmOpen(true)}
+                          disabled={runner.isProcessing || tangentAxis.resolving}
+                          className="rounded-full border border-hairline-strong px-3 py-1 font-mono text-[11px] text-fg-2 transition-colors hover:border-ember hover:text-ember disabled:opacity-40"
+                        >
+                          Wipe…
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <Composer
               onSubmit={runner.submitTurn}
               onKeystroke={aurora.handleKeystroke}
-              submitDisabled={runner.isProcessing || !session.hydrated || !session.chatId}
+              submitDisabled={runner.isProcessing || !session.hydrated || !session.chatId || tangentAxis.resolving}
               resetSignal={composerResetSignal}
               seed={composerSeed}
               historyOpen={historyOpen}
               onToggleHistory={handleToggleHistory}
               historyButtonRef={historyButtonRef}
+              tangentOpen={session.tangent !== null}
+              canBeginTangent={tangentAxis.canBegin && !runner.isProcessing}
+              onBeginTangent={tangentAxis.begin}
             />
           </div>
 
@@ -287,8 +388,8 @@ export default function SalienceGatedCognition() {
         onSelect={session.loadChat}
         onDelete={session.deleteChat}
         onBeginAgain={openPersonaModal}
-        onActiveTurnsChanged={session.onActiveTurnsChanged}
-        onTurnsMutated={session.onTurnsMutated}
+        onActiveTurnsChanged={memorySync.onActiveTurnsChanged}
+        onTurnsMutated={memorySync.onTurnsMutated}
         returnFocusRef={historyButtonRef}
       />
 

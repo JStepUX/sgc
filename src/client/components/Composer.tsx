@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowUp, Clock } from 'lucide-react';
+import { ArrowUp, Clock, Split } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -39,6 +39,12 @@ interface ComposerProps {
   historyOpen: boolean;
   onToggleHistory: () => void;
   historyButtonRef: React.RefObject<HTMLButtonElement | null>;
+  // Ephemeral tangent (spec 04). The button only OPENS a tangent — while one
+  // is open it lights up ember as a mode indicator and goes inert (the
+  // resolution strip above the composer owns make-canon/wipe).
+  tangentOpen: boolean;
+  canBeginTangent: boolean;
+  onBeginTangent: () => void;
 }
 
 export const Composer = memo(function Composer({
@@ -50,6 +56,9 @@ export const Composer = memo(function Composer({
   historyOpen,
   onToggleHistory,
   historyButtonRef,
+  tangentOpen,
+  canBeginTangent,
+  onBeginTangent,
 }: ComposerProps) {
   const [input, setInput] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -115,6 +124,23 @@ export const Composer = memo(function Composer({
           )}
         >
           <Clock className="size-[17px]" />
+        </button>
+        <button
+          type="button"
+          onClick={onBeginTangent}
+          disabled={tangentOpen || !canBeginTangent}
+          aria-label="Open an ephemeral tangent"
+          aria-pressed={tangentOpen}
+          className={cn(
+            'flex size-11 shrink-0 items-center justify-center rounded-full border bg-surface-thin shadow-glass backdrop-blur-[10px] transition-colors',
+            tangentOpen
+              ? 'border-ember text-ember shadow-[0_0_18px_-4px_var(--color-ember)]'
+              : canBeginTangent
+                ? 'border-hairline-strong text-fg-2 hover:border-ember hover:text-ember'
+                : 'border-hairline-strong text-fg-4',
+          )}
+        >
+          <Split className="size-[16px]" />
         </button>
         <div className="flex flex-1 items-end gap-2.5 rounded-[24px] border border-hairline-strong bg-surface-thin py-2 pr-2 pl-[18px] shadow-glass backdrop-blur-[10px]">
           <textarea

@@ -6,7 +6,7 @@ import {
   listChats as apiListChats,
   loadChat as apiLoadChat,
 } from '../lib/persistence';
-import type { ChatSession } from './useChatSession';
+import { tangentFrom, type ChatSession } from './useChatSession';
 
 // ============================================================
 // TURN UNDO — take back the latest streamed turn pair.
@@ -31,8 +31,8 @@ export function useTurnUndo(session: ChatSession): {
   undoLatestTurn: () => Promise<string | null>;
 } {
   const {
-    chatId, chatLog, turnCount, spontaneityStateRef,
-    setMessages, setChatLog, setTurnCount, setLatestTurn, setTokenHistory, setChats,
+    chatId, chatIdRef, chatLog, turnCount, spontaneityStateRef,
+    setMessages, setChatLog, setTurnCount, setLatestTurn, setTokenHistory, setChats, setTangent,
   } = session;
 
   const undoLatestTurn = useCallback(async (): Promise<string | null> => {
@@ -66,6 +66,10 @@ export function useTurnUndo(session: ChatSession): {
     // visible thread just loses its last pair; everything else is identical.
     try {
       const detail = await apiLoadChat(chatId);
+      // A chat switch may have landed while the fetch was in flight — applying
+      // this chat's state (or seeding its text) into the NEW chat would
+      // clobber it. The delete stands; the outgoing chat re-adopts on load.
+      if (chatIdRef.current !== chatId) return null;
       const replay = detail.turns.map(replayEntry);
       setMessages(replay);
       setChatLog(replay);
@@ -74,10 +78,17 @@ export function useTurnUndo(session: ChatSession): {
       spontaneityStateRef.current = {
         lastFiredId: lastFiredOperatorId(detail.turns.map((t) => t.inspectorJson)),
       };
+      // Tangent state moves WITH the messages it indexes: this resync can fold
+      // manual prepends into the visible log, which shifts the boundary's
+      // entry-index projection — recompute it from ordinals or the divider and
+      // the undo guard drift (and a drifted guard can reach across the
+      // boundary into canon).
+      setTangent(tangentFrom(detail));
     } catch (err) {
       // The delete DID land; degrade to local surgery so the UI matches the DB
       // (a reload reconciles the inspector/spontaneity extras this path skips).
       console.warn('post-undo resync failed, patching locally:', err);
+      if (chatIdRef.current !== chatId) return null; // switched away — same clobber guard as above
       const assistantId = assistant.id;
       const userId = user.id;
       const drop = (e: (typeof chatLog)[number]) => e.id !== assistantId && e.id !== userId;
@@ -94,8 +105,8 @@ export function useTurnUndo(session: ChatSession): {
     apiListChats().then(setChats).catch((err) => console.warn('listChats refresh failed:', err));
 
     return userText;
-  }, [chatId, chatLog, turnCount, spontaneityStateRef,
-    setMessages, setChatLog, setTurnCount, setLatestTurn, setTokenHistory, setChats]);
+  }, [chatId, chatIdRef, chatLog, turnCount, spontaneityStateRef,
+    setMessages, setChatLog, setTurnCount, setLatestTurn, setTokenHistory, setChats, setTangent]);
 
   return { undoLatestTurn };
 }
