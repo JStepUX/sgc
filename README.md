@@ -103,6 +103,20 @@ corpus) and returns your message to the composer for editing: ask again,
 minus the answer you didn't want. Undo repeatedly to walk a chat back turn by
 turn. Pure curation, no model in the loop.
 
+**Ephemeral tangents.** The ⑂ button beside the composer opens a **tangent**:
+a bookmark drops at the current turn, the thread takes on an ember wash, and
+the conversation simply continues — same loop, same retrieval, same state turn;
+Sal is never told. When you're done experimenting, a strip above the composer
+resolves it: **Make canon** keeps everything (the turns were stored normally
+all along — the bookmark just clears), or **Wipe** deletes every turn past the
+boundary in one stroke. Because Sal's inner state and turn summaries live as
+per-turn snapshots, wiping the rows *is* the rollback — Dynamic State, the grep
+corpus, and the buffers all read as if the tangent never happened. The boundary
+persists per-chat, so a reload mid-tangent resumes it. It's undo generalized
+from "latest pair" to "everything since the bookmark": pure curation, no model
+in the loop. (Chat-scoped things — the constitutional document, persona,
+mounted brains — are per-chat, not per-turn, so edits to them survive a wipe.)
+
 **Plug-in brains (the knowledge axis).** A chat can mount **knowledge packs** —
 `sgc-brain/1` JSON files of document chunks compiled offline by the sibling
 Atlantis repo (`python -m atlantis export`; fully model-free `--stub` builds
