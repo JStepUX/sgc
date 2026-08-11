@@ -121,6 +121,14 @@ db.exec(`
   if (!chatCols.some((c) => c.name === 'constitutional')) {
     db.exec(`ALTER TABLE chats ADD COLUMN constitutional TEXT NOT NULL DEFAULT ''`);
   }
+  // Migration: ephemeral tangent boundary (docs/04_ephemeral-tangent-spec.yaml,
+  // D2). NULL = no tangent open; else MAX(ordinal) of the chat's turns at entry.
+  // Additive, same pattern as above — every existing chat reads as "no tangent".
+  // Lifecycle (begin/resolve) lives in db-tangent.ts; this module owns only the
+  // column and its ride on the detail payload.
+  if (!chatCols.some((c) => c.name === 'tangent_start')) {
+    db.exec(`ALTER TABLE chats ADD COLUMN tangent_start INTEGER`);
+  }
 }
 
 // THE cap on a stored constitutional document — exported so index.ts backs
@@ -229,6 +237,9 @@ export interface ChatDetail {
    *  composed in the route from db-brains.ts (getChatBrains), not here, so
    *  this module stays free of the brains concern. */
   versions: PromptVersion[];
+  /** Open ephemeral tangent boundary — MAX(ordinal) at entry, null when no
+   *  tangent is open. Harness state only; never prompt-visible (spec 04, D5). */
+  tangentStart: number | null;
 }
 
 /** One frozen entry in a chat's prompt edit history. `n` is a stable,
@@ -319,7 +330,7 @@ export function listChats(): ChatSummary[] {
 }
 
 const getChatStmt = db.prepare(
-  `SELECT id, title, persona, mask, constitutional FROM chats WHERE id = ?`,
+  `SELECT id, title, persona, mask, constitutional, tangent_start FROM chats WHERE id = ?`,
 );
 const getChatTurnsStmt = db.prepare(`
   SELECT id, ordinal, role, content, created_at, inspector_json, active, timeless
@@ -334,6 +345,7 @@ interface ChatHeaderRow {
   persona: string | null;
   mask: string | null;
   constitutional: string;
+  tangent_start: number | null;
 }
 interface TurnRow {
   id: number;
@@ -382,6 +394,7 @@ export function loadChat(id: string): ChatDetail | null {
     mask: header.mask,
     constitutional: header.constitutional,
     versions: getPromptVersions(id),
+    tangentStart: header.tangent_start,
   };
 }
 

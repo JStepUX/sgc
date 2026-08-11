@@ -42,6 +42,10 @@ import {
   updateTurnContent as dbUpdateTurnContent,
   updateTurnInspector as dbUpdateTurnInspector,
 } from './db-turn-edits.js';
+import {
+  beginTangent as dbBeginTangent,
+  resolveTangent as dbResolveTangent,
+} from './db-tangent.js';
 import { getChatBrains as dbGetChatBrains } from './db-brains.js';
 import { registerBrainRoutes } from './brains-routes.js';
 
@@ -604,6 +608,53 @@ app.delete('/api/chats/:id/latest-turn/:assistantTurnId', (req, res) => {
   } catch (err) {
     console.error('deleteLatestTurn failed:', err);
     res.status(500).json({ error: 'Failed to undo the turn.' });
+  }
+});
+
+// Open an ephemeral tangent (docs/04_ephemeral-tangent-spec.yaml): stamp the
+// boundary into chats.tangent_start. The turns themselves keep flowing through
+// the ordinary routes — a tangent turn IS an ordinary turn until resolved. One
+// 409 covers both refusals (already open / no turns yet); the client gates
+// both too — defense in depth, not the primary check.
+app.post('/api/chats/:id/tangent', (req, res) => {
+  try {
+    const boundary = dbBeginTangent(req.params.id);
+    if (boundary === null) {
+      res.status(409).json({ error: 'A tangent is already open, or the chat has no turns yet.' });
+      return;
+    }
+    res.json({ ok: true, tangentStart: boundary });
+  } catch (err) {
+    if (err instanceof Error && /chat not found/.test(err.message)) {
+      res.status(404).json({ error: 'Chat not found.' });
+      return;
+    }
+    console.error('beginTangent failed:', err);
+    res.status(500).json({ error: 'Failed to open the tangent.' });
+  }
+});
+
+// Resolve the open tangent. canon = clear the boundary (the turns were stored
+// canon-shaped all along); discard = delete the non-timeless tail past it +
+// clear, one transaction (db-tangent.ts). Neither bumps updated_at — same
+// curation reasoning as the latest-turn undo above. 409 when nothing is open,
+// so a stale second window never double-deletes.
+app.post('/api/chats/:id/tangent/resolve', (req, res) => {
+  const { outcome } = (req.body ?? {}) as { outcome?: unknown };
+  if (outcome !== 'canon' && outcome !== 'discard') {
+    res.status(400).json({ error: "outcome must be 'canon' or 'discard'." });
+    return;
+  }
+  try {
+    const ok = dbResolveTangent(req.params.id, outcome);
+    if (!ok) {
+      res.status(409).json({ error: 'No open tangent on this chat — reload and try again.' });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('resolveTangent failed:', err);
+    res.status(500).json({ error: 'Failed to resolve the tangent.' });
   }
 });
 
