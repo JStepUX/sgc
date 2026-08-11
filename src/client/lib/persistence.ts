@@ -57,6 +57,7 @@ interface ChatDetailWire {
   constitutional: string;
   versions: PromptVersion[];
   brainIds?: string[];
+  tangentStart?: number | null;
 }
 
 export interface ChatDetail {
@@ -78,6 +79,9 @@ export interface ChatDetail {
   versions: PromptVersion[];
   /** Ids of the knowledge packs this chat has mounted (the knowledge axis). */
   brainIds: string[];
+  /** Open ephemeral-tangent boundary — MAX(ordinal) at entry, null when none
+   *  is open (spec 04). Harness state only; Sal is never told (D5). */
+  tangentStart: number | null;
 }
 
 export interface SaveTurnArgs {
@@ -129,6 +133,8 @@ export async function loadChat(id: string): Promise<ChatDetail> {
     versions: wire.versions ?? [],
     // Same tolerance for a server that predates the brains routes.
     brainIds: wire.brainIds ?? [],
+    // …and for one that predates tangents — absent reads as "none open".
+    tangentStart: wire.tangentStart ?? null,
   };
 }
 
@@ -222,6 +228,28 @@ export function deleteLatestTurn(chatId: string, assistantTurnId: number): Promi
   return jsonFetch<{ ok: true }>(
     `/api/chats/${encodeURIComponent(chatId)}/latest-turn/${assistantTurnId}`,
     { method: 'DELETE' },
+  );
+}
+
+// Open an ephemeral tangent (spec 04): the server stamps the boundary
+// (MAX ordinal) and returns it. 409 when one is already open or the chat has
+// no turns yet — the client gates both, this is the backstop.
+export function beginTangent(chatId: string): Promise<{ ok: true; tangentStart: number }> {
+  return jsonFetch<{ ok: true; tangentStart: number }>(
+    `/api/chats/${encodeURIComponent(chatId)}/tangent`,
+    { method: 'POST', body: JSON.stringify({}) },
+  );
+}
+
+// Resolve the open tangent: 'canon' clears the boundary, 'discard' also wipes
+// the non-timeless tail past it. 409 when nothing is open (stale window).
+export function resolveTangent(
+  chatId: string,
+  outcome: 'canon' | 'discard',
+): Promise<{ ok: true }> {
+  return jsonFetch<{ ok: true }>(
+    `/api/chats/${encodeURIComponent(chatId)}/tangent/resolve`,
+    { method: 'POST', body: JSON.stringify({ outcome }) },
   );
 }
 

@@ -129,6 +129,22 @@ export function replayEntry(t: ChatTurn): ChatEntry {
 }
 
 /**
+ * The tangent boundary projected into ENTRY-INDEX space: how many of a chat's
+ * replayed entries are canon (ordinal <= tangent_start), or null when no
+ * tangent is open. Server truth is ordinal space (chats.tangent_start); the
+ * thread renders entries, so the divider/guards need this projection. Counts
+ * timeless prepends too (their negative ordinals sit below any boundary) —
+ * matching exactly what replayEntry puts on screen after a reload.
+ */
+export function canonEntryCount(
+  turns: { ordinal: number }[],
+  tangentStart: number | null,
+): number | null {
+  if (tangentStart === null) return null;
+  return turns.filter((t) => t.ordinal <= tangentStart).length;
+}
+
+/**
  * Pull a turn's summary back out of its persisted inspector_json blob (the
  * TurnData stored on save) so a reloaded assistant turn can rehydrate its dimmed
  * summary line. Tolerant: a null blob, a parse failure, or an old turn saved
