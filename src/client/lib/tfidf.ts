@@ -34,13 +34,17 @@ interface TurnDoc {
 export interface GrepResult extends TurnDoc {
   score: number;
   /** The top shared terms (capped at {@link MATCHED_TERMS_CAP}) by contribution
-   * to the match — provenance for the prompt's `via "…"` prefix and the recall
-   * tool results. Post-tokenization vocabulary (lowercased, stemmed). */
+   * to the match — provenance for the prompt's `via "…"` prefix, the recall
+   * tool results, and the inspector's highlight set (RetrievalDetailModal).
+   * Post-tokenization vocabulary (lowercased, stemmed). */
   matchedTerms: string[];
 }
 
-/** How many shared terms {@link cosineSearch} reports as provenance. */
-const MATCHED_TERMS_CAP = 3;
+/** How many shared terms {@link cosineSearch} reports. Sized for the
+ * inspector's term highlighting; the prompt's `via "…"` line takes only the
+ * top PROMPT_PROVENANCE_TERMS of these (prompt.ts) so Sal's prefix stays
+ * terse. */
+const MATCHED_TERMS_CAP = 8;
 
 const STOP_WORDS = new Set<string>([
   'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had',

@@ -175,18 +175,18 @@ describe('cosineSearch', () => {
       }
     });
 
-    it('is capped at 3 even when more terms overlap', () => {
+    it('is capped at 8 even when more terms overlap', () => {
+      const shared =
+        'maren glassblowing furnace crucible annealing kiln punty marver blowpipe gaffer';
       const wide: ChatEntry[] = [
-        { role: 'user', content: 'maren glassblowing furnace crucible annealing kiln', createdAt: T0 },
-        { role: 'assistant', content: 'maren glassblowing furnace crucible annealing kiln', createdAt: T0 },
+        { role: 'user', content: shared, createdAt: T0 },
+        { role: 'assistant', content: shared, createdAt: T0 },
         ...log.slice(4),
       ];
-      const results = cosineSearch(
-        'maren glassblowing furnace crucible annealing kiln',
-        wide,
-      );
+      const results = cosineSearch(shared, wide);
       expect(results.length).toBeGreaterThan(0);
-      expect(results[0].matchedTerms).toHaveLength(3);
+      // 10 content words overlap; the report stops at the cap.
+      expect(results[0].matchedTerms).toHaveLength(8);
     });
   });
 

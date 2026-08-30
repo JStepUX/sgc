@@ -835,6 +835,18 @@ describe('buildPrompt — deliberate recall surfaces', () => {
     expect(frag).not.toContain('via');
   });
 
+  it('formatGrepFragment takes only the top 3 terms of a wider engine report', () => {
+    // The engine caps matchedTerms at 8 for the inspector's highlighting;
+    // Sal's prefix keeps the terse cap it has always had (ranked desc, so
+    // the strongest three survive).
+    const frag = formatGrepFragment(
+      scored({ matchedTerms: ['maren', 'glassblow', 'furnac', 'crucibl', 'kiln'] }),
+      now,
+    );
+    expect(frag).toContain('via "maren, glassblow, furnac"]');
+    expect(frag).not.toContain('crucibl');
+  });
+
   it('formatGrepFragment keeps the timeless tag alongside provenance', () => {
     const frag = formatGrepFragment(scored({ timeless: true, matchedTerms: ['shellfish'] }), now);
     expect(frag).toContain('[Turn 5 · timeless · via "shellfish"]');

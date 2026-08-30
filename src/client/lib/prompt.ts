@@ -64,11 +64,19 @@ export type GrepFragmentSource = Pick<
  * shared terms behind the hit (lowercase post-tokenization vocabulary — it's
  * provenance, not prose), omitted when there are none (neighbor fetches).
  */
+
+/** How many provenance terms the `via "…"` prefix carries. The engine reports
+ * up to MATCHED_TERMS_CAP (tfidf.ts, sized for the inspector's highlighting);
+ * the prompt takes the top 3 — the cap the prefix has always had — so widening
+ * the engine's report never changes what Sal reads. */
+const PROMPT_PROVENANCE_TERMS = 3;
+
 export function formatGrepFragment(r: GrepFragmentSource, now: number): string {
   const when = r.timeless ? 'timeless' : formatRelative(r.createdAt, now);
   // Tolerate a missing array at runtime — results rehydrated from data that
-  // predates provenance (inspector_json blobs) won't carry it.
-  const terms = r.matchedTerms ?? [];
+  // predates provenance (inspector_json blobs) won't carry it. Terms arrive
+  // ranked by contribution desc, so the slice keeps the strongest.
+  const terms = (r.matchedTerms ?? []).slice(0, PROMPT_PROVENANCE_TERMS);
   const via = terms.length > 0 ? ` · via "${terms.join(', ')}"` : '';
   const prefix = `[Turn ${r.turnIndex} · ${when}${via}]`;
   return `  ${prefix} User: ${r.userContent}\n  ${prefix} Assistant: ${r.assistContent}`;
