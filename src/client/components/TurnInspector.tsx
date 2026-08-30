@@ -1,9 +1,10 @@
-import { memo } from 'react';
+import { memo, useEffect, useState } from 'react';
 import type { DynamicState } from '../lib/types';
 import type { TurnData } from '../lib/turn-data';
 import { operatorLabel } from '../lib/spontaneity/flexDeck';
 import { DEFAULT_SLACK_THRESHOLD } from '../lib/spontaneity/slackDetector';
 import { RAIL_LABEL, RAIL_SUB } from './rail-styles';
+import { RetrievalDetailModal, type RetrievalSelection } from './RetrievalDetailModal';
 import { Card } from '@/components/ui/card';
 
 // ============================================================
@@ -46,6 +47,18 @@ export const TurnInspector = memo(function TurnInspector({
   stateEditorDisabled = false,
   carriedState = null,
 }: TurnInspectorProps) {
+  // Which citation card is opened in the RetrievalDetailModal. Local by
+  // design: the selection is derived purely from this turn's props. The modal
+  // itself portals to document.body, so the rail's overflow doesn't clip it.
+  const [selection, setSelection] = useState<RetrievalSelection | null>(null);
+
+  // This component stays MOUNTED across turns (memo, not keyed), so useState
+  // survives the next turn's diagnostics replacing the rail — an open receipt
+  // must be closed explicitly or the modal outlives the turn it belongs to.
+  useEffect(() => {
+    setSelection(null);
+  }, [turnData?.turnNumber]);
+
   if (!turnData) {
     return <div className="py-2 text-[12.5px] italic text-fg-3">Nothing yet. Say something.</div>;
   }
@@ -147,17 +160,28 @@ export const TurnInspector = memo(function TurnInspector({
       {turnData.grepFired && turnData.grepDetails && (
         <div className="mt-1 flex flex-col gap-2">
           {turnData.grepDetails.map((g, i) => (
+            // The card is a receipt; clicking opens the RetrievalDetailModal
+            // with the full served text. <button> for keyboard/SR access.
             <Card
               key={i}
-              className="gap-0 rounded-[4px_10px_10px_4px] border border-l-2 border-l-ember px-3 py-2.5 shadow-none"
+              className="gap-0 rounded-[4px_10px_10px_4px] border border-l-2 border-l-ember px-0 py-0 shadow-none"
             >
-              <div className="mb-1 flex items-baseline gap-3 font-mono text-[10.5px] text-fg-3">
-                <span className="font-medium text-fg-1">Turn {g.turnIndex}</span>
-                <span>score: {g.score.toFixed(3)}</span>
-              </div>
-              <div className="overflow-hidden text-ellipsis whitespace-nowrap text-xs leading-[1.5] text-fg-2">
-                {g.preview}
-              </div>
+              <button
+                type="button"
+                onClick={() => setSelection({ kind: 'turn', detail: g })}
+                aria-haspopup="dialog"
+                aria-label={`Open the full text retrieved from turn ${g.turnIndex}`}
+                className="w-full cursor-pointer px-3 py-2.5 text-left transition-colors hover:bg-ember/[0.05]"
+              >
+                <div className="mb-1 flex items-baseline gap-3 font-mono text-[10.5px] text-fg-3">
+                  <span className="font-medium text-fg-1">Turn {g.turnIndex}</span>
+                  <span>score: {g.score.toFixed(3)}</span>
+                  <span className="ml-auto shrink-0 text-fg-4">expand ›</span>
+                </div>
+                <div className="overflow-hidden text-ellipsis whitespace-nowrap text-xs leading-[1.5] text-fg-2">
+                  {g.preview}
+                </div>
+              </button>
             </Card>
           ))}
         </div>
@@ -167,19 +191,29 @@ export const TurnInspector = memo(function TurnInspector({
         <div className="mt-1 flex flex-col gap-2">
           {turnData.knowledgeDetails.map((k, i) => (
             // Same card idiom as a grep match — provenance line (brain ·
-            // document · score), then the fragment preview.
+            // document · score), then the fragment preview. Clickable like
+            // the grep cards; opens the same modal.
             <Card
               key={i}
-              className="gap-0 rounded-[4px_10px_10px_4px] border border-l-2 border-l-ember px-3 py-2.5 shadow-none"
+              className="gap-0 rounded-[4px_10px_10px_4px] border border-l-2 border-l-ember px-0 py-0 shadow-none"
             >
-              <div className="mb-1 flex items-baseline gap-3 font-mono text-[10.5px] text-fg-3">
-                <span className="font-medium text-fg-1">{k.brainName}</span>
-                <span className="overflow-hidden text-ellipsis whitespace-nowrap">{k.title}</span>
-                <span className="shrink-0">score: {k.score.toFixed(3)}</span>
-              </div>
-              <div className="overflow-hidden text-ellipsis whitespace-nowrap text-xs leading-[1.5] text-fg-2">
-                {k.preview}
-              </div>
+              <button
+                type="button"
+                onClick={() => setSelection({ kind: 'knowledge', detail: k })}
+                aria-haspopup="dialog"
+                aria-label={`Open the full fragment retrieved from ${k.brainName}`}
+                className="w-full cursor-pointer px-3 py-2.5 text-left transition-colors hover:bg-ember/[0.05]"
+              >
+                <div className="mb-1 flex items-baseline gap-3 font-mono text-[10.5px] text-fg-3">
+                  <span className="font-medium text-fg-1">{k.brainName}</span>
+                  <span className="overflow-hidden text-ellipsis whitespace-nowrap">{k.title}</span>
+                  <span className="shrink-0">score: {k.score.toFixed(3)}</span>
+                  <span className="shrink-0 text-fg-4">›</span>
+                </div>
+                <div className="overflow-hidden text-ellipsis whitespace-nowrap text-xs leading-[1.5] text-fg-2">
+                  {k.preview}
+                </div>
+              </button>
             </Card>
           ))}
         </div>
@@ -401,6 +435,10 @@ export const TurnInspector = memo(function TurnInspector({
           )}
         </Card>
       )}
+
+      {/* Portals to document.body — position in this tree is irrelevant to
+          layout; it lives here because the selection state does. */}
+      <RetrievalDetailModal selection={selection} onClose={() => setSelection(null)} />
     </section>
   );
 });
