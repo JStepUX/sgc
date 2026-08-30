@@ -12,20 +12,44 @@ import { parseTurnResponse } from './turn-parser';
 // parsers below.
 // ============================================================
 
+/** One ambient grep hit, projected for the inspector's citation cards and the
+ * RetrievalDetailModal. Beyond `preview` (the card's one-liner), it records the
+ * FULL text as served to the prompt — the honest diagnostic: immune to later
+ * memory edits, exactly what Sal read. All fields past `preview` are optional
+ * because rows persisted before 2026-08-30 carry only the 80-char preview; the
+ * modal degrades to the preview plus a "not recorded" note for those. */
 export interface GrepDetail {
   turnIndex: number;
+  /** The combined (concept × time) score — the ranking actually used. */
   score: number;
   preview: string;
+  /** Full user half of the retrieved turn-pair, as served. */
+  userContent?: string;
+  /** Full assistant half of the retrieved turn-pair, as served. */
+  assistContent?: string;
+  /** The engine's provenance terms (stemmed vocabulary, ranked by
+   * contribution) — the modal's highlight set. */
+  matchedTerms?: string[];
+  conceptScore?: number;
+  timeScore?: number;
+  /** Epoch ms + timeless flag, so the modal can date the retrieved turn
+   * (relative to viewing time — the prompt's own prefix was relative to
+   * serve time, which isn't persisted). */
+  createdAt?: number;
+  timeless?: boolean;
 }
 
 /** One retrieved knowledge fragment (the knowledge axis — lib/brains.ts),
- * projected for the inspector's Knowledge tile. Mirrors GrepDetail. */
+ * projected for the inspector's Knowledge tile. Mirrors GrepDetail, including
+ * the optional full `text` (absent on rows persisted before 2026-08-30). */
 export interface KnowledgeDetail {
   brainName: string;
   chunkId: string;
   title: string;
   score: number;
   preview: string;
+  /** Full fragment text as served to the prompt. */
+  text?: string;
 }
 
 // Spontaneity diagnostics come from SpontaneityInspector (lib/spontaneity/engine):

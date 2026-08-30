@@ -193,6 +193,16 @@ export function useTurnRunner(
           // visible ranking matches what was actually used to retrieve.
           score: r.combinedScore,
           preview: r.userContent.slice(0, 80),
+          // The full served text + provenance, for the RetrievalDetailModal.
+          // Persisted verbatim (not looked up at render) so the diagnostic
+          // stays what Sal ACTUALLY read even after memory edits.
+          userContent: r.userContent,
+          assistContent: r.assistContent,
+          matchedTerms: r.matchedTerms,
+          conceptScore: r.conceptScore,
+          timeScore: r.timeScore,
+          createdAt: r.createdAt,
+          timeless: r.timeless,
         }));
       }
       if (knowledge && knowledge.results.length > 0) {
@@ -202,6 +212,8 @@ export function useTurnRunner(
           title: r.title,
           score: r.score,
           preview: r.text.slice(0, 80),
+          // Full fragment as served — survives a later unmount of the brain.
+          text: r.text,
         }));
       }
 
