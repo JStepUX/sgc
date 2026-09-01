@@ -83,7 +83,7 @@ git/health checks, see if one of these already does it.** Run via
 | `codebase-snapshot.sh` | Project tree, git log, file counts, Claude surface | `codebase-snapshot.sh` |
 | `git-context.sh` | Status, diffs, branch info for commits/PRs | `git-context.sh [base-branch]` |
 | `related-files.sh` | Grep for a term + match context, grouped by file | `related-files.sh <term> [dir]` |
-| `health-check.sh` | Build tooling, lint, tests, git state, code/secret markers | `health-check.sh` |
+| `health-check.sh` | Build tooling, lint, tests, git state, release drift, code/secret markers | `health-check.sh` |
 
 Shared utilities (project-root detection, colors, exclude patterns,
 `SOURCE_GLOBS`) live in `_common.sh`. `health-check.sh` runs `npm run lint` and
@@ -124,3 +124,8 @@ re-walked gates) once review findings come back. The loop:
 
 The skill writes a marker that unlocks commits for 10 minutes. Use bare `git`
 commands (no `cd` prefix) so the pre-approved `Bash(git:*)` permission matches.
+
+**Cutting a release** (version bump → tag → GitHub release → CI DMG) has its
+own runbook: `docs/releasing.md`. Follow it — the naming facts alone
+(`sgc_vX.Y.Z` tags, artifact names bound to `package.json` version) are easy
+to get wrong from memory.

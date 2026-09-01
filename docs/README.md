@@ -3,6 +3,8 @@
 - `phase-1-5-reference.jsx` — the frozen original single-file artifact; the
   Phase 1.5 contract the Mission Brief (`CLAUDE.md`) protects. Never edit it.
 - `*-spec.yaml` — implementation specs (format below).
+- `releasing.md` — the release runbook: bump → gate → pack → tag → GitHub
+  release → CI mac DMG. Read it before cutting a release.
 - `changelogs/` — month-by-month change log; the QA gate requires an entry for
   every landing.
 - `ignored/` — **gitignored.** Anything moved here silently leaves version

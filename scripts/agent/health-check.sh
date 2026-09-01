@@ -52,6 +52,26 @@ fi
 subheader "Git Status"
 git status --short 2>/dev/null || dim "  (not a git repo)"
 
+# ── Release Drift (tripwire) ──
+# Catches the 2026-07/08 failure mode: version bumps landing with no tag or
+# GitHub release ever following (1.3.0–1.5.0 shipped local-only, unnoticed for
+# two months). package.json and the latest reachable sgc_v* tag should agree
+# except in the minutes between a release commit and its tag
+# (docs/releasing.md steps 5–6) — so this warns, it doesn't block.
+subheader "Release Drift"
+pkg_version=$(node -p "require('./package.json').version" 2>/dev/null || true)
+latest_tag=$(git describe --tags --abbrev=0 --match 'sgc_v*' 2>/dev/null || true)
+if [ -z "$pkg_version" ] || [ -z "$latest_tag" ]; then
+  dim "  (version or sgc_v* tag unavailable — skipping)"
+elif [ "sgc_v$pkg_version" = "$latest_tag" ]; then
+  echo -e "  ${GREEN}+ package.json $pkg_version matches latest tag $latest_tag${RESET}"
+else
+  warn "package.json is $pkg_version but the latest reachable tag is $latest_tag."
+  warn "Legal only in the minutes between a release commit and its tag"
+  warn "(docs/releasing.md steps 5-6). Otherwise a release stalled half-cut:"
+  warn "bumped but never tagged/published."
+fi
+
 # ── Code Markers ──
 subheader "Code Markers (TODO / FIXME / HACK / XXX)"
 for marker in TODO FIXME HACK XXX; do
