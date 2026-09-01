@@ -29,7 +29,11 @@ try {
   if (exitCode !== 0) {
     console.error('\n[dist-mac] electron-rebuild failed — skipping electron-builder.');
   } else {
-    exitCode = run('npx', ['electron-builder', '--mac', '--arm64']);
+    // --publish never is load-bearing (first CI firing, 2026-09-01):
+    // electron-builder 26 IMPLICITLY publishes when it detects a git tag and
+    // then dies without GH_TOKEN in the build step. The workflow's upload
+    // step is the only publisher; the builder must never be.
+    exitCode = run('npx', ['electron-builder', '--mac', '--arm64', '--publish', 'never']);
   }
 } finally {
   const restoreExit = run('npm', ['rebuild', 'better-sqlite3']);

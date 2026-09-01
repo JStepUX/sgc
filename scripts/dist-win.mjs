@@ -26,7 +26,10 @@ try {
   if (exitCode !== 0) {
     console.error('\n[dist-win] electron-rebuild failed — skipping electron-builder.');
   } else {
-    exitCode = run('npx', ['electron-builder', '--win', '--x64']);
+    // --publish never: electron-builder 26 implicitly publishes when a git
+    // tag points at HEAD (crashed the first mac CI run, 2026-09-01). Releases
+    // are published by hand / by the release-mac workflow, never by the builder.
+    exitCode = run('npx', ['electron-builder', '--win', '--x64', '--publish', 'never']);
   }
 } finally {
   const restoreExit = run('npm', ['rebuild', 'better-sqlite3']);
