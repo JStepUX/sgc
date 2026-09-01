@@ -72,7 +72,8 @@ This machine has NO Visual Studio toolchain, so `electron-builder`'s pack-time
 the target Electron ABI. Electron 42 (ABI 146) had none → node-gyp → "Could not
 find any Visual Studio installation". Electron is pinned to `^41` (ABI 145,
 prebuild exists) for exactly this reason — before bumping the Electron major,
-check the better-sqlite3 release assets for `electron-v<abi>-win32-x64`
+check the better-sqlite3 release assets for `electron-v<abi>-win32-x64` — and
+`electron-v<abi>-darwin-arm64`, which the release-mac.yml CI build needs
 (`node -e "require('node-abi').getAbi('<ver>','electron')"` gives the ABI).
 Separately: `npm run dist:win` MUTATES node_modules to the Electron ABI; the
 wrapper (`scripts/dist-win.mjs`) restores the Node ABI in a `finally`, so

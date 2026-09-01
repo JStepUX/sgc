@@ -1,0 +1,120 @@
+spec: macOS packaging — DMG built in CI, same embedded-server shell, unsigned first
+status: implemented           # 2026-09-01 — P1-P4 ruled same day (arm64-only / unsigned / keep-quit-on-close / build-only); S1-S6 landed. Runtime NEVER verified on mac hardware — see verification.
+date: 2026-09-01
+goal: >
+  Ship SGC as a macOS DMG built by a GitHub Actions macos runner on tag push
+  (this machine is Windows and electron-builder cannot produce mac targets from
+  it). App code is already portable — the work is build config, an icns-capable
+  icon, a dist wrapper, a CI workflow, and a Gatekeeper posture. No src/**
+  change anywhere.
+
+invariant_check:
+  off_thesis: distribution only — no model, no memory path, no prompt delta, no new API call. Sal never knows the OS.
+  server_untouched: src/server/** byte-unchanged; the fork path (utilityProcess.fork, electron/serverManager.ts:51) is platform-neutral.
+  client_untouched: src/client/** byte-unchanged.
+  classification: packaging, same family as the electron-release spec (docs/ignored/electron-release-spec.yaml). Zero thesis surface.
+
+verified_facts:               # checked 2026-09-01, not assumed
+  no_platform_branches: "grep over electron/ + src/server for win32|darwin|process.platform|.exe finds none; all paths derive from app.getPath('userData')"
+  sqlite_prebuilds_exist: "better-sqlite3 v12.10.0 release assets include electron-v145-darwin-arm64 AND -x64 (checked via gh api) — the AGENTS.md prebuild-or-MSVC trap has a mac answer, and macs have clang via Xcode CLT as fallback"
+  icon_source: "resources/icon.icns, PRE-GENERATED from public/sal_logo_1024.png via png2icons (see review_hardening F4 — electron-builder 26.15.2+ icns generation is broken upstream). Full native ladder incl. 512@2x; entry table verified (is32/il32 present — the entries the upstream bug drops). NOT build/icon.icns — build/ is gitignored (same silent-drop class as docs/ignored/). public/sal_logo_512.png is superseded by the 1024 and unreferenced."
+  window_icon_safe: "main.ts:21 .ico path is existsSync-guarded and macOS ignores BrowserWindow.icon anyway (dock icon comes from the bundle)"
+  repo_public: "JStepUX/sgc is PUBLIC — macos-latest runner minutes are free"
+  no_workflows_yet: ".github/ does not exist"
+  runner_arch: "macos-latest = arm64 (Apple Silicon) since GH's 2024 switch; x64 needs macos-13 or a universal build"
+
+decision_points:              # ALL RULED by developer 2026-09-01: each `recommend` below accepted as-is (arm64-only / unsigned / keep-quit-on-close / build-only)
+  - id: P1-architecture
+    options: [ arm64-only, universal, two-artifacts ]
+    recommend: arm64-only
+    rationale: all Apple Silicon since 2020; universal doubles binary size (two Electron payloads); Intel holdouts can request later. Prebuilds exist for both if reversed.
+  - id: P2-signing-posture
+    options: [ unsigned, adhoc, developer-id-notarized ]
+    recommend: unsigned first (mac.identity null), matching the auto-update spec's "unsigned accepted" posture (docs/auto-update-spec.yaml status line)
+    cost_if_signed: Apple Developer Program $99/yr + Developer ID cert as CI secrets + notarytool step (electron-builder automates via APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD/APPLE_TEAM_ID env)
+    consequence_unsigned: Gatekeeper shows "damaged / can't be opened" — user must right-click→Open or `xattr -cr`; README must say so (step S6)
+  - id: P3-lifecycle-convention
+    options: [ keep-quit-on-close, mac-convention-persist ]
+    recommend: keep-quit-on-close (main.ts:106-108 unchanged)
+    rationale: single-window app wrapping an embedded server; persisting after last-window-close (the mac convention) keeps the server child alive with no window to show and adds an activate/recreate path for zero user value. Deviation from platform convention is deliberate — note it in the main.ts header, not a conditional.
+  - id: P4-ci-test-gate
+    options: [ full-suite-in-workflow, build-only ]
+    recommend: build-only (typecheck + vitest already gate every landing locally; the tag IS the release order — CI re-running 479 tests on a mac runner guards against nothing the tag didn't already pass)
+
+build_steps:                  # ordered; S1-S4 land from this machine, S5 verifies in CI
+  - id: S1-builder-config
+    file: package.json
+    change: >
+      add to "build" (after the "win" block, package.json:54-59):
+      "mac": { "target": [{ "target": "dmg", "arch": ["arm64"] }],
+      "icon": "resources/icon.icns", "category": "public.app-category.developer-tools",
+      "identity": null }.
+      arch per P1; drop "identity" key if P2 chooses signing.
+    note: icon is the PRE-GENERATED icns, not the png — builder-side icns generation is broken in the pinned version (review_hardening F4). artifactName (package.json:30) already yields sgc-v${version}.dmg with no change.
+  - id: S2-dist-wrapper
+    file: scripts/dist-mac.mjs (new; sibling of scripts/dist-win.mjs, 44 lines)
+    change: >
+      same force-rebuild → electron-builder → finally-restore shape with
+      ['--mac', '--arm64'] instead of ['--win', '--x64']. The .forge-meta
+      marker trap (AGENTS.md better-sqlite3 entry) is platform-general —
+      marker reads e.g. "arm64--145" — so keep the -f and the marker scrub
+      even though CI's node_modules is ephemeral: the script must also be
+      safe on a physical mac.
+    alt: generalizing both wrappers into one dist.mjs taking a platform arg is acceptable if the diff stays small; two 44-line siblings beat one clever script (Core Value 4 cuts both ways — implementer latitude).
+  - id: S3-npm-script
+    file: package.json
+    change: '"dist:mac": "npm run electron:build && node scripts/dist-mac.mjs" beside dist:win (package.json:18)'
+  - id: S4-ci-workflow
+    file: .github/workflows/release-mac.yml (new)
+    change: >
+      on push tags 'sgc_v*'; runs-on macos-latest; steps: checkout,
+      setup-node 22 + npm ci, npm run dist:mac, gh release upload
+      "$GITHUB_REF_NAME" release/sgc-v*.dmg --clobber
+      (env GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}; permissions contents: write).
+      The workflow UPLOADS to the release the tag's publisher already created —
+      it never creates releases (the human-authored notes flow from the
+      2026-09-01 v1.6.0 landing stays the source of the release body).
+    note: first run will trail the tag push that lands this spec's own release — expected; re-run or re-tag is the recovery, not a workflow redesign.
+  - id: S5-spellcheck-note
+    file: electron/spellcheck.ts (header comment only, no code)
+    change: >
+      note that on darwin Electron uses the native OS spellchecker and
+      setSpellCheckerLanguages is a no-op — pickSpellcheckLanguages' empty-list
+      guard (spellcheck.ts:52-57) already makes this safe; the en-US pick
+      simply doesn't apply there.
+  - id: S6-readme
+    file: README.md
+    change: >
+      desktop section (README.md:163) gains the mac install path: download DMG →
+      drag to Applications → (while P2=unsigned) right-click→Open on first
+      launch, with the xattr -cr escape hatch. Add dist:mac to the script table
+      (README.md:182) marked "runs in CI or on a mac — not from Windows".
+
+review_hardening_2026-09-01:  # Codex adversarial review, 6 findings — every claim re-verified against code/upstream before acting; all held (one overstated)
+  - finding: "F1 upload races the hand-created release — a tag pushed before its release exists fails the job (CONFIRMED as brittleness; OVERSTATED as 'fails in the normal flow' — the practiced flow creates the release seconds after the tag while the build needs ~5 min, so it usually wins the race)"
+    fix: upload step waits for the release (20 x 30s poll) before uploading; still never creates one
+  - finding: "F2 a tag without a package.json bump ships a wrong-versioned DMG under the broad upload glob (CONFIRMED)"
+    fix: guard step fails the run when tag != sgc_v<package.json version>
+  - finding: "F3 dist:mac on an Intel mac rebuilds better-sqlite3 for x64 while packaging arm64 → ERR_DLOPEN_FAILED (CONFIRMED — electron-rebuild defaults to HOST arch)"
+    fix: --arch arm64 pinned in scripts/dist-mac.mjs
+  - finding: "F4 electron-builder 26.15.2/.3 generates icns missing the non-retina 16/32 entries (CONFIRMED upstream — issue 9940, regression from PR 9851's wasm-vips swap; last good 26.15.1, fix unreleased)"
+    fix: icns pre-generated with png2icons (the exact tool the regression replaced) into resources/icon.icns; entry table inspected locally — is32/il32 present, the entries the bug drops. Takes icon generation out of the buggy path instead of downgrading the builder under the working Windows pipeline.
+  - finding: "F5 the spec's workflow_dispatch verification route didn't exist in the workflow (CONFIRMED)"
+    fix: workflow_dispatch trigger added — build-only smoke; tag-guarded steps skip without a tag ref
+  - finding: "F6 three landed-doc claims untrue — README lacked drag-to-Applications, main.ts lacked the P3 note, spellcheck.ts still said 'SGC ships Windows-only' (ALL CONFIRMED)"
+    fix: all three corrected in place
+
+interactions:
+  auto_update_spec: docs/auto-update-spec.yaml (proposed) is Windows-shaped — latest.yml + NSIS differential. If it lands after this, mac needs a zip target beside dmg (electron-updater on darwin updates from the zip, publishes latest-mac.yml) and Squirrel.Mac REQUIRES a signed app — P2 unsigned forecloses mac auto-update until signing is bought. State this in whichever spec lands second.
+  agents_md: extend the better-sqlite3 entry's ABI-check instruction to name darwin assets (electron-v<abi>-darwin-arm64) when this lands — one clause, not a new entry.
+
+verification:
+  from_this_machine: [ typecheck+lint+tests green (config/scripts only — nothing runtime changes on win32), dist:win still packs (S1 must not disturb the win block), workflow YAML lints (actionlint or gh workflow view) ]
+  in_ci: [ workflow completes on a scratch tag or workflow_dispatch, dmg lands on the release, dmg size sane (~100MB, matches .exe ballpark) ]
+  needs_mac_hardware:         # PERMANENTLY OPEN — developer has no Mac (ruled 2026-09-01). DMG ships labeled unsigned+untested (README + release notes must say so). Spec archives once CI lands a DMG on a real tag; these checks stay a standing invitation for a mac-equipped contributor, not a gate.
+    - fresh install boots; server forks; db lands at ~/Library/Application Support/sgc/data/sgc.db (Electron derives userData from package.json name — same rule that gave %APPDATA%\sgc on win)
+    - stock brains seed on first boot (electron/stock-brains.ts resourcesPath → userData copy)
+    - provider config modal writes sgc-config.json + restart works
+    - one real turn streams (LOCAL or Anthropic)
+    - Gatekeeper path: right-click→Open actually clears quarantine on current macOS
+    - clean quit, no orphan server process

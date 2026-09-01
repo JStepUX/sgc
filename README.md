@@ -171,6 +171,15 @@ needed. The installer also ships **stock brains** — curated knowledge packs
 your brains directory on first boot and offered in the Begin-again picker and
 the Brain Manager; delete one and it stays deleted.
 
+**Desktop (macOS).** Pushing a release tag (`sgc_v*`) triggers a GitHub Actions
+workflow that builds an arm64 DMG and attaches it to that tag's release.
+Install: download the DMG, open it, drag the app into Applications. The
+DMG is **unsigned and untested on real hardware** (it is built in CI; the
+developer has no Mac) — on first launch, right-click the app → Open, or clear
+quarantine with `xattr -cr "/Applications/Salience-Gated Cognition.app"`.
+`npm run dist:mac` runs the same pack locally, on a Mac only — electron-builder
+cannot build mac targets from Windows.
+
 | Command | Does |
 |---------|------|
 | `npm run dev` | Client + server, hot-reloading |
@@ -180,13 +189,14 @@ the Brain Manager; delete one and it stays deleted.
 | `npm run lint` | ESLint |
 | `npm run build` | Production build into `dist/` |
 | `npm run dist:win` | Windows NSIS installer into `release/` |
+| `npm run dist:mac` | macOS arm64 DMG into `release/` — runs in CI or on a Mac, not from Windows |
 
 ## Repository layout
 
 ```
 src/client/    React + TypeScript UI; lib/ holds the memory-architecture logic
 src/server/    Express server — provider keys/URLs, /api/turn (SSE), SQLite persistence
-electron/      Windows desktop shell — forks the server, supervises, never thinks
+electron/      desktop shell (Windows + mac) — forks the server, supervises, never thinks
 resources/     stock brains — sgc-brain/1 packs bundled into the installer
 docs/          frozen reference artifact, YAML specs, changelogs — see docs/README.md
 scripts/agent/ Bash utilities for codebase recon and checks

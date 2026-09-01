@@ -104,5 +104,10 @@ app.on('will-quit', () => {
 });
 
 app.on('window-all-closed', () => {
+  // Quit-on-close holds on macOS too — a DELIBERATE deviation from the mac
+  // convention of persisting in the dock (packaging spec 05, ruling P3):
+  // SGC is a single-window app wrapping an embedded server child; persisting
+  // windowless would keep that server alive for nothing and add an
+  // activate/recreate path for zero user value.
   app.quit();
 });

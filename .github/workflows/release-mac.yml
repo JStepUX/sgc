@@ -1,0 +1,50 @@
+# Builds the macOS DMG for a pushed release tag and attaches it to that tag's
+# EXISTING GitHub release. Rulings (docs/05_mac-packaging-spec.yaml):
+#   P1 arm64-only · P2 unsigned (mac.identity null) · P4 build-only — the
+#   typecheck/lint/test gates already ran locally before the tag existed.
+# This workflow UPLOADS only — it never creates a release; the human-authored
+# release notes stay the source of the body. Because the release is created by
+# hand seconds-to-minutes AFTER the tag push, the upload step WAITS for it
+# (up to 10 min) instead of racing it. The DMG is unsigned and untested on
+# real mac hardware (the developer has no Mac) — README says so.
+# workflow_dispatch = build-only smoke run: no tag, so the guarded steps skip.
+name: release-mac
+
+on:
+  push:
+    tags: ['sgc_v*']
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  dmg:
+    runs-on: macos-latest # arm64 (Apple Silicon)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Tag must match package.json version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          v="$(node -p "require('./package.json').version")"
+          if [ "$GITHUB_REF_NAME" != "sgc_v$v" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json version $v — the DMG would carry the wrong version. Bump package.json (or fix the tag) and re-tag."
+            exit 1
+          fi
+      - run: npm ci
+      - run: npm run dist:mac
+      - name: Upload DMG to the tag's release (waits for the release to exist)
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for i in $(seq 1 20); do
+            if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then break; fi
+            echo "release $GITHUB_REF_NAME not created yet — waiting ($i/20)"
+            sleep 30
+          done
+          gh release upload "$GITHUB_REF_NAME" release/sgc-v*.dmg --clobber

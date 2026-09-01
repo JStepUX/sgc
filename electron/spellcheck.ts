@@ -13,6 +13,11 @@
 // logging below is the trade for that: if the fetch ever breaks, it says so
 // instead of quietly dropping every squiggle. Core Value #5.
 //
+// macOS (packaging spec 05): darwin uses the OS-native spellchecker —
+// setSpellCheckerLanguages is a no-op there and the .bdic download lifecycle
+// never fires. pickSpellcheckLanguages' empty-list guard already makes this
+// wiring safe on mac; the en-US pick simply doesn't apply.
+//
 // Electron-free at runtime — types only, with Menu injected by the caller — so
 // these tests run under plain Node like config.ts's.
 
@@ -106,7 +111,8 @@ function logDictionaryLifecycle(session: Session): void {
   instrumented.add(session);
 
   // These never fire on macOS, which uses the native OS spellchecker and skips
-  // the download path entirely. SGC ships Windows-only, so this is the path.
+  // the download path entirely — on the mac build (packaging spec 05) this
+  // instrumentation is quiet by design. On Windows it is the live path.
   session.on('spellcheck-dictionary-download-begin', (_event, lang) => {
     console.log(`spellcheck: downloading the ${lang} dictionary`);
   });

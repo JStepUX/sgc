@@ -16,6 +16,7 @@
     "electron:dev:run": "wait-on http://localhost:5555 && npm run build:electron && electron dist/electron/main.cjs",
     "electron:build": "npm run build && npm run build:electron",
     "dist:win": "npm run electron:build && node scripts/dist-win.mjs",
+    "dist:mac": "npm run electron:build && node scripts/dist-mac.mjs",
     "rebuild:electron": "electron-rebuild -f -w better-sqlite3",
     "seed:dev": "node scripts/seed-dev-brains.mjs",
     "rebuild:node": "npm rebuild better-sqlite3",
@@ -61,6 +62,19 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "resources/icon.icns",
+      "category": "public.app-category.developer-tools",
+      "identity": null
     }
   },
   "dependencies": {
