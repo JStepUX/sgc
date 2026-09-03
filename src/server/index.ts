@@ -61,7 +61,7 @@ const API_KEY = process.env.ANTHROPIC_API_KEY;
 const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL; // e.g. http://localhost:5001/v1
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || ''; // KoboldCPP ignores this
 const LLM_MODEL = process.env.LLM_MODEL || 'koboldcpp'; // label only — local server serves whatever is loaded
-const LLM_MAX_TOKENS = Number(process.env.LLM_MAX_TOKENS) || 512;
+const LLM_MAX_TOKENS = Number(process.env.LLM_MAX_TOKENS) || 4096;
 
 // ProviderId ('anthropic' | 'openai') and the per-turn routing rule live in
 // providers.ts (resolveTurnProvider) so the routing logic is unit-tested.
@@ -76,8 +76,11 @@ const anthropic = API_KEY ? new Anthropic({ apiKey: API_KEY, timeout: 60_000 }) 
 
 // Provider registry. A provider is "available" when its config is present
 // (Anthropic key set / OPENAI_BASE_URL set) — config-presence only; a live
-// /v1/models ping is deferred (spec: availability). LLM_MAX_TOKENS is small by
-// default because local context windows are small (configured in KoboldCPP).
+// /v1/models ping is deferred (spec: availability). LLM_MAX_TOKENS is a CEILING,
+// not a target: reasoning models (Qwen3 & co.) spend most of it inside <think>
+// before the reply starts, so it has to be roomy or the reply never arrives —
+// reply LENGTH is steered by the prompt's pacing line (lib/prompt.ts), never by
+// this cap. The local server clamps it to its own context length regardless.
 const providers: Partial<Record<ProviderId, TurnProvider>> = {};
 if (anthropic) {
   providers.anthropic = createAnthropicProvider({ client: anthropic, model: MODEL, maxTokens: MAX_TOKENS });

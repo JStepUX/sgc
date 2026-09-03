@@ -207,4 +207,9 @@ export function createAnthropicProvider(opts: {
 // The OpenAI-compatible provider (createOpenAIProvider), its SSE parser
 // (parseOpenAIStream, re-exported below for the existing test import path),
 // and the message-flattening helper live in openai-provider.ts.
-export { createOpenAIProvider, parseOpenAIStream, type OpenAIStreamResult } from './openai-provider.js';
+export {
+  createOpenAIProvider,
+  parseOpenAIStream,
+  separateThinking,
+  type OpenAIStreamResult,
+} from './openai-provider.js';

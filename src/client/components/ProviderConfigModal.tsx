@@ -381,11 +381,13 @@ export function ProviderConfigModal({
                 disabled={isWeb || busy}
                 onChange={(e) => setMaxTokens(e.target.value)}
                 inputMode="numeric"
-                placeholder="blank = server default (512)"
+                placeholder="blank = server default (4096)"
                 className={INPUT}
               />
               <p className={HELP}>
-                512 can truncate the reply, and the state turn's JSON — 1024+ recommended.
+                A ceiling, not a target. Thinking models (Qwen3 &amp; co.) spend most of it inside
+                &lt;think&gt; before the reply starts — 4096 leaves room; 512 can cut the reply or the
+                state turn's JSON.
               </p>
 
               <div className="mt-5">
