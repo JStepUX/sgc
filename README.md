@@ -158,7 +158,13 @@ a local OpenAI-compatible server (KoboldCPP/Ollama) instead of Anthropic,
 switchable at runtime from the header provider chip. It's opt-in: uncomment
 `OPENAI_BASE_URL` in `.env` (see the LOCAL block in `.env.example`). The
 deterministic memory tiers work identically; Anthropic-only web tools are dark
-on the local path.
+on the local path. Reasoning models (Qwen3 & co.) work too: the server strips
+their `<think>` block at the provider boundary so only the reply is streamed,
+stored, and remembered — give them a roomy `LLM_MAX_TOKENS` (default 4096),
+since the thinking comes out of that budget first. Reply length is
+not the cap's job: each reply draws a paragraph ceiling (one to five, weighted
+toward two and three, never the same twice running) that the prompt names
+and the server enforces at the Nth blank line — see `src/client/lib/pacing.ts`.
 
 **Desktop (Windows).** `npm run dist:win` packages SGC as an NSIS installer in
 `release/` (electron-builder). The installed app embeds the same server as a

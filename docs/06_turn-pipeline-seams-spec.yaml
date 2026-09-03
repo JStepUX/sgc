@@ -1,0 +1,68 @@
+spec: Turn-pipeline seams — collapse the field fan-out and the hand-wired per-turn draws
+status: proposed             # 2026-09-03 — logged as a tripwire after the thinking-model + pacing landing; NOT scheduled. Trigger below.
+date: 2026-09-03
+goal: >
+  Before the next feature that adds a per-turn fact (a field on TurnData) or a
+  third per-turn draw (after spontaneity and pacing), remove the two seams that
+  made today's work touch five shapes per field: give buildPrompt an options
+  object, route the re-spin through the shared turn loop, and draw the turn's
+  plan once. Pure refactor — no prompt copy change, no wire change, no
+  behaviour change; every existing test must pass unmodified except for call
+  signatures.
+
+trigger:                      # do this FIRST when any of these lands on the desk
+  - adding any new field that must ride TurnResult → TurnWithRecallResult → RespinResult → TurnData
+  - adding a third per-turn draw (anything drawn per reply, rendered into the prompt, snapshotted for re-spin)
+  - Stop / Continue (both touch the re-spin path and the turn loop — build them on the collapsed pipeline, not the current two)
+  - a 15th positional parameter on buildPrompt
+
+invariant_check:
+  off_thesis: refactor only — no model in the memory path, Sal stays ephemeral, no new API call, the prompt's rendered bytes are unchanged for identical inputs.
+  proof_of_no_prompt_delta: snapshot buildPrompt output for the fixtures in src/client/lib/prompt.test.ts before and after; diff must be empty.
+  wire_unchanged: /api/turn body fields (system, messages, tools, provider, maxParagraphs) and the four SSE frames are untouched.
+
+verified_facts:               # observed 2026-09-03 while landing pacing
+  buildPrompt_arity: "src/client/lib/prompt.ts buildPrompt takes 14 positional params (constitutional, localBuffer, grepResults, fetchedDocs, failedUrls, persona, now, summaryBuffer, spontaneityDirective, knowledge, recallEnabled, hasOlderHistory, dynamicState, maxParagraphs); reaching the last one in a test means passing 13 placeholders"
+  assembler_already_takes_object: "src/client/lib/turn-context.ts assembleTurnContext(input: TurnContextInput) — the shape buildPrompt should mirror"
+  field_fan_out_shapes: "one per-turn fact touches: TurnResult (src/client/lib/api.ts), TurnWithRecallResult (src/client/lib/recall-loop.ts), RespinResult (src/client/components/EditResponseModal.tsx), TurnData (src/client/lib/turn-data.ts), and the result() fake in src/client/lib/recall-loop.test.ts — pacingTrimmed, stopReason and usageEstimated were each added to all five today"
+  respin_duplicates_runner: "src/client/hooks/useResponseEditor.ts respin() re-implements prefetch → assembleTurnContext → runTurn → parseTurnResponse with its own result type instead of calling runTurnWithRecall with tools: null; the two paths already differ in recall gating and ceiling replay policy"
+  two_draws_hand_wired: "useTurnRunner.ts draws runSpontaneity then drawPacingCeiling back-to-back, writes each onto TurnData by hand, passes each to assembleTurnContext by name; useResponseEditor.ts replays each with a different rule (operator: dropped unless the modal toggle opts in; ceiling: always replayed)"
+  stop_reason_untyped: "stopReason is a plain string assembled from three sources — Anthropic SDK (end_turn|tool_use|max_tokens), openai-provider.ts finish_reason map (stop→end_turn, length→max_tokens, else passthrough), turn-route.ts synthesised max_paragraphs"
+  regex_duplicated: "PARAGRAPH_BREAK exists in src/client/lib/pacing.ts and src/server/paragraph-cap.ts; server cannot import client; both pinned by tests against the same fixtures"
+
+design:
+  D1_prompt_input_object:
+    change: "buildPrompt(input: PromptInput): string — one object, same field names as today's params; TurnContextInput → PromptInput is a spread plus the assembler's derived fields (localBuffer, summaryWindow, grepResults, knowledge, hasOlderHistory, dynamicState)"
+    callers: [ src/client/lib/turn-context.ts, src/client/lib/prompt.ts (estimateNaiveContextTokens), src/client/lib/prompt.test.ts, src/client/lib/dynamic-state.test.ts (if it calls buildPrompt) ]
+  D2_one_turn_loop:
+    change: "useResponseEditor.respin() calls runTurnWithRecall({ tools: null, ... }) and returns TurnWithRecallResult; delete RespinResult; EditResponseModal imports TurnWithRecallResult"
+    keeps: "re-spin semantics — no recall rounds, ceiling always replayed, operator replay by toggle — expressed as the loop's inputs, not a second implementation"
+  D3_turn_plan:
+    change: >
+      src/client/lib/turn-plan.ts: drawTurnPlan(chatLog, latestTurn, state, rng) → { spontaneity: SpontaneityResult, pacingCeiling: number };
+      replayTurnPlan(latestTurn, { replayOperator }) → the same shape from a snapshot;
+      one PlanInspector (extends SpontaneityInspector, PacingInspector) written onto TurnData in one place;
+      assembleTurnContext takes `plan` instead of spontaneityDirective + maxParagraphs.
+    replay_policy_declared_here: "operator: opt-in replay; ceiling: always replay — as data on the plan module, so the next draw declares its own policy in one line"
+  D4_stop_reason_union:
+    change: "export type StopReason = 'end_turn' | 'tool_use' | 'max_tokens' | 'max_paragraphs' | (string & {}) in src/server/provider-types.ts and mirrored in src/client/lib/api.ts; pacingOutcomeFor takes it"
+  D5_shared_regex:
+    change: "optional — src/shared/paragraph-break.ts imported by both sides once a shared dir exists; until then leave the duplicate + the pinning tests"
+    priority: lowest
+
+build_steps:                  # each step green (npm test, typecheck, lint) before the next
+  - S1: D1 — options object; adjust callers; prompt snapshot diff empty
+  - S2: D4 — StopReason union; no runtime change
+  - S3: D2 — re-spin through the loop; delete RespinResult; useResponseEditor shrinks
+  - S4: D3 — turn plan; runner + editor + assembler read the plan; TurnData literals in useTurnRunner/useResponseEditor lose their per-draw fields
+  - S5: D5 only if a shared dir already exists for another reason
+
+out_of_scope:
+  - Stop / Continue (separate spec; build after S3)
+  - KoboldCPP stop-on-disconnect verification (manual, on the dev machine — see docs/changelogs/2026-09.md pacing entry)
+  - any change to the pacing deck weights or the prompt copy
+
+verification:
+  - npm test, npm run typecheck, npm run lint green after every step
+  - prompt snapshot diff empty (invariant_check.proof_of_no_prompt_delta)
+  - adding a dummy per-turn field on a scratch branch after S4 touches ≤ 2 files (TurnResult + TurnData) — the acceptance test for the refactor
