@@ -92,7 +92,11 @@ grep going forward. Either way the turn's stale summary and inner state are
 cleared and re-derived from the text you kept. If a spontaneity operator fired
 on the turn, a re-spin runs *without*
 it by default — undoing the perturbation is the usual reason to re-spin — and a
-toggle in the editor replays the original directive verbatim instead. It edits
+toggle in the editor replays the original directive verbatim instead. The
+reply's paragraph ceiling (see `src/client/lib/pacing.ts`) is replayed by
+default, and the same editor lets you raise, lower, or lift it before
+re-spinning — the usual reason to re-spin a cut reply is that the draw was too
+small for the beat. It edits
 that one reply only — later turns aren't regenerated — and it touches no
 memory-retrieval invariant: retrieval stays deterministic math, Sal stays
 ephemeral.
