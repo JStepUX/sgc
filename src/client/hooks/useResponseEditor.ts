@@ -38,7 +38,14 @@ export function useResponseEditor(
   /** The human-facing name of the operator that fired on the latest turn, or
    * null when none did — drives the modal's replay toggle (hidden when null). */
   firedOperatorLabel: string | null;
-  respin: (onDelta: (preview: string) => void, replayOperator: boolean) => Promise<RespinResult>;
+  /** The paragraph ceiling the latest turn ran under (null for a pre-pacing
+   * turn) — the modal's default for the ceiling picker. */
+  turnCeiling: number | null;
+  respin: (
+    onDelta: (preview: string) => void,
+    replayOperator: boolean,
+    ceiling: number | null,
+  ) => Promise<RespinResult>;
   saveEdit: (text: string, respin: RespinResult | null, operatorCleared: boolean) => Promise<void>;
   /** Whether the Dynamic State editor has a persisted turn to write to. */
   canEditDynamicState: boolean;
@@ -77,6 +84,10 @@ export function useResponseEditor(
   const firedOperatorLabel = latestTurn?.spontaneityDirective
     ? operatorLabel(latestTurn.spontaneityDirective)
     : null;
+  // The latest turn's paragraph ceiling (lib/pacing.ts) — what the modal's
+  // picker starts on. A pre-pacing turn has none, and re-spins un-paced unless
+  // the picker says otherwise.
+  const turnCeiling = latestTurn?.pacingCeiling ?? null;
 
   // Re-spin: re-run the currently-selected model for the target turn. The chat
   // HISTORY tier is reconstructed faithfully — sliced to before this turn, recency
@@ -89,7 +100,11 @@ export function useResponseEditor(
   // keeps Sal ephemeral + memory retrieval pure math — inside the Phase 1.5
   // contract (the "one API call per turn" line is a guardrail, not the law).
   const respin = useCallback(
-    async (onDelta: (preview: string) => void, replayOperator: boolean): Promise<RespinResult> => {
+    async (
+      onDelta: (preview: string) => void,
+      replayOperator: boolean,
+      ceiling: number | null,
+    ): Promise<RespinResult> => {
       if (!editTarget) throw new Error('No reply selected.');
       const assistantIdx = chatLog.findIndex((e) => e.id === editTarget.id);
       const userIdx = assistantIdx - 1;
@@ -113,11 +128,11 @@ export function useResponseEditor(
       // The modal's toggle opts back into a faithful replay, re-injecting the
       // snapshotted directive byte-for-byte rather than rolling a fresh one.
       const directive = replayOperator ? (latestTurn?.spontaneityDirective ?? null) : null;
-      // The paragraph ceiling is ALWAYS replayed (never redrawn): unlike an
-      // operator it isn't a perturbation to undo, it's the turn's pacing bound,
-      // and a re-spin should reproduce the turn's shape. A pre-pacing turn
-      // (no snapshot) re-spins un-paced, exactly as it first ran.
-      const ceiling = latestTurn?.pacingCeiling ?? null;
+      // The paragraph ceiling is never REDRAWN on a re-spin: the modal passes
+      // it in, defaulting to the turn's own snapshot (a faithful replay) and
+      // letting the person raise, lower, or lift it — the usual reason to
+      // re-spin a cut reply is that the draw was too small for the beat. Null
+      // is an un-paced call (what a pre-pacing turn originally ran).
 
       const { systemPrompt } = assembleTurnContext({
         query: targetUser.content,
@@ -157,6 +172,7 @@ export function useResponseEditor(
         stopReason: result.stopReason,
         pacingTrimmed: result.pacingTrimmed,
         usageEstimated: result.usageEstimated,
+        ceiling,
       };
     },
     [editTarget, chatLog, constitutional, activePersona, health, provider, latestTurn, brainIndex],
@@ -229,7 +245,10 @@ export function useResponseEditor(
             summary: null,
             dynamicState: null,
             stateTokens: undefined,
-            // The ceiling stays (it was replayed); the outcome is this run's.
+            // The ceiling this run actually used (the modal may have changed
+            // it) and this run's outcome — the snapshot describes the saved
+            // text's own run, and the next draw's no-repeat rule reads it.
+            pacingCeiling: respinResult.ceiling,
             pacingOutcome: pacingOutcomeFor(respinResult.stopReason),
             pacingTrimmed: respinResult.pacingTrimmed,
             ...clearedFields,
@@ -386,7 +405,7 @@ export function useResponseEditor(
   );
 
   return {
-    editTarget, openLatestEditor, closeEditor, firedOperatorLabel, respin, saveEdit,
+    editTarget, openLatestEditor, closeEditor, firedOperatorLabel, turnCeiling, respin, saveEdit,
     canEditDynamicState, saveDynamicState,
   };
 }

@@ -2,6 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import { X, RotateCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ToggleSwitch } from '@/components/ui/toggle-switch';
+import { PACING_MAX_PARAGRAPHS } from '../lib/pacing';
+
+/** The ceiling choices offered on re-spin: 1..PACING_MAX_PARAGRAPHS, then
+ *  "no ceiling" (null) — the un-paced call a pre-pacing turn originally ran. */
+const CEILING_CHOICES: (number | null)[] = [
+  ...Array.from({ length: PACING_MAX_PARAGRAPHS }, (_, i) => i + 1),
+  null,
+];
+const ceilingWords = (c: number | null): string =>
+  c === null ? 'no ceiling' : `${c} paragraph${c === 1 ? '' : 's'}`;
 
 // ============================================================
 // EDIT RESPONSE MODAL — rewrite the latest assistant reply, two ways:
@@ -44,6 +54,11 @@ export interface RespinResult {
   pacingTrimmed: boolean;
   /** inputTokens/outputTokens are estimates (see TurnResult.usageEstimated). */
   usageEstimated: boolean;
+  /** The paragraph ceiling this re-spin ran under (null = un-paced). saveEdit
+   * records it as the turn's pacingCeiling — the snapshot must describe the
+   * run that produced the saved text, and the next draw's no-repeat rule
+   * reads it. */
+  ceiling: number | null;
 }
 
 interface EditResponseModalProps {
@@ -59,9 +74,18 @@ interface EditResponseModalProps {
    * did. Non-null renders the replay toggle — default OFF: a re-spin drops the
    * operator unless the user opts back into a faithful replay. */
   firedOperatorLabel: string | null;
+  /** The paragraph ceiling the turn ran under (null for a pre-pacing turn) —
+   * the default for the ceiling picker. Unlike the operator, the ceiling is
+   * replayed by default: it's the turn's pacing bound, not a perturbation. */
+  turnCeiling: number | null;
   /** Run the re-spin: streams stripped preview text via onDelta, resolves with
-   * the result. `replayOperator` re-injects the turn's snapshotted directive. */
-  onRespin: (onDelta: (preview: string) => void, replayOperator: boolean) => Promise<RespinResult>;
+   * the result. `replayOperator` re-injects the turn's snapshotted directive;
+   * `ceiling` is the paragraph ceiling to run under (null = un-paced). */
+  onRespin: (
+    onDelta: (preview: string) => void,
+    replayOperator: boolean,
+    ceiling: number | null,
+  ) => Promise<RespinResult>;
   /** Commit. `respin` is non-null only when the saved text is the re-spin
    * verbatim. `operatorCleared` is independent of that verbatim check: it is
    * true whenever the LAST completed re-spin ran without the operator — a
@@ -80,6 +104,7 @@ export function EditResponseModal({
   label,
   canRespin,
   firedOperatorLabel,
+  turnCeiling,
   onRespin,
   onSave,
 }: EditResponseModalProps) {
@@ -88,6 +113,9 @@ export function EditResponseModal({
   // Replay the fired operator on re-spin? Default OFF — re-spinning a perturbed
   // turn usually means the perturbation is the thing being undone.
   const [replayOperator, setReplayOperator] = useState(false);
+  // The paragraph ceiling for the NEXT re-spin. Seeded from the turn's own
+  // ceiling on open (faithful replay by default); the picker below changes it.
+  const [ceiling, setCeiling] = useState<number | null>(null);
   const [respinning, setRespinning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -123,12 +151,13 @@ export function EditResponseModal({
     setDraft(initialText);
     setRespinResult(null);
     setReplayOperator(false);
+    setCeiling(turnCeiling);
     setError(null);
     setRespinning(false);
     setSaving(false);
     const id = setTimeout(() => textareaRef.current?.focus(), 30);
     return () => clearTimeout(id);
-  }, [open, initialText]);
+  }, [open, initialText, turnCeiling]);
 
   const handleRespin = async () => {
     if (respinning || saving || !canRespin) return;
@@ -140,7 +169,7 @@ export function EditResponseModal({
       // Stream the regeneration straight into the field, then settle on the
       // canonical parsed text so the savingRespin equality holds exactly. Each
       // write is gated on this run still being current (not closed/reopened).
-      const result = await onRespin((preview) => { if (isCurrent()) setDraft(preview); }, replayOperator);
+      const result = await onRespin((preview) => { if (isCurrent()) setDraft(preview); }, replayOperator, ceiling);
       if (!isCurrent()) return;
       setDraft(result.text);
       setRespinResult(result);
@@ -292,6 +321,44 @@ export function EditResponseModal({
               </p>
             </div>
           )}
+
+          {/* Paragraph ceiling for the re-spin (lib/pacing.ts). Always shown:
+              every re-spin is a paced call, and the usual reason to re-spin a
+              cut reply is that the draw was too small for the beat. Defaults to
+              the turn's own ceiling — a faithful replay unless changed. */}
+          <div className="mt-3 flex items-center gap-3 rounded-[14px] border border-hairline bg-surface-thin px-4 py-2.5">
+            <div
+              role="radiogroup"
+              aria-label="Paragraph ceiling for the re-spin"
+              className="flex shrink-0 items-center gap-1"
+            >
+              {CEILING_CHOICES.map((c) => {
+                const active = ceiling === c;
+                return (
+                  <button
+                    key={c ?? 'none'}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    aria-label={c === null ? 'No ceiling' : `${c} paragraph${c === 1 ? '' : 's'}`}
+                    disabled={respinning || saving}
+                    onClick={() => setCeiling(c)}
+                    className={`h-6 min-w-6 rounded-md border px-1.5 font-mono text-[10.5px] transition-colors disabled:opacity-50 ${
+                      active ? 'border-ember text-fg-1' : 'border-transparent text-fg-3 hover:text-fg-1'
+                    }`}
+                  >
+                    {c ?? '∞'}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="min-w-0 text-[10.5px] leading-[1.4] text-fg-4">
+              <span className="text-fg-3">¶ ceiling</span> — this turn ran under {ceilingWords(turnCeiling)}.
+              {ceiling === turnCeiling
+                ? ' Re-spin keeps it.'
+                : ` Re-spin will use ${ceilingWords(ceiling)}; the saved turn records what ran.`}
+            </p>
+          </div>
         </div>
 
         <div className="flex items-center justify-between gap-3 border-t border-hairline px-7 py-4">

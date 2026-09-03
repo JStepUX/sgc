@@ -450,6 +450,7 @@ export default function SalienceGatedCognition() {
         label={session.activeMask}
         canRespin={Boolean(providerState.health?.providers[providerState.provider]?.available) && !runner.isProcessing}
         firedOperatorLabel={editor.firedOperatorLabel}
+        turnCeiling={editor.turnCeiling}
         onRespin={editor.respin}
         onSave={editor.saveEdit}
       />
