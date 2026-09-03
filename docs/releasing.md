@@ -40,11 +40,14 @@ leg, which first fires on the next tag.
 7. **Create the release** (this is the human-notes step — CI never writes
    the body):
    `gh release create sgc_vX.Y.Z release/sgc-vX.Y.Z.exe --title "SGC vX.Y.Z" --notes-file <notes>.md`
-   Notes format: headline paragraph stating what the release is and that the
-   Phase 1.5 thesis holds (say so explicitly, including the current call-count
-   posture), one `##` section per feature distilled from the changelog
-   entries, a Verified section with the test numbers. See the v1.2.0 and
-   v1.6.0 release bodies for the register.
+   **Notes are for END USERS** (ruled 2026-09-01) — people with no technical
+   or historical investment in the project. Brief, plain language, feature
+   level: what's new, what it does for them, how to use it. NO thesis talk,
+   spec numbers, invariant checks, reviewer findings, test counts, or
+   internal jargon — all of that lives in `docs/changelogs/` (the developer
+   log, which keeps its own write-for-a-developer convention). See the
+   v1.6.0/v1.6.1 bodies (as rewritten 2026-09-01) for the register; the
+   pre-rewrite bodies are the anti-pattern.
 8. **The DMG arrives on its own**: the tag push (step 6) already started
    `.github/workflows/release-mac.yml` on an arm64 mac runner (~5 min build).
    Its upload step POLLS for the release to exist (up to 10 min), so step 7
