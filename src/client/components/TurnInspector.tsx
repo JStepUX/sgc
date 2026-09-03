@@ -2,6 +2,7 @@ import { memo, useEffect, useState } from 'react';
 import type { DynamicState } from '../lib/types';
 import type { TurnData } from '../lib/turn-data';
 import { operatorLabel } from '../lib/spontaneity/flexDeck';
+import { pacingOutcomeLabel } from '../lib/pacing';
 import { DEFAULT_SLACK_THRESHOLD } from '../lib/spontaneity/slackDetector';
 import { RAIL_LABEL, RAIL_SUB } from './rail-styles';
 import { RetrievalDetailModal, type RetrievalSelection } from './RetrievalDetailModal';
@@ -263,10 +264,29 @@ export const TurnInspector = memo(function TurnInspector({
         </Card>
       )}
 
+      {typeof turnData.pacingCeiling === 'number' && (
+        // Reply pacing (lib/pacing.ts): the paragraph ceiling this reply was
+        // drawn — visible AFTER the fact, never before (the draw is meant to be
+        // unpredictable at the composer) — and how the reply actually ended
+        // against it. "cut at the ceiling" is the server counter firing; the
+        // token-cap readings are the hard-cap fallback. Pre-pacing rows carry
+        // no ceiling and render nothing here.
+        <Card className="gap-0 rounded-[4px_10px_10px_4px] border border-l-2 border-l-fg-3 px-3 py-2.5 shadow-none">
+          <div className="flex items-baseline gap-2 font-mono text-[10.5px] text-fg-3">
+            <span className="font-medium text-fg-1">
+              ¶ ceiling {turnData.pacingCeiling} paragraph{turnData.pacingCeiling === 1 ? '' : 's'}
+            </span>
+            <span>{pacingOutcomeLabel(turnData)}</span>
+          </div>
+        </Card>
+      )}
+
       {(() => {
         // Context-savings card — the thesis of Phase 1.5 made legible.
         //
-        // Left: what we actually sent (real `usage.input_tokens` from the API).
+        // Left: what we actually sent (real `usage.input_tokens` from the API —
+        // or a flagged client-side estimate when the server couldn't know it:
+        // a paragraph-cut reply, or a local server that omits usage).
         // Right: what a naive "send the whole history every turn" pipeline
         // would have sent (estimated client-side, see lib/tokens.ts). The
         // ratio is the savings SGC's tiered curation buys.
@@ -299,7 +319,7 @@ export const TurnInspector = memo(function TurnInspector({
                       {sent.toLocaleString()}
                     </div>
                     <div className="mt-1 font-mono text-[9.5px] uppercase tracking-[0.16em] text-fg-3">
-                      Sent
+                      Sent{turnData.usageEstimated ? ' (est.)' : ''}
                     </div>
                   </div>
                   <div>

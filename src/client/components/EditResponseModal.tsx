@@ -37,6 +37,13 @@ export interface RespinResult {
    * run. False (the default path) means the re-spin ran clean — on save, the
    * turn's fired fields and ⟐ marker are cleared to match. */
   operatorReplayed: boolean;
+  /** How the re-spun reply ended (the round's stopReason) and whether the
+   * hard-cap fallback trimmed it — saveEdit records the pacing outcome from
+   * these (lib/pacing.ts). */
+  stopReason: string;
+  pacingTrimmed: boolean;
+  /** inputTokens/outputTokens are estimates (see TurnResult.usageEstimated). */
+  usageEstimated: boolean;
 }
 
 interface EditResponseModalProps {

@@ -8,6 +8,7 @@ import { bumpWriteEpoch, runStateTurn, saveDynamicState as persistDynamicState, 
 import { runTurn, extractUrls, fetchUrl } from '../lib/api';
 import { operatorLabel } from '../lib/spontaneity/flexDeck';
 import { lastFiredOperatorId } from '../lib/spontaneity/engine';
+import { pacingOutcomeFor } from '../lib/pacing';
 import { updateTurn as apiUpdateTurn, listChats as apiListChats, loadChat as apiLoadChat } from '../lib/persistence';
 import type { RespinResult } from '../components/EditResponseModal';
 import type { ChatSession } from './useChatSession';
@@ -112,6 +113,11 @@ export function useResponseEditor(
       // The modal's toggle opts back into a faithful replay, re-injecting the
       // snapshotted directive byte-for-byte rather than rolling a fresh one.
       const directive = replayOperator ? (latestTurn?.spontaneityDirective ?? null) : null;
+      // The paragraph ceiling is ALWAYS replayed (never redrawn): unlike an
+      // operator it isn't a perturbation to undo, it's the turn's pacing bound,
+      // and a re-spin should reproduce the turn's shape. A pre-pacing turn
+      // (no snapshot) re-spins un-paced, exactly as it first ran.
+      const ceiling = latestTurn?.pacingCeiling ?? null;
 
       const { systemPrompt } = assembleTurnContext({
         query: targetUser.content,
@@ -125,6 +131,7 @@ export function useResponseEditor(
         // CURRENT mounts, not a per-turn snapshot (spec D8) — same convention
         // as the constitutional document/persona above; the modal copy says so.
         brainIndex,
+        maxParagraphs: ceiling,
       });
 
       const confirmedProvider = health?.providers[provider]?.available ? provider : undefined;
@@ -133,6 +140,8 @@ export function useResponseEditor(
         [{ role: 'user', content: targetUser.content }],
         (raw) => onDelta(stripStreamingMeta(raw)),
         confirmedProvider,
+        undefined,
+        ceiling ? { maxParagraphs: ceiling } : undefined,
       );
       // Scrubber only — the re-spun text carries no summary contract; its
       // summary and state come from the state turn fired after the save (D9).
@@ -145,6 +154,9 @@ export function useResponseEditor(
         // True only when a directive was actually injected into THIS run —
         // saveEdit uses it to keep or clear the turn's fired fields.
         operatorReplayed: directive !== null,
+        stopReason: result.stopReason,
+        pacingTrimmed: result.pacingTrimmed,
+        usageEstimated: result.usageEstimated,
       };
     },
     [editTarget, chatLog, constitutional, activePersona, health, provider, latestTurn, brainIndex],
@@ -210,15 +222,30 @@ export function useResponseEditor(
             ...base,
             inputTokens: respinResult.inputTokens,
             outputTokens: respinResult.outputTokens,
+            usageEstimated: respinResult.usageEstimated,
             totalLatency: respinResult.elapsed,
             apiCalls: 1,
             recalls: undefined,
             summary: null,
             dynamicState: null,
             stateTokens: undefined,
+            // The ceiling stays (it was replayed); the outcome is this run's.
+            pacingOutcome: pacingOutcomeFor(respinResult.stopReason),
+            pacingTrimmed: respinResult.pacingTrimmed,
             ...clearedFields,
           }
-        : { ...base, apiCalls: replyCallsOnly, summary: null, dynamicState: null, stateTokens: undefined, ...clearedFields };
+        : {
+            ...base,
+            apiCalls: replyCallsOnly,
+            summary: null,
+            dynamicState: null,
+            stateTokens: undefined,
+            // Hand-edited text has no pacing outcome — the model didn't end it.
+            // The ceiling stays as the snapshot a later re-spin replays.
+            pacingOutcome: null,
+            pacingTrimmed: undefined,
+            ...clearedFields,
+          };
 
       // Bump BEFORE the write: any state chain still in flight for this row
       // (the live turn's, or a previous edit's) describes text this save is

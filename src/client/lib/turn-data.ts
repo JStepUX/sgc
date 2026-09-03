@@ -1,4 +1,5 @@
 import type { SpontaneityInspector } from './spontaneity/engine';
+import type { PacingInspector } from './pacing';
 import { operatorLabel } from './spontaneity/flexDeck';
 import type { ChatEntry, DynamicState, TurnSummary } from './types';
 import type { ChatTurn } from './persistence';
@@ -60,10 +61,23 @@ export interface KnowledgeDetail {
 // replays. They're sourced from the shared interface (not redeclared) so the
 // restore reader can't drift on field names. Turns persisted before this feature
 // lack them — read defensively after a JSON parse.
-export interface TurnData extends SpontaneityInspector {
+//
+// Pacing diagnostics come from PacingInspector (lib/pacing.ts) the same way:
+// `pacingCeiling` is the paragraph ceiling drawn for the reply — the no-repeat
+// draw reads the latest turn's value, a re-spin replays it — and
+// `pacingOutcome` / `pacingTrimmed` record how the reply actually ended.
+export interface TurnData extends SpontaneityInspector, PacingInspector {
   turnNumber: number;
   inputTokens: number;
   outputTokens: number;
+  /**
+   * inputTokens/outputTokens are client-side ESTIMATES, not the API's measured
+   * usage — a paragraph-cut reply (the usage frame never arrives) or a local
+   * server that omits usage. The Context-Savings tile labels Sent accordingly.
+   * Optional: rows persisted before this field carry measured usage (or the
+   * old silent 0 on usage-less local servers).
+   */
+  usageEstimated?: boolean;
   totalLatency: number;
   localBufferSize: number;
   grepFired: boolean;

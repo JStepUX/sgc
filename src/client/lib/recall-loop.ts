@@ -15,6 +15,7 @@
 // ============================================================
 
 import { runTurn, type ContentBlock, type ProviderId, type WireMessage, type WireTool } from './api';
+import { countParagraphs } from './pacing';
 import type { RecallInput, RecallOutcome } from './recall';
 
 /** Cap on recall round-trips per turn (D3): tools are attached to the first
@@ -49,6 +50,15 @@ export interface TurnWithRecallResult {
   /** Model calls this turn actually took (1 on the common no-recall path) —
    * the inspector's honest replacement for its hardcoded "1 API call" copy. */
   apiCalls: number;
+  /** The TERMINAL round's stopReason — how the reply itself ended
+   * ('end_turn' | 'max_paragraphs' | 'max_tokens' | …); the pacing outcome
+   * recorded on the turn derives from it (lib/pacing.ts). */
+  stopReason: string;
+  /** Whether the terminal round's text was trimmed by the hard-cap fallback. */
+  pacingTrimmed: boolean;
+  /** True if ANY round's usage was estimated rather than measured (see
+   * TurnResult.usageEstimated) — the summed counts are then partly estimates. */
+  usageEstimated: boolean;
 }
 
 /** Coerce a tool_use block's raw input into RecallInput. Unknown fields drop;
@@ -95,6 +105,8 @@ export async function runTurnWithRecall(opts: {
   /** Seed for the dedup set (D5) — the ambient grep's already-surfaced
    * turnIndexes, so a recall never re-fetches what the prompt already carries. */
   initialSurfaced?: Iterable<number>;
+  /** Reply pacing ceiling (lib/pacing.ts) — forwarded to every round. */
+  maxParagraphs?: number;
   /** Injectable for tests. */
   callTurn?: typeof runTurn;
 }): Promise<TurnWithRecallResult> {
@@ -110,6 +122,7 @@ export async function runTurnWithRecall(opts: {
   let inputTokens = 0;
   let outputTokens = 0;
   let elapsed = 0;
+  let usageEstimated = false;
 
   // Total calls: 1 when no tools; otherwise up to 1 + MAX_RECALL_ROUNDS, with
   // tools attached only while another recall round would still be permitted.
@@ -117,6 +130,15 @@ export async function runTurnWithRecall(opts: {
   for (let call = 1; call <= maxCalls; call++) {
     const toolsThisRound =
       opts.tools && call <= MAX_RECALL_ROUNDS ? opts.tools : undefined;
+
+    // The paragraph ceiling bounds the WHOLE reply, not each round: the
+    // server counts per request, so paragraphs already committed from earlier
+    // rounds come off what this round is allowed (floor 1 — a round that
+    // exists must be able to answer). Without this a ceiling of two could
+    // yield two paragraphs per round (Codex review, 2026-09-03).
+    const remainingParagraphs = opts.maxParagraphs
+      ? Math.max(1, opts.maxParagraphs - countParagraphs(committedText))
+      : undefined;
 
     let firstDelta = true;
     const result = await callTurn(
@@ -131,10 +153,12 @@ export async function runTurnWithRecall(opts: {
       },
       opts.provider,
       toolsThisRound,
+      remainingParagraphs ? { maxParagraphs: remainingParagraphs } : undefined,
     );
     inputTokens += result.inputTokens;
     outputTokens += result.outputTokens;
     elapsed += result.elapsed;
+    usageEstimated ||= result.usageEstimated;
 
     if (result.stopReason === 'tool_use' && result.toolUses.length > 0 && toolsThisRound) {
       // Sal paused to remember. Commit this round's text, run every tool call
@@ -173,10 +197,23 @@ export async function runTurnWithRecall(opts: {
       elapsed,
       recalls,
       apiCalls: call,
+      stopReason: result.stopReason,
+      pacingTrimmed: result.pacingTrimmed,
+      usageEstimated,
     };
   }
 
   // Unreachable: the last permitted call carries no tools, so its stopReason
   // can't be tool_use and the loop returns from inside. Kept for the compiler.
-  return { text: committedText, inputTokens, outputTokens, elapsed, recalls, apiCalls: maxCalls };
+  return {
+    text: committedText,
+    inputTokens,
+    outputTokens,
+    elapsed,
+    recalls,
+    apiCalls: maxCalls,
+    stopReason: 'end_turn',
+    pacingTrimmed: false,
+    usageEstimated,
+  };
 }

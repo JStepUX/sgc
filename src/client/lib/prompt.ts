@@ -96,6 +96,7 @@ export function buildPrompt(
   recallEnabled = false,
   hasOlderHistory = false,
   dynamicState?: DynamicState | null,
+  maxParagraphs?: number | null,
 ): string {
   // A blank/whitespace-only persona falls back to DEFAULT_PERSONA. A custom
   // persona that omits the default's guidance just informs Sal less — no
@@ -305,6 +306,22 @@ export function buildPrompt(
   // Sal has one absolute anchor + consistent relative tags everywhere else.
   const nowLine = `Right now it's ${formatNowHeader(now)}.`;
 
+  // PACING line (in the tail, after the diagram capability): reply LENGTH is
+  // steered here, never by max_tokens. Small local models treat the output cap
+  // as a target and fill it every turn — 512 tokens of flavour for a two-line
+  // beat — and a reasoning model needs that cap roomy anyway (its <think>
+  // block comes out of the same budget), so the cap can't double as pacing.
+  // With a ceiling (lib/pacing.ts — drawn per turn, enforced server-side at
+  // the Nth paragraph break) the line names the number: a concrete bound the
+  // small models can actually hold, with explicit permission to stop under
+  // it. Without one, the judgement-only wording. Persona-neutral copy either
+  // way: no genre words, so it reads the same under a custom persona. The
+  // shared opening is pinned in prompt.test.ts as a tail marker.
+  const pacingLine =
+    typeof maxParagraphs === 'number' && maxParagraphs >= 1
+      ? `Size your reply to the moment, within a ceiling of ${maxParagraphs} paragraph${maxParagraphs === 1 ? '' : 's'} this turn: fewer is fine when the beat is done, and end where the exchange naturally hands back to the person rather than filling the space you have.`
+      : `Size your reply to the moment. A quick beat wants a short answer; only go long when what's in front of you actually asks for it. End where the exchange naturally hands back to the person rather than filling the space you have.`;
+
   // History tiers render CHRONOLOGICALLY — retrieved history (furthest back)
   // → distilled near-past → verbatim last exchange — so the freshest state
   // sits closest to the task instructions. Models weight late-prompt content
@@ -326,6 +343,8 @@ ${linkedBlock}
 ${failedBlock}
 
 When a diagram would clarify structure or flow, emit a mermaid fenced code block (default flowchart TD) — it renders natively for the person.
+
+${pacingLine}
 ${spontaneityBlock}
 ${recallTailBlock}YOUR TASK:
 Respond to the user's input, informed by the memories${hasBuffer ? ', recent context' : ''}${hasGrep ? ', and retrieved history' : ''}${hasKnowledge ? ', drawing on your persona knowledge where it applies' : ''}${hasLinked ? ', plus the linked pages provided' : ''}.`;

@@ -13,6 +13,8 @@
 // orchestrated client-side in recall-loop.ts, not multiple calls per POST.
 
 import type { FetchedDoc } from './types';
+import { trimToLastParagraph } from './pacing';
+import { estimateTokens } from './tokens';
 
 // A structural content block — mirrors the server's (and ultimately
 // Anthropic's) text / tool_use / tool_result shapes. Neither side interprets
@@ -102,6 +104,15 @@ export async function fetchUrl(url: string): Promise<FetchedDoc | null> {
   }
 }
 
+/** Per-call options beyond the prompt and messages. */
+export interface TurnOptions {
+  /** Reply pacing (lib/pacing.ts): ask the server to end the stream at the
+   *  Nth paragraph break, and — if the hard token cap fires first — trim the
+   *  reply back to its last complete paragraph client-side. REPLY calls only;
+   *  the state turn never passes this (its output is JSON, not paragraphs). */
+  maxParagraphs?: number;
+}
+
 /** What a completed turn (one round-trip, one POST) returns to the caller. */
 export interface TurnResult {
   text: string;
@@ -116,6 +127,17 @@ export interface TurnResult {
   /** Every tool_use block Sal emitted this round, in arrival order. Empty
    * unless `tools` was supplied and Sal invoked one. */
   toolUses: { id: string; name: string; input: unknown }[];
+  /** Paced calls only: the hard cap fired and `text` was trimmed back to its
+   * last complete paragraph (see TurnOptions.maxParagraphs). Always false
+   * when the call carried no ceiling, ended naturally, or had no break to
+   * trim to — in that last case the truncation is left visible on purpose. */
+  pacingTrimmed: boolean;
+  /** True when inputTokens/outputTokens are client-side ESTIMATES (lib/tokens.ts)
+   * rather than the server's measured usage: the done frame carried null (a
+   * paragraph cut — the usage frame never arrived) or 0 (a local server that
+   * omits usage). An unknown count must never masquerade as a measured zero —
+   * the Context-Savings tile would read it as 100% saved. */
+  usageEstimated: boolean;
 }
 
 /** Which model backs Sal for a turn. The client sends only this token; the
@@ -141,6 +163,10 @@ export type ProviderId = 'anthropic' | 'openai';
  * `tools`, if given (and non-empty), is forwarded to the server verbatim —
  * the caller is responsible for only ever passing tools on the 'anthropic'
  * provider (D2 in the deliberate-recall spec); this function has no opinion.
+ *
+ * `options.maxParagraphs`, if given, rides to the server as the reply's
+ * paragraph ceiling (see TurnOptions) and switches on the client-side
+ * hard-cap fallback below.
  */
 export async function runTurn(
   systemPrompt: string,
@@ -148,8 +174,10 @@ export async function runTurn(
   onDelta?: (rawSoFar: string) => void,
   provider?: ProviderId,
   tools?: WireTool[],
+  options?: TurnOptions,
 ): Promise<TurnResult> {
   const startTime = Date.now();
+  const maxParagraphs = options?.maxParagraphs;
 
   const response = await fetch('/api/turn', {
     method: 'POST',
@@ -159,6 +187,7 @@ export async function runTurn(
       messages,
       ...(provider ? { provider } : {}),
       ...(tools && tools.length > 0 ? { tools } : {}),
+      ...(maxParagraphs ? { maxParagraphs } : {}),
     }),
   });
 
@@ -181,8 +210,8 @@ export async function runTurn(
   }
 
   let text = '';
-  let inputTokens = 0;
-  let outputTokens = 0;
+  let inputTokens: number | null = null;
+  let outputTokens: number | null = null;
   let stopReason = 'end_turn';
   const toolUses: { id: string; name: string; input: unknown }[] = [];
 
@@ -226,12 +255,12 @@ export async function runTurn(
       }
     } else if (name === 'done') {
       const d = payload as {
-        inputTokens?: number;
-        outputTokens?: number;
+        inputTokens?: number | null;
+        outputTokens?: number | null;
         stopReason?: string;
       };
-      inputTokens = d.inputTokens ?? 0;
-      outputTokens = d.outputTokens ?? 0;
+      inputTokens = typeof d.inputTokens === 'number' ? d.inputTokens : null;
+      outputTokens = typeof d.outputTokens === 'number' ? d.outputTokens : null;
       stopReason = d.stopReason ?? 'end_turn';
     } else if (name === 'error') {
       const message = (payload as { error?: string }).error ?? 'stream error';
@@ -259,6 +288,37 @@ export async function runTurn(
     reader.releaseLock();
   }
 
+  // HARD-CAP FALLBACK (lib/pacing.ts): a paced reply that hit max_tokens before
+  // its Nth paragraph break ends on a half paragraph. Trim back to the last
+  // complete one HERE — the only place that has the full text, the stop reason
+  // and the knowledge that a ceiling was asked for. Client-side by necessity:
+  // the half paragraph already streamed through onDelta and the delta stream
+  // can't retract, but the caller promotes `text` (not the stream) to the
+  // final message, so the trim lands there. Unpaced calls are untouched.
+  let pacingTrimmed = false;
+  if (maxParagraphs && stopReason === 'max_tokens') {
+    const trimmed = trimToLastParagraph(text);
+    text = trimmed.text;
+    pacingTrimmed = trimmed.trimmed;
+  }
+
+  // UNKNOWN USAGE → estimate, and say so. null = the server couldn't know (a
+  // paragraph cut ends the stream before the usage frame); 0 = a local server
+  // that omits usage (KoboldCPP). Neither is a measurement of zero. The input
+  // estimate is over exactly what went on the wire (system + messages).
+  let usageEstimated = false;
+  if (inputTokens === null || inputTokens === 0) {
+    const sent = messages
+      .map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)))
+      .join('\n');
+    inputTokens = estimateTokens(systemPrompt) + estimateTokens(sent);
+    usageEstimated = true;
+  }
+  if (outputTokens === null || outputTokens === 0) {
+    outputTokens = estimateTokens(text);
+    usageEstimated = true;
+  }
+
   return {
     text,
     inputTokens,
@@ -266,5 +326,7 @@ export async function runTurn(
     elapsed: Date.now() - startTime,
     stopReason,
     toolUses,
+    pacingTrimmed,
+    usageEstimated,
   };
 }

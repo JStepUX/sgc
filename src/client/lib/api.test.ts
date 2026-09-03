@@ -122,3 +122,94 @@ describe('runTurn', () => {
     expect(body.tools).toEqual(tools);
   });
 });
+
+// ---- REPLY PACING on the wire (lib/pacing.ts) ----
+describe('runTurn — pacing', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+  const done = (stopReason: string) => sseFrame('done', { inputTokens: 1, outputTokens: 1, stopReason });
+
+  it('sends maxParagraphs in the body only when asked for', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse([done('end_turn')]));
+    vi.stubGlobal('fetch', fetchMock);
+    await runTurn('sys', [{ role: 'user', content: 'hi' }], undefined, undefined, undefined, { maxParagraphs: 3 });
+    await runTurn('sys', [{ role: 'user', content: 'hi' }]);
+    const bodies = fetchMock.mock.calls.map(([, init]) => JSON.parse((init as RequestInit).body as string));
+    expect(bodies[0].maxParagraphs).toBe(3);
+    expect('maxParagraphs' in bodies[1]).toBe(false);
+  });
+
+  it('trims a paced reply back to its last full paragraph when the hard cap fired', async () => {
+    const frames = [sseFrame('delta', { text: 'One.\n\nTwo.\n\nThree was cut mi' }), done('max_tokens')];
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(frames)));
+    const r = await runTurn('sys', [{ role: 'user', content: 'hi' }], undefined, undefined, undefined, { maxParagraphs: 5 });
+    expect(r.text).toBe('One.\n\nTwo.');
+    expect(r.pacingTrimmed).toBe(true);
+    expect(r.stopReason).toBe('max_tokens'); // the honest reason survives the trim
+  });
+
+  it('leaves an untrimmable capped reply visible (no paragraph break)', async () => {
+    const frames = [sseFrame('delta', { text: 'one long paragraph cut mi' }), done('max_tokens')];
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(frames)));
+    const r = await runTurn('sys', [{ role: 'user', content: 'hi' }], undefined, undefined, undefined, { maxParagraphs: 5 });
+    expect(r.text).toBe('one long paragraph cut mi');
+    expect(r.pacingTrimmed).toBe(false);
+  });
+
+  it('never trims an UNPACED call, even on max_tokens (the state turn\'s JSON has blank lines too)', async () => {
+    const frames = [sseFrame('delta', { text: '{\n\n"a": 1,\n\n"b": "cut' }), done('max_tokens')];
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(frames)));
+    const r = await runTurn('sys', [{ role: 'user', content: 'hi' }]);
+    expect(r.text).toBe('{\n\n"a": 1,\n\n"b": "cut');
+    expect(r.pacingTrimmed).toBe(false);
+  });
+
+  it('does not trim a paced reply that ended naturally or at the ceiling', async () => {
+    for (const reason of ['end_turn', 'max_paragraphs']) {
+      const frames = [sseFrame('delta', { text: 'One.\n\nTwo, half' }), done(reason)];
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(frames)));
+      const r = await runTurn('sys', [{ role: 'user', content: 'hi' }], undefined, undefined, undefined, { maxParagraphs: 2 });
+      expect(r.text).toBe('One.\n\nTwo, half');
+      expect(r.pacingTrimmed).toBe(false);
+    }
+  });
+});
+
+// ---- UNKNOWN USAGE is estimated and flagged, never reported as a measured 0 ----
+describe('runTurn — usage', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('keeps measured usage and reports it as measured', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse([
+      sseFrame('delta', { text: 'hello there' }),
+      sseFrame('done', { inputTokens: 123, outputTokens: 7, stopReason: 'end_turn' }),
+    ])));
+    const r = await runTurn('sys', [{ role: 'user', content: 'hi' }]);
+    expect(r).toMatchObject({ inputTokens: 123, outputTokens: 7, usageEstimated: false });
+  });
+
+  it('estimates from what was sent + received when the done frame carries null (a paragraph cut)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse([
+      sseFrame('delta', { text: 'x'.repeat(40) }),
+      sseFrame('done', { inputTokens: null, outputTokens: null, stopReason: 'max_paragraphs' }),
+    ])));
+    const r = await runTurn('s'.repeat(400), [{ role: 'user', content: 'u'.repeat(80) }]);
+    expect(r.usageEstimated).toBe(true);
+    expect(r.inputTokens).toBe(100 + 20); // ~4 chars/token over system + message
+    expect(r.outputTokens).toBe(10);
+  });
+
+  it('treats a measured 0 as unknown too (a local server that omits usage)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse([
+      sseFrame('delta', { text: 'four' }),
+      sseFrame('done', { inputTokens: 0, outputTokens: 0 }),
+    ])));
+    const r = await runTurn('sys', [{ role: 'user', content: 'hi' }]);
+    expect(r.usageEstimated).toBe(true);
+    expect(r.inputTokens).toBeGreaterThan(0);
+    expect(r.outputTokens).toBe(1);
+  });
+});

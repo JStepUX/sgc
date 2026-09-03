@@ -10,6 +10,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { resolveTurnProvider } from './providers.js';
 import type { ProviderId, TurnProvider } from './provider-types.js';
 import type { ContentBlock, WireMessage, WireTool } from './wire-types.js';
+import { createParagraphCap } from './paragraph-cap.js';
 
 interface TurnRequestBody {
   system?: unknown;
@@ -17,7 +18,15 @@ interface TurnRequestBody {
   messages?: unknown;
   tools?: unknown;
   provider?: unknown;
+  /** Reply pacing (client: lib/pacing.ts): stop the visible stream at the Nth
+   *  paragraph break. Sent by REPLY calls only — the state turn's JSON must
+   *  never see it. Absent = no cap (pre-pacing behaviour, byte-identical). */
+  maxParagraphs?: unknown;
 }
+
+/** Upper bound on a requested paragraph ceiling — a sanity guard on the wire,
+ *  not a pacing decision (the deck tops out far lower; see lib/pacing.ts). */
+const MAX_PARAGRAPH_CEILING = 50;
 
 // Normalize to WireMessage[]: legacy `message` (string) becomes one user
 // message; `messages` (the recall loop's shape) validates role/content
@@ -48,8 +57,14 @@ export function registerTurnRoute(
   const { providers, providerAvailable, defaultProvider } = opts;
 
   app.post('/api/turn', async (req, res) => {
-    const { system, message, messages: rawMessages, tools: rawTools, provider: rawProvider } =
-      (req.body ?? {}) as TurnRequestBody;
+    const {
+      system,
+      message,
+      messages: rawMessages,
+      tools: rawTools,
+      provider: rawProvider,
+      maxParagraphs: rawMaxParagraphs,
+    } = (req.body ?? {}) as TurnRequestBody;
     if (typeof system !== 'string') {
       res.status(400).json({ error: 'Body must include a string `system`.' });
       return;
@@ -67,6 +82,19 @@ export function registerTurnRoute(
         return;
       }
       tools = rawTools as WireTool[];
+    }
+    let maxParagraphs: number | undefined;
+    if (rawMaxParagraphs !== undefined) {
+      if (
+        typeof rawMaxParagraphs !== 'number' ||
+        !Number.isInteger(rawMaxParagraphs) ||
+        rawMaxParagraphs < 1 ||
+        rawMaxParagraphs > MAX_PARAGRAPH_CEILING
+      ) {
+        res.status(400).json({ error: `maxParagraphs must be an integer 1..${MAX_PARAGRAPH_CEILING} when provided.` });
+        return;
+      }
+      maxParagraphs = rawMaxParagraphs;
     }
 
     // Resolve which provider runs this turn. The client sends only a token
@@ -117,14 +145,39 @@ export function registerTurnRoute(
       if (!settled && !res.writableEnded) controller.abort();
     });
 
+    // REPLY PACING (paragraph-cap.ts): with a ceiling, every visible delta goes
+    // through the counter and the turn ends at the Nth paragraph break — the
+    // upstream call is aborted (nobody will read the rest; on a single-slot
+    // local server it would also queue the state turn behind a reply tail
+    // nobody wanted) and a `done` with stopReason 'max_paragraphs' closes the
+    // stream. Usage is UNKNOWN on that path (the usage frame never arrived) and
+    // is sent as null, never as a measured 0 — the client estimates and flags
+    // it (api.ts runTurn), so the Context-Savings tile can't read a cut turn
+    // as 100% savings (Codex review, 2026-09-03).
+    // Whitespace the counter holds back mid-stream is released before the
+    // natural `done`, so an under-ceiling reply is byte-identical to no cap.
+    const cap = maxParagraphs ? createParagraphCap(maxParagraphs) : null;
     try {
       for await (const chunk of provider.streamTurn(system, messages, tools, controller.signal)) {
         if (chunk.kind === 'delta') {
-          send('delta', { text: chunk.text });
+          if (!cap) {
+            send('delta', { text: chunk.text });
+            continue;
+          }
+          const { emit, reached } = cap.feed(chunk.text);
+          if (emit) send('delta', { text: emit });
+          if (reached) {
+            settled = true;
+            controller.abort();
+            send('done', { inputTokens: null, outputTokens: null, stopReason: 'max_paragraphs' });
+            break;
+          }
         } else if (chunk.kind === 'tool_use') {
           send('tool_use', { id: chunk.id, name: chunk.name, input: chunk.input });
         } else {
           settled = true;
+          const rest = cap?.flush();
+          if (rest) send('delta', { text: rest });
           send('done', {
             inputTokens: chunk.usage.inputTokens,
             outputTokens: chunk.usage.outputTokens,

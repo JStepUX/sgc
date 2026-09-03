@@ -384,6 +384,9 @@ describe('buildPrompt', () => {
     // Diagram capability is an environment fact, not a persona trait — it must
     // survive a custom persona swap.
     'flowchart TD',
+    // Reply pacing is an architectural fact too (max_tokens is a ceiling, the
+    // prompt is the throttle — see lib/prompt.ts), so it must survive as well.
+    'Size your reply to the moment',
   ];
 
   // The summary contract has LEFT this prompt: it is produced by the post-reply
@@ -946,5 +949,37 @@ describe('buildPrompt — deliberate recall surfaces', () => {
     expect(DEFAULT_PERSONA).toContain(
       "this conversation's own older history is yours to reach back into",
     );
+  });
+});
+
+// ---- REPLY PACING (lib/pacing.ts) ----
+// The tail's pacing line names the drawn ceiling when there is one, and falls
+// back to the judgement-only wording when there isn't. Both keep the shared
+// opening (a TAIL_MARKER above), so a custom persona can't drop either.
+describe('buildPrompt — pacing line', () => {
+  const withCeiling = (n: number | null | undefined) =>
+    buildPrompt('doc', [], null, null, null, undefined, undefined, undefined, null, null, false, false, null, n);
+
+  it('names the ceiling, pluralised, when one is drawn', () => {
+    expect(withCeiling(3)).toContain('within a ceiling of 3 paragraphs this turn');
+    expect(withCeiling(1)).toContain('within a ceiling of 1 paragraph this turn');
+  });
+
+  it('gives explicit permission to stop under the ceiling', () => {
+    expect(withCeiling(4)).toContain('fewer is fine when the beat is done');
+  });
+
+  it('renders the judgement-only line with no ceiling (null / undefined / 0)', () => {
+    for (const n of [null, undefined, 0]) {
+      const p = withCeiling(n);
+      expect(p).not.toContain('ceiling');
+      expect(p).toContain('A quick beat wants a short answer');
+    }
+  });
+
+  it('keeps the pacing line in the tail, after the diagram capability and before YOUR TASK', () => {
+    const p = withCeiling(2);
+    expect(p.indexOf('Size your reply to the moment')).toBeGreaterThan(p.indexOf('flowchart TD'));
+    expect(p.indexOf('Size your reply to the moment')).toBeLessThan(p.indexOf('YOUR TASK:'));
   });
 });

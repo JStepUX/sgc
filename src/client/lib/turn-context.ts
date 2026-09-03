@@ -59,6 +59,13 @@ export interface TurnContextInput {
    * doesn't attach tools, so its default reproduces a plain prompt.
    */
   recallEnabled?: boolean;
+  /**
+   * The reply's paragraph ceiling (lib/pacing.ts), rendered into the prompt's
+   * pacing line. Drawn by the CALLER like the spontaneity directive — the live
+   * turn draws fresh, a re-spin replays the turn's snapshotted ceiling. Null /
+   * undefined = no ceiling (the judgement-only pacing line renders instead).
+   */
+  maxParagraphs?: number | null;
 }
 
 export interface TurnContextResult {
@@ -71,7 +78,10 @@ export interface TurnContextResult {
 }
 
 export function assembleTurnContext(input: TurnContextInput): TurnContextResult {
-  const { query, priorLog, constitutional, persona, now, fetchedDocs, failedUrls, spontaneityDirective, brainIndex, recallEnabled = false } = input;
+  const {
+    query, priorLog, constitutional, persona, now, fetchedDocs, failedUrls,
+    spontaneityDirective, brainIndex, recallEnabled = false, maxParagraphs = null,
+  } = input;
 
   // ---- LOCAL BUFFER: last 2 turns (4 entries: user+assistant pairs) ----
   const localBuffer = priorLog.slice(-LOCAL_BUFFER_SIZE);
@@ -133,6 +143,7 @@ export function assembleTurnContext(input: TurnContextInput): TurnContextResult 
     recallEnabled,
     hasOlderHistory,
     dynamicState,
+    maxParagraphs,
   );
 
   return { systemPrompt, grepResults, knowledge, localBufferSize: localBuffer.length };

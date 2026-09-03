@@ -5,7 +5,7 @@
 // (D5), error propagation (D8), token summing, and status ordering.
 
 import { runTurnWithRecall, MAX_RECALL_ROUNDS, type RecallEvent } from './recall-loop';
-import type { runTurn, TurnResult, WireMessage, WireTool } from './api';
+import type { runTurn, TurnResult, WireMessage, WireTool, TurnOptions } from './api';
 import type { RecallInput, RecallOutcome } from './recall';
 
 const TOOLS: WireTool[] = [{ name: 'recall', input_schema: { type: 'object' } }];
@@ -17,22 +17,25 @@ const result = (over: Partial<TurnResult>): TurnResult => ({
   elapsed: 1000,
   stopReason: 'end_turn',
   toolUses: [],
+  pacingTrimmed: false,
+  usageEstimated: false,
   ...over,
 });
 
 /** A scripted callTurn: pops the next TurnResult per call, records what it
  * was called with, and replays the text through onDelta in two chunks. */
 function scriptedCallTurn(script: TurnResult[]) {
-  const calls: { messages: WireMessage[]; tools: WireTool[] | undefined }[] = [];
+  const calls: { messages: WireMessage[]; tools: WireTool[] | undefined; options: TurnOptions | undefined }[] = [];
   const fake = (async (
     _system: string,
     messages: WireMessage[],
     onDelta?: (rawSoFar: string) => void,
     _provider?: unknown,
     tools?: WireTool[],
+    options?: TurnOptions,
   ) => {
     // Snapshot messages — the loop mutates its array between rounds.
-    calls.push({ messages: JSON.parse(JSON.stringify(messages)) as WireMessage[], tools });
+    calls.push({ messages: JSON.parse(JSON.stringify(messages)) as WireMessage[], tools, options });
     const next = script[calls.length - 1];
     if (!next) throw new Error('scripted callTurn ran out of rounds');
     if (next.text) {
@@ -71,7 +74,51 @@ describe('runTurnWithRecall — no tools (LOCAL / recall disabled)', () => {
     expect(calls[0].messages).toEqual([{ role: 'user', content: 'hello' }]);
     expect(out).toEqual({
       text: 'plain answer', inputTokens: 100, outputTokens: 50, elapsed: 1000, recalls: [], apiCalls: 1,
+      stopReason: 'end_turn', pacingTrimmed: false, usageEstimated: false,
     });
+    // No ceiling requested → no options on the wire (byte-identical to before pacing).
+    expect(calls[0].options).toBeUndefined();
+  });
+
+  it('forwards the pacing ceiling to the call and surfaces how the reply ended', async () => {
+    const { fake, calls } = scriptedCallTurn([
+      result({ text: 'Two paragraphs.', stopReason: 'max_paragraphs' }),
+    ]);
+    const out = await runTurnWithRecall({ ...baseOpts(fake, null), maxParagraphs: 2 });
+    expect(calls[0].options).toEqual({ maxParagraphs: 2 });
+    expect(out.stopReason).toBe('max_paragraphs');
+    expect(out.pacingTrimmed).toBe(false);
+  });
+
+  it('spends the ceiling ACROSS recall rounds — committed paragraphs come off the next round\'s allowance', async () => {
+    const toolUse = { id: 'tu_1', name: 'recall', input: { query: 'x' } };
+    const { fake, calls } = scriptedCallTurn([
+      result({ text: 'One.\n\nTwo.', stopReason: 'tool_use', toolUses: [toolUse] }),
+      result({ text: 'Three.', stopReason: 'tool_use', toolUses: [toolUse] }),
+      result({ text: 'Four.' }),
+    ]);
+    const out = await runTurnWithRecall({ ...baseOpts(fake, TOOLS), maxParagraphs: 3 });
+    expect(calls.map((c) => c.options?.maxParagraphs)).toEqual([3, 1, 1]); // 3 → 3-2=1 → floor 1
+    expect(out.apiCalls).toBe(3);
+  });
+
+  it('ORs usageEstimated across rounds', async () => {
+    const toolUse = { id: 'tu_1', name: 'recall', input: { query: 'x' } };
+    const { fake } = scriptedCallTurn([
+      result({ text: 'a', stopReason: 'tool_use', toolUses: [toolUse], usageEstimated: true }),
+      result({ text: 'b' }),
+    ]);
+    const out = await runTurnWithRecall(baseOpts(fake, TOOLS));
+    expect(out.usageEstimated).toBe(true);
+  });
+
+  it('carries the hard-cap trim flag out of the terminal round', async () => {
+    const { fake } = scriptedCallTurn([
+      result({ text: 'Trimmed.', stopReason: 'max_tokens', pacingTrimmed: true }),
+    ]);
+    const out = await runTurnWithRecall({ ...baseOpts(fake, null), maxParagraphs: 3 });
+    expect(out.stopReason).toBe('max_tokens');
+    expect(out.pacingTrimmed).toBe(true);
   });
 
   it('makes one call even if the model somehow reports tool_use (no tools were attached)', async () => {

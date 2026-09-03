@@ -9,6 +9,7 @@ import { extractUrls, fetchUrl } from '../lib/api';
 import { executeRecall, RECALL_TOOL } from '../lib/recall';
 import { runTurnWithRecall } from '../lib/recall-loop';
 import { runSpontaneity } from '../lib/spontaneity/engine';
+import { drawPacingCeiling, pacingOutcomeFor } from '../lib/pacing';
 import { operatorLabel } from '../lib/spontaneity/flexDeck';
 import { saveTurn as apiSaveTurn, listChats as apiListChats } from '../lib/persistence';
 import type { ChatSession } from './useChatSession';
@@ -52,7 +53,7 @@ export function useTurnRunner(
   const processInput = async (text: string) => {
     const {
       chatId, chatLog, constitutional, activePersona, hydrated, turnCount,
-      brainIndex, spontaneityStateRef,
+      brainIndex, spontaneityStateRef, latestTurn,
       setMessages, setChatLog, setTurnCount, setLatestTurn, setTokenHistory, setChats,
     } = session;
     const { provider, health } = providerState;
@@ -145,6 +146,17 @@ export function useTurnRunner(
         ? { label: operatorLabel(spont.operator.directive) }
         : undefined;
 
+      // ---- PACING DRAW (random ceiling, blind to the input) ----
+      // How much of the scene this reply may cover: a paragraph ceiling from
+      // the weighted deck, never the same as the previous reply's (read off
+      // the latest turn's persisted diagnostics — restored on load/undo/tangent
+      // like everything else in latestTurn, so it survives reloads without a
+      // ref of its own). Rendered into the prompt below, enforced server-side
+      // at the Nth paragraph break, snapshotted here for faithful re-spins.
+      // See lib/pacing.ts for why the cap can't do this job.
+      const pacingCeiling = drawPacingCeiling(latestTurn?.pacingCeiling ?? null);
+      turnData.pacingCeiling = pacingCeiling;
+
       // ---- PROVIDER + RECALL GATE (decided BEFORE prompt assembly) ----
       // Assert the provider token only once /api/health has CONFIRMED it
       // available — an explicit-but-unavailable token 503s by design
@@ -182,6 +194,7 @@ export function useTurnRunner(
         // tokens, no model; the memory grep above it is untouched.
         brainIndex,
         recallEnabled,
+        maxParagraphs: pacingCeiling,
       });
       turnData.localBufferSize = localBufferSize;
       if (grepResults.length > 0) {
@@ -236,6 +249,7 @@ export function useTurnRunner(
         onStatus: setTurnStatus,
         executeTool: (input, surfaced) => executeRecall(input, chatLog, turnStartedAt, surfaced),
         initialSurfaced: grepResults.map((r) => r.turnIndex),
+        maxParagraphs: pacingCeiling,
       });
       // Sal's reply is prose only now — the summary contract moved to the state
       // turn below. parseTurnResponse stays as a SCRUBBER: a model that emits a
@@ -245,9 +259,12 @@ export function useTurnRunner(
 
       turnData.inputTokens = turnResult.inputTokens;
       turnData.outputTokens = turnResult.outputTokens;
+      turnData.usageEstimated = turnResult.usageEstimated;
       turnData.totalLatency = turnResult.elapsed;
       turnData.recalls = turnResult.recalls;
       turnData.apiCalls = turnResult.apiCalls;
+      turnData.pacingOutcome = pacingOutcomeFor(turnResult.stopReason);
+      turnData.pacingTrimmed = turnResult.pacingTrimmed;
       // turnData.summary stays null until the state turn lands and PATCHes it
       // in (below) — the same for turnData.dynamicState.
 
