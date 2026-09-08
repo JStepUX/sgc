@@ -2,8 +2,12 @@
 // THE STATE TURN — call → PATCH → stamp.
 //
 // The impure half of Dynamic State: one small model call after the reply has
-// already been promoted, then the post-hoc write that attaches its two outputs
-// (turn summary + inner state) to the turn that just finished.
+// already been promoted, then the post-hoc write that attaches its three
+// outputs (turn summary + inner state + this turn's continuity DELTA, spec 07)
+// to the turn that just finished. The delta is stored as received; the sheet
+// is folded from every turn's delta at read time (lib/continuity.ts), which is
+// what makes the non-blocking discipline below safe for an accreting record:
+// two state calls landing in either order each stamp only their own turn.
 //
 // Shared by BOTH producers of an assistant reply — the live turn
 // (hooks/useTurnRunner) and a saved edit or re-spin (hooks/useResponseEditor) —
@@ -15,9 +19,14 @@
 // needs the DB row id that save returns. The two join, then write.
 //
 // Discipline, inherited from the existing non-blocking persist: this NEVER
-// blocks the composer, never surfaces an error, and never retries. A failure
-// leaves the turn summary-less and state-less; the previous state stays live in
-// the log (D13), so nothing blanks. If the user submits the next turn before
+// blocks the composer and never surfaces an error. The CALL is retried exactly
+// once on a transport failure (review, 2026-09-07: for the accreting
+// continuity record a lost reflection is a permanent omission, not one-turn
+// staleness — the exchange leaves the reflection window and nothing observes
+// it again); the WRITE is never retried, and a malformed response is not a
+// transport failure. A failure past the retry leaves the turn summary-less,
+// state-less and delta-less; the previous state and sheet stay live in the
+// log (D13), so nothing blanks. If the user submits the next turn before
 // this lands, that turn assembles from the newest COMPLETED state — a one-turn
 // stale inner state is diegetically fine (moods lag).
 //
@@ -44,6 +53,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import type { ChatEntry, DynamicState, TurnSummary } from './types';
 import type { TurnData } from './turn-data';
 import { buildStatePrompt, parseStateResponse } from './dynamic-state';
+import type { ContinuityDelta, ContinuitySheet } from './continuity';
 import { runTurn, type ProviderId } from './api';
 import { updateTurnInspector as apiUpdateTurnInspector } from './persistence';
 
@@ -103,6 +113,10 @@ export interface StateTurnInput {
   recentEntries: ChatEntry[];
   /** The state this turn began from — null on the first ever turn. */
   prevState: DynamicState | null;
+  /** The continuity sheet this turn began from (foldSheet of the same log
+   *  slice prevState comes from) — null before any turn has recorded one.
+   *  Prompt input only: the merge happens at read time, not here. */
+  prevSheet?: ContinuitySheet | null;
   /** The operator injected into the turn being distilled, when one fired. */
   spontaneityDirective?: string | null;
   provider?: ProviderId;
@@ -116,6 +130,10 @@ export interface StateTurnInput {
 export interface StateTurnOutcome {
   summary: TurnSummary | null;
   state: DynamicState | null;
+  /** This turn's continuity delta as the model emitted it, or null when the
+   *  response carried no usable block (nothing is stamped; the fold simply
+   *  skips this turn). */
+  sheetDelta: ContinuityDelta | null;
   tokens: { input: number; output: number };
 }
 
@@ -137,14 +155,23 @@ export async function callStateTurn(input: StateTurnInput): Promise<StateTurnOut
       input.recentEntries,
       input.prevState,
       input.spontaneityDirective,
+      input.prevSheet,
     );
-    const result = await runTurn(system, [{ role: 'user', content: user }], undefined, input.provider);
-    const { summary, state } = parseStateResponse(result.text);
-    if (!summary && !state) {
+    const call = () => runTurn(system, [{ role: 'user', content: user }], undefined, input.provider);
+    let result: Awaited<ReturnType<typeof runTurn>>;
+    try {
+      result = await call();
+    } catch (first) {
+      // One retry, same inputs — see header. A second failure propagates.
+      console.warn('state turn call failed, retrying once:', first);
+      result = await call();
+    }
+    const { summary, state, sheetDelta } = parseStateResponse(result.text);
+    if (!summary && !state && !sheetDelta) {
       // Billed but unreadable — still an outcome, so the usage is recorded.
       console.warn('state turn returned nothing parseable — turn left summary-less');
     }
-    return { summary, state, tokens: { input: result.inputTokens, output: result.outputTokens } };
+    return { summary, state, sheetDelta, tokens: { input: result.inputTokens, output: result.outputTokens } };
   } catch (err) {
     console.warn('state turn failed:', err);
     return null;
@@ -162,6 +189,7 @@ async function commit(
   merged: TurnData,
   summary: TurnSummary | null,
   state: DynamicState | null,
+  sheetDelta: ContinuityDelta | null,
 ): Promise<void> {
   // Stale chain — the row was rewritten while this was in flight. The
   // rewriter's own chain owns the row now; don't even make the request.
@@ -182,7 +210,7 @@ async function commit(
 
   const stamp = (entry: ChatEntry): ChatEntry =>
     target.matches(entry)
-      ? { ...entry, summary: summary ?? undefined, dynamicState: state ?? undefined }
+      ? { ...entry, summary: summary ?? undefined, dynamicState: state ?? undefined, sheetDelta: sheetDelta ?? undefined }
       : entry;
   target.setMessages((prev) => prev.map(stamp));
   target.setChatLog((prev) => prev.map(stamp));
@@ -199,13 +227,14 @@ export async function commitStateTurn(
     ...target.baseTurnData,
     summary: outcome.summary,
     dynamicState: outcome.state,
+    sheetDelta: outcome.sheetDelta,
     stateTokens: outcome.tokens,
     // The state call is a real call and says so — but only here. The main
     // input/output counts stay the reply's own (D12).
     apiCalls: (target.baseTurnData.apiCalls ?? 1) + 1,
   };
   try {
-    await commit(target, merged, outcome.summary, outcome.state);
+    await commit(target, merged, outcome.summary, outcome.state, outcome.sheetDelta);
   } catch (err) {
     console.warn('state write failed:', err);
   }
@@ -231,6 +260,8 @@ export async function saveDynamicState(
   target: StateTurnTarget,
   state: DynamicState,
 ): Promise<void> {
+  // The delta rides through untouched — curation of inner state is not a
+  // statement about the scene.
   const merged: TurnData = { ...target.baseTurnData, dynamicState: state };
-  await commit(target, merged, target.baseTurnData.summary, state);
+  await commit(target, merged, target.baseTurnData.summary, state, target.baseTurnData.sheetDelta ?? null);
 }

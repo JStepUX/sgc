@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PanelRightClose, PanelRightOpen, Split } from 'lucide-react';
 import { DEFAULT_PERSONA } from './lib/prompt';
 import { newestDynamicState } from './lib/dynamic-state';
+import { foldSheet } from './lib/continuity';
 import { PROVIDER_LABEL } from './lib/provider';
 import { isDesktop } from './lib/desktop';
 import { AuroraBackground } from './components/AuroraBackground';
@@ -99,6 +100,9 @@ export default function SalienceGatedCognition() {
   // The state the next prompt will actually read (D13) — shown as "carried"
   // when the latest turn has none, and the modal's seed when repairing one.
   const carriedState = useMemo(() => newestDynamicState(session.chatLog), [session.chatLog]);
+  // The continuity sheet the next prompt will read (spec 07) — folded from
+  // the whole log, for the rail's read-only card.
+  const sheet = useMemo(() => foldSheet(session.chatLog), [session.chatLog]);
 
   // Turn undo: the pair is deleted (persist-first, inside the hook) and the
   // removed user text is seeded back into the composer for editing. The seed
@@ -374,6 +378,7 @@ export default function SalienceGatedCognition() {
               onOpenStateEditor={handleOpenDynamicState}
               stateEditorDisabled={!editor.canEditDynamicState || reflecting}
               carriedState={carriedState}
+              sheet={sheet}
             />
             <TokenChart tokenHistory={session.tokenHistory} />
           </aside>

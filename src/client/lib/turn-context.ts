@@ -21,6 +21,7 @@ import { LOCAL_BUFFER_SIZE, SUMMARY_BUFFER_SIZE } from './constants';
 import { searchScored, type ScoredResult } from './time-score';
 import { searchBrains, type BrainIndex, type KnowledgeBlock } from './brains';
 import { newestDynamicState } from './dynamic-state';
+import { foldSheet } from './continuity';
 import { buildPrompt } from './prompt';
 
 export interface TurnContextInput {
@@ -121,6 +122,14 @@ export function assembleTurnContext(input: TurnContextInput): TurnContextResult 
   // the most recent value, no scoring, no corpus.
   const dynamicState = newestDynamicState(priorLog);
 
+  // ---- CONTINUITY SHEET: folded from every entry's delta, in log order
+  // (spec 07). Derived from priorLog like everything else here, so nothing
+  // from AFTER a re-spin's slice can leak in. Note the asymmetry with the
+  // pacing draw, which a re-spin replays exactly: a sliced fold is the best
+  // CURRENT reconstruction of that point in the story, including reflections
+  // that landed after the original turn ran — hindsight, not replay.
+  const sheet = foldSheet(priorLog);
+
   // Older history exists beyond BOTH buffers — the distinction the absence
   // marker needs: "nothing surfaced" is only worth saying when there was a
   // corpus to surface from (deliberate-recall spec, D7 rationale).
@@ -129,22 +138,23 @@ export function assembleTurnContext(input: TurnContextInput): TurnContextResult 
   // ---- BUILD THE PROMPT ----
   // `now` gives retrieved turns a relative-time prefix computed against the same
   // reference the time scorer used; the distilled summary window follows it.
-  const systemPrompt = buildPrompt(
+  const systemPrompt = buildPrompt({
     constitutional,
     localBuffer,
-    grepResults.length > 0 ? grepResults : null,
+    grepResults: grepResults.length > 0 ? grepResults : null,
     fetchedDocs,
     failedUrls,
     persona,
     now,
-    summaryWindow,
+    summaryBuffer: summaryWindow,
     spontaneityDirective,
     knowledge,
     recallEnabled,
     hasOlderHistory,
     dynamicState,
+    sheet,
     maxParagraphs,
-  );
+  });
 
   return { systemPrompt, grepResults, knowledge, localBufferSize: localBuffer.length };
 }

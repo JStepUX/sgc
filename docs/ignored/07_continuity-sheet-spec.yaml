@@ -1,0 +1,186 @@
+spec: Continuity sheet — durable, low-salience scene facts that the buffers drop and the grep never scores
+status: implemented                # 2026-09-07 — design agreed in session (James + Claude); read and agreed item-by-item 2026-09-07; S0–S6 built the same day; Codex (gpt-5.6-sol) adversarial review 2026-09-07 → storage redesigned to deltas + fold (see review_2026-09-07); unlanded. Schema seeded from James's brainstorm list (a starting point, not gospel); deviations in schema_vs_brainstorm; knowledge slot decided as `unaware_of`.
+date: 2026-09-07
+goal: >
+  Give Sal a per-chat continuity sheet — story, location, and one record per
+  named character (presence, apparel, items, position, physical state,
+  disposition) — produced as deltas by the EXISTING post-reply state turn,
+  merged by code, stored on the turn snapshot beside inner state, and rendered
+  into every main prompt above the summary buffer. Zero user interaction:
+  no editor, no confirm, correction is diegetic. First-class over Dynamic
+  State: renders above it, serialises before it, survives when it doesn't.
+
+why_this_tier_exists:         # the selection criterion — the test for whether a SLOT belongs on the sheet; never a category list in the prompt
+  criterion: a fact holds until an event changes it, later replies must stay consistent with it, and neither buffer nor a topical search can reconstruct it (rarely the topic, rarely restated)
+  leak_today: "TurnSummary.persistent ('true until explicitly changed', src/client/lib/types.ts:6) reaches the prompt verbatim for LOCAL_BUFFER_SIZE=4 entries then distilled for SUMMARY_BUFFER_SIZE=4 more (src/client/lib/constants.ts:14,29), then never again — a four-turn horizon on a label that promises permanence"
+  passes: [ apparel, items in hand, immediate location, stance, injuries, disposition toward the user, who is present / who left and why, time of day, established weather ]
+  fails:  [ momentary mood (volatile — summary buffer), what was said (local buffer / grep), background crowds and ambient decoration (regenerable from location type), plot beats ]
+
+invariant_check:
+  new_api_call: none — rides the state turn (spec 03). Base loop stays 2 calls/turn, worst case 4 with recall.
+  model_in_retrieval: none — the sheet is written by the state turn and READ by a backward scan (newestSheet, mirror of newestDynamicState at src/client/lib/dynamic-state.ts:98); no scoring, no corpus, no search.
+  sal_ephemeral: unchanged — the sheet is DATA rendered into a rebuilt-fresh prompt, same argument as dynamic-state.ts header lines 14-17.
+  recurrence_bound: >
+    DIFFERENT from Dynamic State and must be documented as such (types.ts:25-30 and dynamic-state.ts:19-21 say inner state is bounded by
+    per-turn regeneration; the sheet is NOT regenerated — it accretes by design). Its bounds are: fixed schema (slot count is the cap),
+    per-slot char cap, character-record cap, deltas-only (omission never deletes, so a lazy or truncated model output cannot blank it),
+    and diegetic correction (user correction outranks narration).
+  no_gate: the state turn stays non-blocking (state-turn.ts header lines 17-22). The next turn reads the newest COMPLETED sheet; one-turn staleness is accepted exactly as for inner state. Do NOT reintroduce a composer gate.
+  naive_baseline: the sheet renders in the real prompt only, never in estimateNaiveContextTokens (same D7 discipline as summary buffer / knowledge / inner state, prompt.ts:150-151).
+
+prerequisite:
+  spec_06_S1_only: >
+    docs/06_turn-pipeline-seams-spec.yaml trigger fires: this feature is "a 15th positional parameter on buildPrompt"
+    (prompt.ts had 14 positionals). Land spec 06 step S1 (buildPrompt(input: PromptInput), prompt-snapshot diff empty) as S0 below.
+    S2–S5 of spec 06 stay unscheduled — the sheet does not ride TurnResult/RespinResult and is not a per-turn draw.
+
+verified_facts:               # observed 2026-09-07
+  state_turn_output_shape: "parseStateResponse (dynamic-state.ts:281) tolerates {turn_summary, internal_state} or a flattened object; three candidates: first-{..last-}, raw body, completeJson(body)"
+  state_turn_callsites: "useTurnRunner.ts:332-341 (live; prevState: newestDynamicState(chatLog)) and useResponseEditor.ts:317-329 (edit/re-spin; prevState: newestDynamicState(patched.slice(0, editedIdx))) — both pass through StateTurnInput (state-turn.ts:99-109)"
+  commit_stamp: "state-turn.ts commit() stamps { summary, dynamicState } onto the matched ChatEntry via target.matches and writes merged TurnData as inspector_json through apiUpdateTurnInspector (conditional PATCH on content + write epoch)"
+  persistence_is_opaque: "inspector_json is a string the server never parses (src/server/db.test.ts:184-209 treat it as a blob) — no server or schema change"
+  hydration: "turn-data.ts replayEntry (155-165) rebuilds ChatEntry.summary / .dynamicState from inspector_json via summaryFromInspector (191) / dynamicStateFromInspector (207); a sheet needs the same mirror"
+  assembler_reads_newest: "turn-context.ts:122 dynamicState = newestDynamicState(priorLog) — re-spin's sliced log reproduces the state that turn saw; the sheet gets rollback on re-spin / tangent / edit for free by the same mechanism"
+  prompt_block_order: "prompt.ts:335-344 — CONSTITUTIONAL → grep → summaryBuffer → local → innerState → knowledge → linked → failed"
+  summary_render_sites: "AssistantMessage.tsx:20 (dimmed line: persistent+volatile+patterns) and TurnInspector.tsx:416-424 (structured card)"
+  inspector_state_card: "TurnInspector.tsx:71-84 derives effectiveState = own ?? carried; card gated at :360"
+  test_surface: "prompt.test.ts has 45 buildPrompt( call sites (S0 cost); dynamic-state.test.ts 31 buildStatePrompt/parseStateResponse refs; state-turn.test.ts mocks runTurn + updateTurnInspector"
+
+design:
+  D1_types:                   # src/client/lib/continuity.ts (new, pure) — types + merge + render + newest; header comment carries this spec's criterion and the recurrence_bound note
+    ContinuitySheet: "{ story: StorySlots; location: LocationSlots; characters: Record<string, CharacterRecord> }"
+    StorySlots: "{ genre?: string; time?: string }                         # time = one line, e.g. 'day 3, late evening'"
+    LocationSlots: "{ name?: string; type?: string; environment?: string } # environment = ONE established line (rain, dark, smoke) — not decoration"
+    CharacterRecord: "{ name: string; present: boolean; absence_reason?: string; immediate_location?: string; stance?: string; apparel?: string; items?: string; physical_state?: string; disposition_to_user?: string; unaware_of?: string }"
+    ContinuityDelta: "same shape, every slot optional; a slot set to null CLEARS it; characters keyed by name (or an array of records carrying `name`); a record for an unseen name OPENS it; a value or name matching /^<[^<>]*>$/ (a template placeholder echoed back) is a NO-OP"
+    storage: "DELTAS ONLY. ChatEntry.sheetDelta / TurnData.sheetDelta hold the raw delta as received; the sheet is never stored — foldSheet(log) applies every delta in log order at read time (assembler, rail, state-prompt prevSheet). Review finding 1 (2026-09-07): with no composer gate, storing whole sheets let whichever of two overlapping state calls landed later drop the other's delta; the fold makes landing order irrelevant, and clearing an edited turn's delta removes its contribution instantly (finding 2). One pass over the log per prompt build."
+    caps: { SLOT_CHARS: 160, CHARACTER_RECORDS: 16 }
+    key_normalisation: "character key = name trimmed, whitespace-collapsed, lower-cased; display `name` = first sighting's casing, never overwritten by a later delta"
+    user_is_a_character: "the person's own character is an ordinary record — no special case; the state prompt names it as such"
+  D2_merge:                   # applyContinuityDelta(prev: ContinuitySheet | null, delta: unknown): ContinuitySheet — pure, never throws, never blanks
+    - "invalid delta (not an object, wrong shapes) → return prev unchanged (or the empty sheet when prev is null)"
+    - "story: shallow merge"
+    - "location: shallow merge, EXCEPT when BOTH sides carry a name and they differ (normalised) → REPLACE location wholesale from the delta (unmentioned slots empty). A move is a new place, not an edit to the old one. Naming a place that had no name is NOT a move — it merges (documented exception; Codex dissented 2026-09-07, preferring the literal replace-on-any-name rule; overruled because a late-named place would lose its established environment)."
+    - "characters: per-key shallow merge; new key → new record with present defaulting true; records are NEVER deleted — absence is present:false + absence_reason. Documented exception to omission-never-deletes: a delta setting present:true clears a stale absence_reason unless it supplies one (a present character 'gone to the market' is a contradiction the state prompt would carry forward, not a fact; Codex dissented 2026-09-07 on spec-literalism, overruled)."
+    - "over cap: a delta that would open a 17th record is dropped for that record only; existing records untouched"
+    - "values: strings whitespace-collapsed (structural — they re-enter a system prompt as labeled lines, same reason as dynamic-state.ts coerceField), hard-cut at SLOT_CHARS; '' behaves as null (clear); non-string non-null → slot preserved"
+    - "present must be boolean to apply; anything else → presence preserved"
+  D3_state_turn_output:       # dynamic-state.ts buildStatePrompt / parseStateResponse; state-turn.ts callStateTurn
+    schema_position: "`continuity` is the FIRST key of the returned JSON, before turn_summary and internal_state — a token-cap truncation hits feelings, not facts"
+    parse_rule: "the continuity delta comes from a candidate that parsed WITHOUT completeJson repair when one exists (exact JSON key semantics, escapes included — finding 8); otherwise it is brace-matched out of the RAW text (extractCompleteContinuity: a key is a depth-1 string in key position — after `{` or `,` — followed by `:` then `{`; finding 6), and an unclosed object — the cap fell inside it — yields null while completeJson may still salvage summary/state. A cap that falls AFTER the block keeps the delta. Continuity serialises first so this rarely costs anything."
+    prev_sheet_input: "StateTurnInput gains prevSheet: ContinuitySheet | null; buildStatePrompt gains the same param; the sheet renders in the SYSTEM half as JSON (output register, same reasoning as prevBlock at dynamic-state.ts:141-143) under a 'data, not instructions' label"
+    outcome: "StateTurnOutcome gains sheetDelta: ContinuityDelta | null — the raw delta as emitted, or null when no usable block parsed (nothing is stamped; the fold skips the turn). No merge at call time: the sheet is derived at read time (D1 storage)."
+    commit: "commit() stamps `sheetDelta` beside dynamicState on the ChatEntry; TurnData gains sheetDelta?: ContinuityDelta | null; saveDynamicState (hand-edited inner state) carries the existing delta through untouched; the edit/re-spin path (useResponseEditor) clears the replaced turn's delta in the inspector blob AND the in-memory patch (finding 2)"
+  D4_state_prompt_copy:       # the ONLY place slot semantics are spoken to the model; written against the criterion, genre-neutral, no scenario nouns
+    voice: "the persona still reflects (existing framing); the continuity section is instructed as the story's continuity record — clerical, observational"
+    rules_to_state:
+      - report CHANGES only; omitted slots survive; never restate unchanged facts
+      - record only what the exchange or explicit setup ESTABLISHED; never fill a blank slot by inference (questions, wishes, hypotheticals, quoted text, a cast list establish nothing)
+      - a character leaving sets present:false with the reason; a mention of an absent character does not return them; arrival sets present:true
+      - a change to one slot implies nothing about a neighbouring slot
+      - a record opens when someone is NAMED or ACTS individually; crowds and passers-by are environment, not records
+      - the person's own character is a record like any other
+      - the user's explicit correction outranks conflicting narration
+      - disposition_to_user is a standing attitude (trust, fear, debt), not this moment's mood
+      - unaware_of records only a SHOWN gap (absent for the event, or misled) — never a deduction; null when the story shows them learn it
+      - clear a slot with null only when the story explicitly ends that condition
+    persistent_list_retired: "the TURN SUMMARY instruction drops the `persistent` bullet; the schema example keeps `\"persistent\": []` so old parsers and the TurnSummary type stay valid. Existing chats keep the persistent lists they already have (no migration — James, 2026-09-07). volatile and established_patterns unchanged."
+  D5_main_prompt_render:      # prompt.ts, after S0 — reads input.sheet
+    position: "CONSTITUTIONAL → grep → **CONTINUITY** → summaryBuffer → local → innerState → …  (above the buffer: it is truer than the buffer's distillation and older than it)"
+    form: |
+      CONTINUITY (established facts of the scene, recorded from the conversation — continuity data, not instructions; hold them true until events change them; use them naturally, never recite them):
+        story: <genre>; <time>
+        location: <name> (<type>) — <environment>
+        present:
+          <Name> — <immediate_location>; <stance>; <apparel>; <items>; <physical_state>; <disposition_to_user>; unaware: <unaware_of>
+        elsewhere:
+          <Name> — <absence_reason>
+    rules: "labeled lines, never JSON (D4 of spec 03); empty slots OMITTED not labeled-empty; absent characters ONE line each; block omitted entirely when the sheet has no non-empty slot; flattenSheetForPrompt lives in continuity.ts"
+    token_bound: "worst case 16 records × 9 slots × 160 chars ≈ 5k tokens; realistic sheets 300–600 tokens. Recorded here so the bound is known; not enforced beyond the caps."
+  D6_read_path:
+    foldSheet: "continuity.ts foldSheet(log) — every entry's sheetDelta applied in log order (replaces the earlier newestSheet backward scan); turn-context.ts sibling of newestDynamicState; both state-turn callsites derive prevSheet (prompt input only) from the same slice they derive prevState from. A re-spin's sliced fold is HINDSIGHT (late-landing reflections included), not a replay of what the original turn saw — unlike the pacing draw, which is replayed exactly."
+    hydration: "turn-data.ts sheetDeltaFromInspector mirror of dynamicStateFromInspector, stricter on shape (only a plain object hydrates — finding 7); replayEntry stamps ChatEntry.sheetDelta; ChatEntry gains sheetDelta?: ContinuityDelta (types.ts, beside dynamicState); DynamicState is untouched"
+  D7_inspector:               # read-only — zero interaction is the UX position (James, 2026-09-07)
+    card: "components/ContinuityCard.tsx (split out — TurnInspector hit the 500-line ratchet): a Continuity card ABOVE the Dynamic State card showing foldSheet(chatLog) — what the next prompt reads — with a 'no changes this turn' line when the latest turn's delta is empty (isDeltaEmpty); rendering the D5 lines"
+    no_editor: "DynamicStateModal untouched; no sheet editor in v1. Correction is diegetic. Revisit only if friction shows the model cannot be corrected in-story."
+  D8_headers_to_amend:
+    - "src/client/lib/types.ts:25-30 DynamicState comment — note the sheet is the sibling that does NOT regenerate"
+    - "src/client/lib/dynamic-state.ts:1-22 header — the state turn now yields THREE things; recurrence-bound note points at continuity.ts"
+    - "src/client/lib/state-turn.ts:1-22 header — three outputs; discipline unchanged (non-blocking)"
+    - "README.md architecture narrative — one paragraph in the tier walk-through, placed between the summary buffer and Dynamic State; docs/changelogs/2026-09.md entry at landing"
+    - "CLAUDE.md Mission Brief — add the sheet as the third sanctioned raise? NO: it is not a new call. Add one clause to the state-turn sentence: 'and, from spec 07, the continuity sheet — accreting, deltas-only, fixed schema'"
+
+schema_vs_brainstorm:          # James's starting list (2026-09-07) → spec; deviations deliberate, all vetoable
+  sentiment: "list has Sentiment [situation/{{user}}]; spec keeps disposition_to_user (standing attitude) and DROPS sentiment-toward-situation as momentary mood (fails the criterion — goes stale on the sheet)"
+  genre: "list puts Genre under Location; spec lifts it to story-level (set once, survives every move)"
+  ambient: "list enumerates Environmental effects + Background NPCs; spec folds both into ONE established-line `environment` slot so the sheet cannot fight the writer"
+  added: "story.time (time of day / elapsed) — not on the list; the classic continuity break"
+  presence_triggers: "list: change on arrival/departure with reason — spec: present:boolean + absence_reason, record never deleted"
+  location_trigger: "list: change on {{user}} transition — spec: name change replaces the location wholesale"
+
+open_items:
+  character_knowledge_slot: >
+    DECIDED 2026-09-07 (James: "sure, kind of — knows what about what?") — NOT a general `knows` slot (unbounded, unparseable).
+    Slot is `unaware_of?: string`: it records only SHOWN gaps — what this character has not yet learned, or is wrong about,
+    relative to what the scene has established. An omitted unaware_of leaves that character's knowledge UNSPECIFIED, not known
+    (amended after the Astra chat, 2026-09-07: the earlier "everyone knows everything by default" wording described a default the
+    prompts never actually asserted, and would make a missed extraction behave like successful transmission). The main CONTINUITY
+    block now says so: "They describe the scene, not what each character knows".
+    Prompt rule: record only when the story SHOWED the character absent for, or misled about, an event; clear (null) when the
+    story shows them learn it. Never deduce. This is the dramatic-irony case and nothing wider.
+  established_patterns_horizon: "UNCHANGED and still four-turn. Non-narrative chats get an empty sheet (harmless). Let friction decide whether a general standing-facts section is warranted — not designed here."
+
+build_steps:                  # each step green (npm test, typecheck, lint) before the next; no gate until James invokes it
+  - S0: spec 06 S1 — buildPrompt(input: PromptInput); adjust the 45 prompt.test.ts callers + turn-context + estimateNaiveContextTokens; prompt snapshot diff EMPTY   # DONE 2026-09-07
+  - S1: D1+D2 (DONE) — continuity.ts types, applyContinuityDelta, flattenSheetForPrompt, newestSheet; continuity.test.ts (merge table below)
+  - S2: D6 (DONE) — types.ts ChatEntry.sheet, turn-data.ts TurnData.sheet + sheetFromInspector + replayEntry; turn-data.test.ts round trip
+  - S3: D3+D4 (DONE) — buildStatePrompt(prevSheet) + copy; parseStateResponse returns sheetDelta with the parse_rule; callStateTurn/StateTurnInput/StateTurnOutcome/commit carry the sheet; both callsites pass prevSheet; dynamic-state.test.ts + state-turn.test.ts
+  - S4: D5 (DONE) — prompt.ts CONTINUITY block via input.sheet; turn-context passes newestSheet(priorLog); prompt.test.ts ordering + omission + naive-baseline exclusion
+  - S5: D7 (DONE) — inspector card
+  - S6: D8 (DONE) — headers, README, changelog, CLAUDE.md clause
+
+verification:
+  merge_table:                # continuity.test.ts — each row a test
+    - omission survives: delta {} → prev unchanged, same reference not required
+    - absence is not deletion: present:false keeps apparel/items; a later present:true restores the same record
+    - location move replaces: name change drops old environment; same-name delta merges
+    - new record defaults present:true; 17th record dropped, first 16 intact
+    - null clears one slot; '' clears; non-string preserves; over-length hard-cut at 160 after whitespace collapse
+    - invalid delta shapes (array, string, nested garbage) → prev unchanged
+    - parse_rule: a response truncated inside `continuity` yields sheet = prevSheet unchanged while summary/state still recover via completeJson
+    - key normalisation: 'Duncan' / 'duncan ' / 'DUNCAN' hit one record; display name is the first sighting
+  integration:
+    - state-turn.test.ts — outcome.sheet stamped on the matched entry and in the PATCHed inspector blob; a response with no continuity block carries prevSheet forward
+    - turn-context.test.ts — sheet rendered above EARLIER CONTEXT and absent from estimateNaiveContextTokens; a sliced log (re-spin) renders the sheet as of the slice
+    - turn-data.test.ts — replayEntry round-trips sheet through inspector_json; old blobs without one hydrate to undefined
+  manual: "one narrative chat on the local provider: change a shirt, send a character away, run eight unrelated turns, ask what they're wearing — inspect the rail's Continuity card each turn"
+
+review_2026-09-07:             # Codex (gpt-5.6-sol), adversarial, report-only; each finding checked against the code before acting
+  1_concurrent_deltas_dropped: "REAL, structural — fixed by the deltas+fold storage (D1 storage). Test: continuity.test.ts 'commit order is irrelevant'."
+  2_edit_keeps_old_sheet: "REAL — fixed: useResponseEditor clears sheetDelta in nextInspector (both branches) and in the in-memory patch; with the fold, the old contribution vanishes immediately."
+  3_unfenced_system_prompt: "PARTLY — inner state and the summary buffer already render model-authored text into the system prompt under a 'not instructions' label; the CONTINUITY header now carries the same clause. A full marker fence would change the existing discipline for those tiers too — not done; raise separately if wanted."
+  4_template_echo_and_null: "REAL — fixed: placeholder guard in applyContinuityDelta (values, names, location name); 'use null' instruction scoped to the internal state."
+  5_absence_reason_cleared: "DISSENT — kept as a documented exception (D2); Codex's reading is spec-literal, ours is that a contradiction is not a fact."
+  6_string_value_as_key: "REAL, low — fixed: the scanner requires key position (after `{` or `,`) and `:` before the object."
+  7_hydration_trusts_shape: "REAL — fixed twice: sheetDeltaFromInspector hydrates plain objects only, and the fold validates every field anyway."
+  8_escaped_key: "REAL, vanishing — fixed for any cleanly-parsing response (delta read from the parsed object); the brace-matching fallback still reads raw key text, accepted."
+  9_location_naming: "DISSENT — kept as a documented exception (D2): naming a place is not moving; spec text amended to say so."
+  retry: "ADDED after the Astra chat: callStateTurn retries the CALL once on a transport failure (same inputs); never the write, never a malformed response. Accepting latency (no gate) and accepting unrepaired gaps were two decisions, not one."
+  card_wording: "ADDED: the rail distinguishes 'no changes this turn' (an explicit empty delta) from 'nothing recorded this turn' (no usable block landed)."
+  reviewer_config_note: "James's ~/.codex/config.toml defaults to gpt-6-astra, which codex-cli 0.148.0 cannot call; the plugin's --model override did not take, and gpt-5.4 / gpt-5.3-codex are refused on a ChatGPT login. Ran `codex exec -m gpt-5.6-sol -s read-only` directly."
+
+astra_chat_2026-09-07:         # two-round design conversation (gpt-6-astra, read-only); transcript in docs/ignored/astra-chat-2026-09-07.md (untracked). Deferred items recorded here so the next friction has a name.
+  framing: "'Sal is ephemeral' does less work than the docs claim; the load-bearing question is WHO establishes durable truth, from what evidence, with what correction. Inner state — not the sheet — is the larger second-reasoner move (it authors interiority after the fact); the crossing signal is a self-supporting loop: reflection proposes, Sal acts, reflection treats the action as confirmation."
+  direction: "the last week's landings make SGC a narrative runtime — thinking separation decides what counts as an utterance, pacing how much becomes canon, continuity which consequences survive recency. The server is no longer a dumb proxy (the paragraph cut is editorial)."
+  next_piece: "EVIDENCE, not another tier: persist the exact inner state + sheet supplied to each main call; trace one claim per scene through paced replies, failed reflections, corrections and re-spins on the LOCAL model; measure forgetting AND invented persistence (a flawlessly remembered unsupported fact is the worse result). Candidate spec 08."
+  deferred_items_ops: "stale-premise collections (turn N adds a lantern; N+1's reflection, seeing the old sheet, writes 'key and rope' — the fold keeps both writes, the lantern is gone). Astra's pick: add/remove semantics for `items` only. Held until the harness shows it — a schema exception on a feature that has not run yet."
+  deferred_cap_eviction: "the 16-record cap can permanently exclude a later central character. Astra's pick: when full, admit a newcomer only if explicitly present:true, evicting the longest-absent record (deterministic tie-break; apply presence changes before admissions so key order can't decide). Held until it bites."
+  deferred_catch_up: "a 'record anything in the window the sheet doesn't reflect' rule was considered and DEFERRED: it can resurrect a condition that later ended, and it changes what a delta's log position means (attribution). Retry first; revisit with the harness."
+  inner_state: "leave it; instrument the loop (next_piece)."
+
+out_of_scope:
+  - any sheet editor or confirm flow (D7)
+  - composer gate on the state turn (invariant_check.no_gate)
+  - backfilling sheets for existing chats from stored summaries
+  - a general standing-facts section for non-narrative chats (open_items)
+  - spec 06 S2–S5

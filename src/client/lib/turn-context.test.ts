@@ -10,6 +10,7 @@ import { assembleTurnContext } from './turn-context';
 import { buildBrainIndex } from './brains';
 import { LOCAL_BUFFER_SIZE } from './constants';
 import type { BrainPack, ChatEntry, DynamicState } from './types';
+import type { ContinuityDelta } from './continuity';
 
 const HOUR = 3_600_000;
 const NOW = 1_700_000_000_000;
@@ -142,6 +143,58 @@ describe('assembleTurnContext — inner state (D13: newest wins, no horizon)', (
     const reconstructed = assembleTurnContext({ ...base, priorLog: full.slice(0, 2) });
     expect(reconstructed.systemPrompt).toContain('goal: the goal that turn had');
     expect(reconstructed.systemPrompt).not.toContain('a goal from the future');
+  });
+});
+
+describe('assembleTurnContext — continuity sheet (spec 07: a fold of every delta, rolls back with the slice)', () => {
+  const coat: ContinuityDelta = { characters: { Vale: { apparel: 'a wet trench coat' } } };
+  const at = (time: string): ContinuityDelta => ({ story: { time } });
+
+  const deltaPair = (u: string, a: string, ageHours: number, sheetDelta: ContinuityDelta): ChatEntry[] => {
+    const pair = turnPair(u, a, ageHours);
+    pair[1] = { ...pair[1], sheetDelta };
+    return pair;
+  };
+
+  const base = { query: 'anything', constitutional, persona: 'P', now: NOW, fetchedDocs: [], failedUrls: [] };
+
+  it('folds every delta in log order, skipping turns that carry none', () => {
+    const log = [
+      ...deltaPair('q1', 'a1', 60, { ...coat, ...at('dawn') }),
+      ...deltaPair('q2', 'a2', 40, at('noon')),
+      ...turnPair('q3', 'a3', 20), // state call failed — no delta on this turn
+    ];
+    const { systemPrompt } = assembleTurnContext({ ...base, priorLog: log });
+    expect(systemPrompt).toContain('CONTINUITY (');
+    expect(systemPrompt).toContain('story: noon');
+    expect(systemPrompt).not.toContain('story: dawn');
+    expect(systemPrompt).toContain('wearing: a wet trench coat');
+  });
+
+  it('the sheet outlives the buffers: a fact from far back still renders with no grep hit', () => {
+    // The tier's reason to exist — the coat is never the topic, so nothing
+    // else could bring it back.
+    const log = [...deltaPair('q0', 'a0', 100, coat)];
+    for (let i = 1; i <= 6; i++) log.push(...turnPair(`clouds ${i}`, `drifting ${i}`, 100 - i * 10));
+    const result = assembleTurnContext({ ...base, priorLog: log });
+    expect(result.grepResults).toEqual([]);
+    expect(result.systemPrompt).toContain('wearing: a wet trench coat');
+    expect(result.systemPrompt.indexOf('CONTINUITY (')).toBeLessThan(result.systemPrompt.indexOf('RECENT CONTEXT'));
+  });
+
+  it('omits the block when no turn carries a delta', () => {
+    const log = [...turnPair('q1', 'a1', 40), ...turnPair('q2', 'a2', 20)];
+    expect(assembleTurnContext({ ...base, priorLog: log }).systemPrompt).not.toContain('CONTINUITY (');
+  });
+
+  it('re-spin reconstruction: a delta from AFTER the target turn cannot leak in', () => {
+    const full = [
+      ...deltaPair('q1', 'a1', 60, at('dawn')),
+      ...deltaPair('q2', 'a2', 10, at('a time from the future')),
+    ];
+    const reconstructed = assembleTurnContext({ ...base, priorLog: full.slice(0, 2) });
+    expect(reconstructed.systemPrompt).toContain('story: dawn');
+    expect(reconstructed.systemPrompt).not.toContain('a time from the future');
   });
 });
 

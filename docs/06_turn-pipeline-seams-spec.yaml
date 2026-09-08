@@ -51,7 +51,7 @@ design:
     priority: lowest
 
 build_steps:                  # each step green (npm test, typecheck, lint) before the next
-  - S1: D1 — options object; adjust callers; prompt snapshot diff empty
+  - S1: D1 — options object; adjust callers; prompt snapshot diff empty   # DONE 2026-09-07 as spec 07 S0 (24-fixture snapshot byte-identical); S2–S5 still unscheduled
   - S2: D4 — StopReason union; no runtime change
   - S3: D2 — re-spin through the loop; delete RespinResult; useResponseEditor shrinks
   - S4: D3 — turn plan; runner + editor + assembler read the plan; TurnData literals in useTurnRunner/useResponseEditor lose their per-draw fields

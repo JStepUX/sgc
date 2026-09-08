@@ -2,6 +2,7 @@ import type { SpontaneityInspector } from './spontaneity/engine';
 import type { PacingInspector } from './pacing';
 import { operatorLabel } from './spontaneity/flexDeck';
 import type { ChatEntry, DynamicState, TurnSummary } from './types';
+import { isPlainObject, type ContinuityDelta } from './continuity';
 import type { ChatTurn } from './persistence';
 import type { RecallEvent } from './recall-loop';
 import { parseTurnResponse } from './turn-parser';
@@ -99,6 +100,14 @@ export interface TurnData extends SpontaneityInspector, PacingInspector {
    */
   dynamicState?: DynamicState | null;
   /**
+   * This turn's continuity DELTA (spec 07) — the state turn's THIRD output,
+   * written by the same post-hoc PATCH. Optional because turns persisted
+   * before the feature don't carry it; null when the response carried no
+   * usable block. The sheet is folded from every entry's delta at read time
+   * (foldSheet, turn-context.ts) — never stored whole.
+   */
+  sheetDelta?: ContinuityDelta | null;
+  /**
    * Tokens the state call itself billed. Deliberately SEPARATE from
    * inputTokens/outputTokens: the Context-Savings tile compares memory
    * curation against the naive baseline, and folding a second call's usage
@@ -162,6 +171,7 @@ export function replayEntry(t: ChatTurn): ChatEntry {
     timeless: t.timeless,
     summary: summaryFromInspector(t.inspectorJson),
     dynamicState: dynamicStateFromInspector(t.inspectorJson),
+    sheetDelta: sheetDeltaFromInspector(t.inspectorJson),
     spontaneity: spontaneityFromInspector(t.inspectorJson),
   };
 }
@@ -208,6 +218,23 @@ export function dynamicStateFromInspector(inspectorJson: string | null): Dynamic
   if (!inspectorJson) return undefined;
   try {
     return (JSON.parse(inspectorJson) as Partial<TurnData>).dynamicState ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Pull a turn's continuity delta back out of its persisted inspector_json —
+ * the third mirror. Same tolerance: a null blob, a parse failure, a legacy
+ * turn, or an explicit null all yield undefined. Stricter than its siblings
+ * on SHAPE: only a plain object comes back (a corrupted blob must not crash
+ * the fold — review finding, 2026-09-07); the fold validates every field.
+ */
+export function sheetDeltaFromInspector(inspectorJson: string | null): ContinuityDelta | undefined {
+  if (!inspectorJson) return undefined;
+  try {
+    const delta = (JSON.parse(inspectorJson) as Partial<TurnData>).sheetDelta;
+    return isPlainObject(delta) ? delta : undefined;
   } catch {
     return undefined;
   }

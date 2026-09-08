@@ -4,6 +4,7 @@ import type { TurnData } from '../lib/turn-data';
 import { assembleTurnContext } from '../lib/turn-context';
 import { parseTurnResponse, stripStreamingMeta } from '../lib/prompt';
 import { STATE_CONTEXT_SIZE, newestDynamicState } from '../lib/dynamic-state';
+import { foldSheet } from '../lib/continuity';
 import { bumpWriteEpoch, runStateTurn, saveDynamicState as persistDynamicState, type StateTurnTarget } from '../lib/state-turn';
 import { runTurn, extractUrls, fetchUrl } from '../lib/api';
 import { operatorLabel } from '../lib/spontaneity/flexDeck';
@@ -244,6 +245,9 @@ export function useResponseEditor(
             recalls: undefined,
             summary: null,
             dynamicState: null,
+            // The replaced text's scene delta goes with it (spec 07): the
+            // fold must not carry a departure the new text never wrote.
+            sheetDelta: null,
             stateTokens: undefined,
             // The ceiling this run actually used (the modal may have changed
             // it) and this run's outcome — the snapshot describes the saved
@@ -258,6 +262,7 @@ export function useResponseEditor(
             apiCalls: replyCallsOnly,
             summary: null,
             dynamicState: null,
+            sheetDelta: null,
             stateTokens: undefined,
             // Hand-edited text has no pacing outcome — the model didn't end it.
             // The ceiling stays as the snapshot a later re-spin replays.
@@ -285,6 +290,7 @@ export function useResponseEditor(
               content: text,
               summary: undefined,
               dynamicState: undefined,
+              sheetDelta: undefined,
               // Mirror the inspector: an operator-free re-spin also drops the
               // live "⟐ Name" marker (rehydration would drop it on reload anyway).
               ...(operatorCleared ? { spontaneity: undefined } : {}),
@@ -320,6 +326,7 @@ export function useResponseEditor(
           constitutional,
           recentEntries,
           prevState: newestDynamicState(patched.slice(0, editedIdx)),
+          prevSheet: foldSheet(patched.slice(0, editedIdx)),
           // Only a replayed operator actually perturbed the saved text.
           spontaneityDirective:
             respinResult && respinResult.operatorReplayed

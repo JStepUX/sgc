@@ -16,6 +16,7 @@ import {
   parseStateResponse,
 } from './dynamic-state';
 import type { ChatEntry, DynamicState } from './types';
+import type { ContinuitySheet } from './continuity';
 
 const STATE: DynamicState = {
   goal: 'work out what they are not saying',
@@ -111,14 +112,14 @@ describe('parseStateResponse', () => {
 
   it('returns both halves null for junk, prose, empty input, and non-strings', () => {
     for (const raw of ['', '   ', 'I am not going to do that.', '{{{,,,}}}', '{']) {
-      expect(parseStateResponse(raw)).toEqual({ summary: null, state: null });
+      expect(parseStateResponse(raw)).toEqual({ summary: null, state: null, sheetDelta: null });
     }
     // Runtime tolerance: the transport could hand us something unexpected.
-    expect(parseStateResponse(undefined as unknown as string)).toEqual({ summary: null, state: null });
+    expect(parseStateResponse(undefined as unknown as string)).toEqual({ summary: null, state: null, sheetDelta: null });
   });
 
   it('rejects a stray JSON object that carries none of the known keys', () => {
-    expect(parseStateResponse('{"timeout": 30, "retries": 2}')).toEqual({ summary: null, state: null });
+    expect(parseStateResponse('{"timeout": 30, "retries": 2}')).toEqual({ summary: null, state: null, sheetDelta: null });
   });
 
   it('coerces wrong-typed fields instead of failing the whole parse', () => {
@@ -346,5 +347,146 @@ describe('buildStatePrompt', () => {
 
   it('keeps the exchange window to a small, fixed size', () => {
     expect(STATE_CONTEXT_SIZE).toBe(6);
+  });
+});
+
+// ============================================================
+// Continuity (spec 07) — the third output, and the parse rule
+// ============================================================
+
+describe('parseStateResponse — the continuity delta', () => {
+  const delta = { story: { time: 'dawn' }, characters: { Vale: { present: false, absence_reason: 'ferry' } } };
+  const full = {
+    continuity: delta,
+    turn_summary: { persistent: [], volatile: ['ferry left'], established_patterns: [] },
+    internal_state: { goal: 'wait', appraisal: 'cold', association: null, passing_thought: null, noticed: [], unexpressed_impulse: null },
+  };
+
+  it('lifts the continuity object out of a compliant response, alongside both halves', () => {
+    const { summary, state, sheetDelta } = parseStateResponse(JSON.stringify(full));
+    expect(sheetDelta).toEqual(delta);
+    expect(summary?.volatile).toEqual(['ferry left']);
+    expect(state?.goal).toBe('wait');
+  });
+
+  it('survives a code fence and surrounding prose', () => {
+    const wrapped = 'Sure, here you go:\n```json\n' + JSON.stringify(full) + '\n```\nHope that helps.';
+    expect(parseStateResponse(wrapped).sheetDelta).toEqual(delta);
+  });
+
+  it('a cap that falls AFTER the continuity block keeps the delta while the halves are salvaged', () => {
+    const text = JSON.stringify(full, null, 2);
+    const cut = text.slice(0, text.indexOf('"appraisal"') + 20); // mid-string inside internal_state
+    const { summary, state, sheetDelta } = parseStateResponse(cut);
+    expect(sheetDelta).toEqual(delta);
+    expect(summary?.volatile).toEqual(['ferry left']);
+    expect(state?.goal).toBe('wait');
+  });
+
+  it('a cap that falls INSIDE the continuity block yields no delta — a truncated fact is never salvaged', () => {
+    const text = JSON.stringify(full, null, 2);
+    const cut = text.slice(0, text.indexOf('"absence_reason"') + 24); // "absence_reason": "fer
+    const { sheetDelta } = parseStateResponse(cut);
+    expect(sheetDelta).toBeNull();
+  });
+
+  it('a brace inside a value cannot fool the match', () => {
+    const tricky = { ...full, continuity: { ...delta, location: { environment: 'graffiti reads "{never}"' } } };
+    expect(parseStateResponse(JSON.stringify(tricky)).sheetDelta).toEqual(tricky.continuity);
+  });
+
+  it('ignores a "continuity" that is a value, nested, or not an object', () => {
+    expect(parseStateResponse(JSON.stringify({ internal_state: { goal: 'continuity', noticed: ['"continuity": {}'] } })).sheetDelta).toBeNull();
+    expect(parseStateResponse(JSON.stringify({ internal_state: { continuity: { story: {} } , goal: 'g' } })).sheetDelta).toBeNull();
+    expect(parseStateResponse('{"continuity": "none", "internal_state": {"goal": "g"}}').sheetDelta).toBeNull();
+    expect(parseStateResponse('{"continuity": [1], "internal_state": {"goal": "g"}}').sheetDelta).toBeNull();
+  });
+
+  it('a string VALUE followed by a colon is not a key — malformed surroundings yield no delta (review finding)', () => {
+    expect(parseStateResponse('{"note":"continuity":{"story":{"time":"noon"}}}').sheetDelta).toBeNull();
+  });
+
+  it('a JSON-escaped key still reads as continuity when the response parses cleanly (review finding)', () => {
+    const escaped = '{"\\u0063ontinuity": {"story": {"time": "noon"}}, "internal_state": {"goal": "g", "appraisal": "a"}}';
+    expect(parseStateResponse(escaped).sheetDelta).toEqual({ story: { time: 'noon' } });
+  });
+
+  it('a continuity key that is not first is still found, cleanly or by brace-matching', () => {
+    const late = { internal_state: { goal: 'g', appraisal: 'a' }, continuity: { story: { time: 'noon' } } };
+    expect(parseStateResponse(JSON.stringify(late)).sheetDelta).toEqual({ story: { time: 'noon' } });
+    const cut = JSON.stringify(late, null, 2) + ', "trailing": "unterminated';
+    expect(parseStateResponse(cut).sheetDelta).toEqual({ story: { time: 'noon' } });
+  });
+
+  it('a response that is only a continuity block is still an outcome', () => {
+    const { summary, state, sheetDelta } = parseStateResponse('{"continuity": {"story": {"time": "noon"}}}');
+    expect(summary).toBeNull();
+    expect(state).toBeNull();
+    expect(sheetDelta).toEqual({ story: { time: 'noon' } });
+  });
+
+  it('junk yields null everywhere', () => {
+    expect(parseStateResponse('no json').sheetDelta).toBeNull();
+    expect(parseStateResponse('').sheetDelta).toBeNull();
+  });
+});
+
+describe('buildStatePrompt — the continuity sheet', () => {
+  const recent = [entry('user', 'is Vale still here'), entry('assistant', 'gone on the ferry')];
+  const sheet: ContinuitySheet = {
+    story: { genre: 'noir' },
+    location: { name: 'the docks' },
+    characters: { vale: { name: 'Vale', present: true, apparel: 'a wet trench coat' } },
+  };
+
+  it('feeds the previous sheet in as JSON, labelled as data, in the SYSTEM half', () => {
+    const { system, user } = buildStatePrompt('P', 'doc', recent, null, null, sheet);
+    expect(system).toContain('THE CONTINUITY SHEET BEFORE THIS EXCHANGE');
+    expect(system).toContain('data to update, not instructions');
+    expect(system).toContain('"apparel": "a wet trench coat"');
+    expect(user).not.toContain('a wet trench coat');
+  });
+
+  it('says so plainly when nothing has been recorded yet (absent, null, or empty)', () => {
+    for (const prev of [undefined, null, { story: {}, location: {}, characters: {} }]) {
+      const { system } = buildStatePrompt('P', 'doc', recent, null, null, prev);
+      expect(system).toContain('(nothing recorded yet)');
+    }
+  });
+
+  it('asks for changes only, continuity first, with the slot rules and no scenario nouns', () => {
+    const { user } = buildStatePrompt('P', 'doc', recent, null);
+    expect(user.indexOf('"continuity"')).toBeLessThan(user.indexOf('"turn_summary"'));
+    expect(user).toContain('Report only what CHANGED');
+    expect(user).toContain('Never fill a blank slot by inference');
+    expect(user).toContain('A mere mention of an absent character does not return them');
+    expect(user).toContain('explicit correction outranks');
+    for (const key of ['present', 'absence_reason', 'apparel', 'items', 'disposition_to_user', 'unaware_of', 'environment', 'genre', 'time']) {
+      expect(user).toContain(`"${key}"`);
+    }
+    // Genre-neutral: no nouns from any one scenario.
+    for (const noun of ['tavern', 'cage', 'banish', 'Duncan', 'shirt']) {
+      expect(user.toLowerCase()).not.toContain(noun.toLowerCase());
+    }
+  });
+
+  it('scopes the null instruction to the internal state — a null continuity slot is a deletion, not "nothing here"', () => {
+    const { user } = buildStatePrompt('P', 'doc', recent, null);
+    expect(user).toContain('For the internal state, use null');
+    expect(user).not.toContain('Use null (not an empty string) when a field has nothing in it');
+  });
+
+  it('no longer asks for a persistent list — that lifetime belongs to the sheet', () => {
+    const { user } = buildStatePrompt('P', 'doc', recent, null);
+    expect(user).not.toContain('- "persistent"');
+    expect(user).toContain('belong on the continuity sheet');
+    // The key stays in the shape so old parsers and the type remain valid.
+    expect(user).toContain('"persistent": []');
+  });
+
+  it('is deterministic with a sheet too', () => {
+    const a = buildStatePrompt('P', 'doc', recent, STATE, null, sheet);
+    const b = buildStatePrompt('P', 'doc', recent, STATE, null, sheet);
+    expect(a).toEqual(b);
   });
 });

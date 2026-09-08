@@ -4,6 +4,7 @@ import type { TurnData } from '../lib/turn-data';
 import { assembleTurnContext } from '../lib/turn-context';
 import { estimateNaiveContextTokens, parseTurnResponse, stripStreamingMeta } from '../lib/prompt';
 import { STATE_CONTEXT_SIZE, newestDynamicState } from '../lib/dynamic-state';
+import { foldSheet } from '../lib/continuity';
 import { callStateTurn, commitStateTurn } from '../lib/state-turn';
 import { extractUrls, fetchUrl } from '../lib/api';
 import { executeRecall, RECALL_TOOL } from '../lib/recall';
@@ -337,6 +338,7 @@ export function useTurnRunner(
           // The state this turn began from — the newest in the log BEFORE the
           // pair just appended (which carries none yet).
           prevState: newestDynamicState(chatLog),
+          prevSheet: foldSheet(chatLog),
           spontaneityDirective: spont.directive,
           provider: confirmedProvider,
         });

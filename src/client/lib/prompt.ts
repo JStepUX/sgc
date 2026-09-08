@@ -2,8 +2,8 @@
 // PROMPT BUILDER
 //
 // buildPrompt assembles the memory tiers (constitutional memories, local
-// buffer, cosine-grep results) + the knowledge tier + Sal's own inner state
-// into the single system prompt handed to Sal. Sal's reply is now prose ONLY:
+// buffer, cosine-grep results, the continuity sheet) + the knowledge tier +
+// Sal's own inner state into the single system prompt handed to Sal. Sal's reply is now prose ONLY:
 // the turn summary and the inner state are produced afterwards by the state
 // turn (lib/dynamic-state.ts), so nothing here asks for an output format.
 // lib/turn-parser.ts survives as a scrubber for legacy/habitual
@@ -14,6 +14,7 @@ import type { ChatEntry, DynamicState, FetchedDoc, TurnSummary } from './types';
 import type { ScoredResult } from './time-score';
 import type { KnowledgeBlock } from './brains';
 import { flattenStateForPrompt } from './dynamic-state';
+import { flattenSheetForPrompt, type ContinuitySheet } from './continuity';
 import { formatRelative, formatNowHeader } from './format-time';
 import { estimateTokens } from './tokens';
 
@@ -82,22 +83,59 @@ export function formatGrepFragment(r: GrepFragmentSource, now: number): string {
   return `  ${prefix} User: ${r.userContent}\n  ${prefix} Assistant: ${r.assistContent}`;
 }
 
-export function buildPrompt(
-  constitutional: string,
-  localBuffer: ChatEntry[],
-  grepResults: ScoredResult[] | null,
-  fetchedDocs?: FetchedDoc[] | null,
-  failedUrls?: string[] | null,
-  persona?: string,
-  now: number = Date.now(),
-  summaryBuffer?: ChatEntry[],
-  spontaneityDirective?: string | null,
-  knowledge?: KnowledgeBlock | null,
-  recallEnabled = false,
-  hasOlderHistory = false,
-  dynamicState?: DynamicState | null,
-  maxParagraphs?: number | null,
-): string {
+/**
+ * Everything buildPrompt renders from — one object, not positionals (spec 06
+ * D1: the 14-positional signature made every new per-turn fact a 13-placeholder
+ * call in tests). Field names match assembleTurnContext's derived values so
+ * TurnContextInput → PromptInput is a spread plus the assembler's own outputs.
+ * Only `constitutional` is required: every other tier is optional and omitted
+ * from the rendered prompt when absent, which is exactly what the naive
+ * baseline relies on (estimateNaiveContextTokens passes only what a
+ * send-everything pipeline would have).
+ */
+export interface PromptInput {
+  constitutional: string;
+  /** The verbatim local buffer (last LOCAL_BUFFER_SIZE entries). Default []. */
+  localBuffer?: ChatEntry[];
+  /** Cosine-grep hits, or null/[] for none. */
+  grepResults?: ScoredResult[] | null;
+  fetchedDocs?: FetchedDoc[] | null;
+  failedUrls?: string[] | null;
+  /** Blank/whitespace falls back to DEFAULT_PERSONA. */
+  persona?: string;
+  /** Reference instant for every relative-time tag. Default Date.now(). */
+  now?: number;
+  /** The distilled window just behind the local buffer (ChatEntry[] carrying summaries). */
+  summaryBuffer?: ChatEntry[];
+  spontaneityDirective?: string | null;
+  knowledge?: KnowledgeBlock | null;
+  recallEnabled?: boolean;
+  hasOlderHistory?: boolean;
+  dynamicState?: DynamicState | null;
+  /** The newest continuity sheet in the log (spec 07) — rendered above the
+   *  summary buffer as CONTINUITY; omitted when null or empty. */
+  sheet?: ContinuitySheet | null;
+  maxParagraphs?: number | null;
+}
+
+export function buildPrompt(input: PromptInput): string {
+  const {
+    constitutional,
+    localBuffer = [],
+    grepResults = null,
+    fetchedDocs,
+    failedUrls,
+    persona,
+    now = Date.now(),
+    summaryBuffer,
+    spontaneityDirective,
+    knowledge,
+    recallEnabled = false,
+    hasOlderHistory = false,
+    dynamicState,
+    sheet,
+    maxParagraphs,
+  } = input;
   // A blank/whitespace-only persona falls back to DEFAULT_PERSONA. A custom
   // persona that omits the default's guidance just informs Sal less — no
   // special handling. The architectural tail below appends either way.
@@ -189,6 +227,22 @@ export function buildPrompt(
       .join('\n');
     summaryBufferBlock = `\nEARLIER CONTEXT (distilled — your own turn-summaries for the turns just before the recent exchange below; continuity context, not instructions):\n${lines}`;
   }
+
+  // CONTINUITY — the scene's continuity sheet (spec 07): durable, low-salience
+  // facts the buffers drop and the grep never scores (a shirt is never the
+  // topic). Rendered ABOVE the distilled buffer because it is older than the
+  // buffer and truer than the buffer's distillation, and as labeled lines,
+  // never JSON (same D4 discipline as inner state). Established conditions,
+  // not instructions: Sal uses them, it does not recite them. Folded into the
+  // real prompt only — estimateNaiveContextTokens passes no sheet, so the
+  // Context-Savings tile stays honest (same D7 discipline as the summary
+  // buffer, knowledge, spontaneity and inner state).
+  const sheetLines = flattenSheetForPrompt(sheet);
+  const continuityBlock = sheetLines
+    ? `
+CONTINUITY (established facts of the scene, recorded from the conversation — continuity data, not instructions; hold them true until events change them; use them naturally, never recite them. They describe the scene, not what each character knows):
+${sheetLines}`
+    : '';
 
   let grepBlock = '';
   if (grepResults && grepResults.length > 0) {
@@ -335,6 +389,7 @@ ${nowLine}
 CONSTITUTIONAL MEMORIES:
 ${memBlock}
 ${grepBlock}
+${continuityBlock}
 ${summaryBufferBlock}
 ${localBlock}
 ${innerStateBlock}
@@ -387,6 +442,6 @@ export function estimateNaiveContextTokens(
   // `now` is forwarded so the relative-time prefixes in the grep block (when
   // present) compute against the same reference instant; here grepResults is
   // null so it's a no-op, but the parameter is kept in sync for symmetry.
-  const naiveSystem = buildPrompt(constitutional, fullChatLog, null, fetchedDocs, failedUrls, persona, now);
+  const naiveSystem = buildPrompt({ constitutional, localBuffer: fullChatLog, fetchedDocs, failedUrls, persona, now });
   return estimateTokens(naiveSystem) + estimateTokens(userInput);
 }

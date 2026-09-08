@@ -1,5 +1,7 @@
 // Shared domain types for the SGC memory architecture.
 
+import type { ContinuityDelta } from './continuity';
+
 /**
  * The turn summary produced for every completed turn — a fresh, per-turn
  * structured observation, never accumulated:
@@ -28,7 +30,9 @@ export interface TurnSummary {
  * This is a deliberate recurrence: the state prompt consumes the previous
  * state, which turn summaries never do. It is bounded three ways — schema caps,
  * per-turn regeneration, and user curation (the rail's Dynamic State card is
- * editable), so the drift surface is also a control surface.
+ * editable), so the drift surface is also a control surface. The continuity
+ * sheet (ChatEntry.sheetDelta, lib/continuity.ts) is the sibling that does
+ * NOT regenerate — it accretes by design; see its header for its own bounds.
  *
  * Nullable fields are genuinely absent when nothing fits; the flattener omits
  * them rather than rendering an empty label.
@@ -102,6 +106,16 @@ export interface ChatEntry {
    * renders it as the next turn's private inner-state block.
    */
   dynamicState?: DynamicState;
+  /**
+   * This turn's continuity DELTA (spec 07) — the state turn's third output,
+   * stored on the assistant entry beside `dynamicState` and hydrated from the
+   * same inspector_json. The sheet itself is never stored: it is
+   * foldSheet(log), every delta applied in log order (lib/continuity.ts), so
+   * out-of-order state-call landings, edits and rollback all resolve by
+   * construction. Absent on user entries, on turns persisted before the
+   * feature, and until the state call lands.
+   */
+  sheetDelta?: ContinuityDelta;
   /**
    * The spontaneity operator that fired on this (assistant) turn, if any —
    * rendered as a dimmed "⟐ Name" marker beneath the reply so a perturbed turn is

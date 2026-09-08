@@ -1,11 +1,13 @@
 import { memo, useEffect, useState } from 'react';
 import type { DynamicState } from '../lib/types';
+import { isDeltaEmpty, type ContinuitySheet } from '../lib/continuity';
 import type { TurnData } from '../lib/turn-data';
 import { operatorLabel } from '../lib/spontaneity/flexDeck';
 import { pacingOutcomeLabel } from '../lib/pacing';
 import { DEFAULT_SLACK_THRESHOLD } from '../lib/spontaneity/slackDetector';
 import { RAIL_LABEL, RAIL_SUB } from './rail-styles';
 import { RetrievalDetailModal, type RetrievalSelection } from './RetrievalDetailModal';
+import { ContinuityCard } from './ContinuityCard';
 import { Card } from '@/components/ui/card';
 
 // ============================================================
@@ -39,6 +41,10 @@ interface TurnInspectorProps {
    *  (D13), and hiding it would misreport a failed state call as a blank
    *  inner life. */
   carriedState?: DynamicState | null;
+  /** The continuity sheet the next prompt will read (spec 07) — the fold of
+   *  the whole log, not this turn's own; the card notes whether this turn's
+   *  delta changed anything. */
+  sheet?: ContinuitySheet | null;
 }
 
 export const TurnInspector = memo(function TurnInspector({
@@ -47,6 +53,7 @@ export const TurnInspector = memo(function TurnInspector({
   onOpenStateEditor,
   stateEditorDisabled = false,
   carriedState = null,
+  sheet = null,
 }: TurnInspectorProps) {
   // Which citation card is opened in the RetrievalDetailModal. Local by
   // design: the selection is derived purely from this turn's props. The modal
@@ -79,6 +86,16 @@ export const TurnInspector = memo(function TurnInspector({
   const effectiveState = state ?? carriedState ?? null;
   const stateIsCarried = !state && carriedState !== null;
   const canEditState = !stateEditorDisabled && !!onOpenStateEditor;
+  // What this turn's reflection contributed to the sheet (spec 07). While the
+  // call is in flight the card stays quiet — the Dynamic State card already
+  // says "reflecting…".
+  const sheetThisTurn: 'changed' | 'unchanged' | 'unrecorded' | null = stateInFlight
+    ? null
+    : turnData.sheetDelta == null
+      ? 'unrecorded'
+      : isDeltaEmpty(turnData.sheetDelta)
+        ? 'unchanged'
+        : 'changed';
   const stateRows = effectiveState
     ? STATE_ROWS.map(({ key, label }) => {
         const v = effectiveState[key];
@@ -356,6 +373,8 @@ export const TurnInspector = memo(function TurnInspector({
           </Card>
         );
       })()}
+
+      <ContinuityCard sheet={sheet} thisTurn={sheetThisTurn ?? 'changed'} />
 
       {(state || hasSummary || stateInFlight || canEditState) && (
         // DYNAMIC STATE — both outputs of the post-reply state turn in one

@@ -3,10 +3,12 @@ import {
   canonEntryCount,
   dynamicStateFromInspector,
   replayEntry,
+  sheetDeltaFromInspector,
   summaryFromInspector,
   spontaneityFromInspector,
   type TurnData,
 } from './turn-data';
+import type { ContinuityDelta } from './continuity';
 import type { ChatTurn } from './persistence';
 import type { DynamicState, TurnSummary } from './types';
 
@@ -84,6 +86,44 @@ describe('dynamicStateFromInspector', () => {
     const entry = replayEntry(row);
     expect(entry.dynamicState).toEqual(dynamicState);
     expect(entry.summary).toEqual(summary);
+  });
+});
+
+describe('sheetDeltaFromInspector (spec 07)', () => {
+  const sheetDelta: ContinuityDelta = {
+    story: { time: 'past midnight' },
+    characters: { Vale: { present: false, absence_reason: 'took the last ferry' } },
+  };
+
+  it('returns undefined for a null blob, malformed JSON, a pre-feature turn, and a persisted null', () => {
+    expect(sheetDeltaFromInspector(null)).toBeUndefined();
+    expect(sheetDeltaFromInspector('{not json')).toBeUndefined();
+    expect(sheetDeltaFromInspector(blob({ turnNumber: 3 }))).toBeUndefined();
+    expect(sheetDeltaFromInspector(blob({ sheetDelta: null }))).toBeUndefined();
+  });
+
+  it('refuses a non-object delta — a corrupted blob must not reach the fold', () => {
+    expect(sheetDeltaFromInspector('{"sheetDelta":"oops"}')).toBeUndefined();
+    expect(sheetDeltaFromInspector('{"sheetDelta":[1,2]}')).toBeUndefined();
+  });
+
+  it('round-trips a persisted delta as received', () => {
+    expect(sheetDeltaFromInspector(blob({ sheetDelta }))).toEqual(sheetDelta);
+  });
+
+  it('replayEntry rehydrates the delta onto the entry — the next prompt folds it after a reload', () => {
+    const turn: ChatTurn = {
+      id: 8,
+      role: 'assistant',
+      content: 'the fog thickened',
+      ordinal: 8,
+      active: true,
+      createdAt: 1000,
+      timeless: false,
+      inspectorJson: blob({ sheetDelta }),
+    };
+    expect(replayEntry(turn).sheetDelta).toEqual(sheetDelta);
+    expect(replayEntry({ ...turn, inspectorJson: null }).sheetDelta).toBeUndefined();
   });
 });
 

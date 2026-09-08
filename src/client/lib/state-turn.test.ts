@@ -17,6 +17,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SetStateAction } from 'react';
 import type { ChatEntry, DynamicState } from './types';
 import type { TurnData } from './turn-data';
+import { foldSheet, type ContinuitySheet } from './continuity';
 import {
   bumpWriteEpoch,
   callStateTurn,
@@ -76,6 +77,7 @@ const outcome: StateTurnOutcome = {
     noticed: [],
     unexpressed_impulse: null,
   },
+  sheetDelta: null,
   tokens: { input: 400, output: 90 },
 };
 
@@ -182,7 +184,7 @@ describe('the write-epoch guard', () => {
 
   it('null halves still commit — the call was billed, so its usage is recorded', async () => {
     const { target, messages, latestTurn } = makeTarget(910, 0);
-    await commitStateTurn(target, { summary: null, state: null, tokens: { input: 5, output: 1 } });
+    await commitStateTurn(target, { summary: null, state: null, sheetDelta: null, tokens: { input: 5, output: 1 } });
 
     expect(mockedUpdateTurn).toHaveBeenCalledTimes(1);
     const persisted = JSON.parse(mockedUpdateTurn.mock.calls[0][2]!);
@@ -216,11 +218,103 @@ describe('callStateTurn usage accounting', () => {
       elapsed: 500,
     } as Awaited<ReturnType<typeof runTurn>>);
     const out = await callStateTurn(input);
-    expect(out).toEqual({ summary: null, state: null, tokens: { input: 321, output: 12 } });
+    expect(out).toEqual({ summary: null, state: null, sheetDelta: null, tokens: { input: 321, output: 12 } });
   });
 
-  it('a failed call (no response at all) yields no outcome', async () => {
+  it('a transport failure is retried once, with the same inputs', async () => {
+    mockedRunTurn.mockRejectedValueOnce(new Error('network blip'));
+    mockedRunTurn.mockResolvedValueOnce({
+      text: '{"internal_state":{"goal":"g","appraisal":"a"}}',
+      inputTokens: 7,
+      outputTokens: 3,
+      elapsed: 100,
+    } as Awaited<ReturnType<typeof runTurn>>);
+    const out = await callStateTurn(input);
+    expect(out?.state?.goal).toBe('g');
+    const calls = mockedRunTurn.mock.calls.slice(-2);
+    expect(calls[0]).toEqual(calls[1]);
+  });
+
+  it('a call that fails twice yields no outcome — the write is never retried', async () => {
     mockedRunTurn.mockRejectedValueOnce(new Error('network down'));
+    mockedRunTurn.mockRejectedValueOnce(new Error('still down'));
     expect(await callStateTurn(input)).toBeNull();
+    expect(mockedUpdateTurn).not.toHaveBeenCalled();
+  });
+
+  it('a malformed response is not a transport failure — no retry', async () => {
+    mockedRunTurn.mockResolvedValueOnce({ text: 'nonsense', inputTokens: 1, outputTokens: 1, elapsed: 1 } as Awaited<ReturnType<typeof runTurn>>);
+    const before = mockedRunTurn.mock.calls.length;
+    await callStateTurn(input);
+    expect(mockedRunTurn.mock.calls.length).toBe(before + 1);
+  });
+});
+
+describe('the continuity delta rides the state turn (spec 07)', () => {
+  const prevSheet: ContinuitySheet = {
+    story: { genre: 'noir' },
+    location: { name: 'the docks', environment: 'fog' },
+    characters: { vale: { name: 'Vale', present: true, apparel: 'a wet trench coat' } },
+  };
+  const reply = (text: string) =>
+    mockedRunTurn.mockResolvedValueOnce({ text, inputTokens: 10, outputTokens: 4, elapsed: 1 } as Awaited<ReturnType<typeof runTurn>>);
+  const input = { persona: 'P', constitutional: '', recentEntries: [], prevState: null, prevSheet };
+  const delta = { characters: { Vale: { present: false, absence_reason: 'took the last ferry' } } };
+
+  it('returns the delta as emitted and commits it — entry stamp and PATCH blob alike; the fold merges it', async () => {
+    reply(JSON.stringify({
+      continuity: delta,
+      turn_summary: { persistent: [], volatile: ['the ferry left'], established_patterns: [] },
+      internal_state: { goal: 'wait', appraisal: 'cold' },
+    }));
+    const out = await callStateTurn(input);
+    expect(out?.sheetDelta).toEqual(delta);
+
+    const { target, chatLog, latestTurn } = makeTarget(1101, 0);
+    await commitStateTurn(target, out!);
+    expect(chatLog.value[0].sheetDelta).toEqual(delta);
+    expect(latestTurn.value?.sheetDelta).toEqual(delta);
+    const persisted = JSON.parse(mockedUpdateTurn.mock.calls.at(-1)![2]!);
+    expect(persisted.sheetDelta).toEqual(delta);
+    // What the next prompt reads is the fold of the log, not a stored sheet.
+    const folded = foldSheet(chatLog.value);
+    expect(folded?.characters.vale).toMatchObject({ present: false, absence_reason: 'took the last ferry' });
+  });
+
+  it('a response with no continuity block stamps nothing — the fold simply skips this turn', async () => {
+    reply(JSON.stringify({ internal_state: { goal: 'new goal', appraisal: 'fine' } }));
+    const out = await callStateTurn(input);
+    expect(out?.sheetDelta).toBeNull();
+    expect(out?.state?.goal).toBe('new goal');
+    const { target, chatLog } = makeTarget(1202, 0);
+    await commitStateTurn(target, out!);
+    expect(chatLog.value[0].sheetDelta).toBeUndefined();
+  });
+
+  it('a response that is nothing but a continuity block is still an outcome', async () => {
+    reply('{"continuity": {"story": {"time": "dawn"}}}');
+    const out = await callStateTurn(input);
+    expect(out?.summary).toBeNull();
+    expect(out?.state).toBeNull();
+    expect(out?.sheetDelta).toEqual({ story: { time: 'dawn' } });
+  });
+
+  it('feeds the previous sheet into the state prompt as JSON', async () => {
+    reply('{}');
+    await callStateTurn(input);
+    const [system] = mockedRunTurn.mock.calls.at(-1)!;
+    expect(system).toContain('THE CONTINUITY SHEET BEFORE THIS EXCHANGE');
+    expect(system).toContain('"apparel": "a wet trench coat"');
+  });
+
+  it('a hand-edited inner state (D11) carries the delta through untouched', async () => {
+    const epoch = bumpWriteEpoch(1303);
+    const { target, chatLog } = makeTarget(1303, epoch);
+    target.baseTurnData = { ...target.baseTurnData, sheetDelta: delta };
+    await saveDynamicState(target, { ...outcome.state!, goal: 'edited' });
+    expect(chatLog.value[0].sheetDelta).toEqual(delta);
+    const persisted = JSON.parse(mockedUpdateTurn.mock.calls.at(-1)![2]!);
+    expect(persisted.sheetDelta).toEqual(delta);
+    expect(persisted.dynamicState.goal).toBe('edited');
   });
 });
