@@ -33,6 +33,21 @@ and entries here have survived it.
 
 ---
 
+## `volta install @openai/codex` fails "Could not remove directory" while the Codex plugin is warm (continuity review, 2026-09-07)
+
+The Claude Code Codex plugin (`~/.claude/plugins/cache/openai-codex/`) keeps
+an app-server and a broker running AFTER a `/codex:rescue` call returns —
+`node .../Volta/tools/image/packages/@openai/codex/.../bin/codex.js app-server`
+and `app-server-broker.mjs serve`. They run out of the very directory Volta
+must replace, so the upgrade dies with "Access is denied" and blames
+permissions. Stop those two node processes (find them with
+`Get-CimInstance Win32_Process` filtered on `Volta.*codex|app-server-broker`),
+then rerun the install; the plugin respawns them on next use. The Codex
+desktop app's own server (`AppData\Local\OpenAI\Codex\bin`) is unrelated —
+leave it. Related: `~/.codex/config.toml` defaulting to a model the installed
+CLI can't call fails the same way through the plugin, whose `--model` override
+does not reach the CLI; `codex exec -m <model>` directly does.
+
 ## Stopping a background `npm run dev` can orphan the Vite/tsx children on :5555/:3000 (package spinup, 2026-05-18)
 
 Killing the background task stops the `concurrently` parent but can leave the

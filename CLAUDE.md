@@ -4,10 +4,17 @@ If you ever encounter something in the project that surprises you, please alert 
 
 **SGC — Salience-Gated Cognition** is a research prototype for a conversational
 memory architecture. It is not a product; it is an experiment about *how a
-reasoning agent should remember*. The current iteration is **Phase 1.5**: a
-React + TypeScript client (Vite, Tailwind v4 + shadcn/ui), a deliberately dumb
-Express proxy (the API key's only home), SQLite persistence, and a Windows
-Electron shell.
+reasoning agent should remember*. It began as one question of James's — *"Can I
+create an indefinite chat with an agent that resolves the worst excesses and
+sins of long context windows: drift, sycophancy, prompt abandonment?"* — which
+Sal answered to his satisfaction long ago. What is being built now is a small
+narrative runtime, a roleplay engine he uses for fun, with no product launch or
+publication behind it. Work in that register: novel, careful, enjoyable, and
+honest about scope. The current iteration is **Phase 1.5**: a React +
+TypeScript client (Vite, Tailwind v4 + shadcn/ui), an Express proxy that holds
+the API key and — since reply pacing — makes the one editorial cut on the
+server (ending a reply at its drawn paragraph ceiling), SQLite persistence, and
+a Windows Electron shell.
 
 Every turn, client-assembled context tiers — a per-chat **constitutional
 document**, a 2-turn verbatim **local buffer** (a distilled summary buffer just
@@ -44,6 +51,9 @@ growing transcript, no model carrying its own state). Two rules protect that:
   3 calls/turn, ranking still 100% `searchScored` — and the **state turn**
   (spec 03, approved 2026-08-02) — one small post-reply distillation call,
   base loop 2 calls/turn, worst case 4 with recall; it retrieves nothing.
+  Since spec 07 (2026-09-07) that same call also returns **continuity sheet**
+  deltas — a fixed-schema, accreting scene record merged by code — still no
+  new call, still nothing retrieved.
   (Web/knowledge retrieval is a separate axis from memory — see the web-tools
   entry in `AGENTS.md`.)
 

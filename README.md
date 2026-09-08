@@ -4,6 +4,18 @@ A research prototype for a conversational memory architecture. SGC explores
 *how a reasoning agent should remember*: not one big context window, but tiered,
 salience-gated memory feeding a single ephemeral reasoning call.
 
+## Why this exists
+
+It started as one question: *can I create an indefinite chat with an agent
+that resolves the worst excesses and sins of long context windows — drift,
+sycophancy, prompt abandonment?* Sal answered that a long time ago. What has
+grown since is a small **narrative runtime** — a roleplay engine its author
+uses for fun. Thinking-model separation decides what counts as an utterance,
+pacing decides how much of it becomes canon, and the continuity sheet decides
+which consequences survive recency. There is no product launch or paper behind
+it; it is a very novel, very interesting, very enjoyable side project, and the
+docs try to stay honest about that.
+
 > **Phase 1.5** — Ephemeral Sal + TF-IDF Cosine Grep + 2-turn local buffer.
 > No model-based *memory* retrieval. One reasoning component per turn, rebuilt
 > fresh each time.
@@ -45,6 +57,27 @@ surface is also a control surface. Sal is still rebuilt fresh every turn: the
 state is data in a prompt, not a model carrying its own memory. Two API calls
 per turn in the base loop, and the call count remains a guardrail, not the
 thesis.
+
+**Continuity sheet.** Salience gating has a structural blind spot: facts that
+are durable but low-salience. A character's shirt is never the topic, so the
+grep never scores it, and it's rarely restated, so the buffers drop it after
+four entries. The turn summary's old "persistent" list promised permanence and
+delivered a four-turn horizon. The same post-reply call now also returns
+**continuity deltas** — what changed on a fixed-schema scene record: story
+(genre, time), location (name, type, one established environment line), and
+one record per named character (present or not and why, where they are,
+stance, apparel, items, physical state, standing disposition toward you, and
+what they don't yet know). Code merges the deltas; omission never deletes, a
+departed character keeps their record, a move replaces the location, and a
+truncated response can never write a half-fact. Each turn stores only its
+own delta beside the inner state, and the sheet is *folded* from the log
+whenever it's read, so two state calls landing in either order can't lose a
+fact, and re-spin, tangent rollback and edit roll it back for free. It renders
+into the next prompt above the distilled buffer as labelled lines. It is first-class over Dynamic State and, unlike it, it
+*accretes* rather than regenerates — its bounds are the schema, the caps, the
+deltas-only merge, and diegetic correction: there is no editor, because the
+person is there to be in the story, not to curate it. Correct the story and
+the next reflection applies the correction. The rail shows the sheet read-only.
 
 Sal has no live web access of its own. The one way a page reaches a turn is a
 deterministic, SSRF-guarded **URL pre-fetch**: when the person pastes a link,
