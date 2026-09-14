@@ -20,6 +20,8 @@
 // ============================================================
 
 import type { TurnSummary } from './types';
+import { tokenize } from './tfidf';
+import { CUE_MAX, CUE_MAX_CHARS, CUE_TOKEN_BUDGET } from './constants';
 
 /** Delimiters wrapping Sal's trailing turn-summary block. */
 export const META_OPEN = '<turn-summary>';
@@ -49,19 +51,85 @@ function toStringList(v: unknown): string[] {
 }
 
 /**
+ * Coerce the state turn's `cues` (spec 09 C1) into the bounded list the
+ * summary corpus indexes. Deterministic, in order: strings only, each cut
+ * to CUE_MAX_CHARS; a cue's stems that already occur in the summary lines
+ * (`lineTokens`) or in an earlier cue count for nothing (stem dedup — an
+ * accidental repeat is harmless); a cue is kept while the running total of
+ * NOVEL stems stays within CUE_TOKEN_BUDGET, and the list stops at CUE_MAX.
+ * A cue with no novel stem at all is dropped — it could not change a score.
+ * Runs on fresh model output AND on hydrated rows (turn-data.ts), so a
+ * persisted blob can never exceed the caps either.
+ */
+export function coerceCues(v: unknown, lineTokens: Iterable<string>): string[] {
+  const seen = new Set<string>(lineTokens);
+  const out: string[] = [];
+  let novel = 0;
+  for (const raw of toStringList(v)) {
+    if (out.length >= CUE_MAX) break;
+    const cue = raw.slice(0, CUE_MAX_CHARS).trim();
+    const fresh = tokenize(cue).filter((t) => !seen.has(t));
+    if (fresh.length === 0) continue;
+    if (novel + fresh.length > CUE_TOKEN_BUDGET) break;
+    for (const t of fresh) seen.add(t);
+    novel += fresh.length;
+    out.push(cue);
+  }
+  return out;
+}
+
+/**
  * Coerce a parsed JSON value into a TurnSummary, or null if it isn't one.
  * Accepted only if it looks like a summary — at least one of the three known
  * keys present — so a stray JSON object in prose isn't mistaken for the block.
+ * `cues` (spec 09) is carried only when the input had the key; legacy rows
+ * and old parsers see no difference.
  */
 export function coerceSummary(parsed: unknown): TurnSummary | null {
   if (parsed === null || typeof parsed !== 'object') return null;
   const o = parsed as Record<string, unknown>;
   if (!('persistent' in o || 'volatile' in o || 'established_patterns' in o)) return null;
-  return {
+  const summary: TurnSummary = {
     persistent: toStringList(o.persistent),
     volatile: toStringList(o.volatile),
     established_patterns: toStringList(o.established_patterns),
   };
+  if ('cues' in o) {
+    const lineTokens = tokenize([...summary.persistent, ...summary.volatile, ...summary.established_patterns].join('. '));
+    summary.cues = coerceCues(o.cues, lineTokens);
+  }
+  return summary;
+}
+
+/**
+ * The mark completeJson leaves at the end of a string it had to close (see
+ * `completeJson`'s `mark` option). A private-use code point: valid inside a
+ * JSON string, never produced by a model. dropTruncated strips it.
+ */
+export const TRUNCATION_MARK = '\uE000';
+
+/**
+ * Remove what a mechanical string-close salvaged only partially: a marked
+ * string inside an ARRAY is dropped (a half-finished list item is not a
+ * fact — spec 09 D7, consequential once `persistent` lines are statements);
+ * a marked SCALAR keeps its partial text with the mark stripped (the
+ * pre-existing behaviour for the inner state's prose fields). Walks the
+ * parsed object in place and returns it.
+ */
+export function dropTruncated<T>(value: T): T {
+  const walk = (v: unknown): unknown => {
+    if (typeof v === 'string') return v.endsWith(TRUNCATION_MARK) ? v.slice(0, -TRUNCATION_MARK.length) : v;
+    if (Array.isArray(v)) {
+      return v.filter((x) => !(typeof x === 'string' && x.endsWith(TRUNCATION_MARK))).map(walk);
+    }
+    if (v !== null && typeof v === 'object') {
+      const o = v as Record<string, unknown>;
+      for (const k of Object.keys(o)) o[k] = walk(o[k]);
+      return o;
+    }
+    return v;
+  };
+  return walk(value) as T;
 }
 
 /**
@@ -69,8 +137,13 @@ export function coerceSummary(parsed: unknown): TurnSummary | null {
  * dangling trailing comma, then close every bracket/brace still open. Purely
  * mechanical — if the result still doesn't parse, the caller cuts the fragment
  * back to its last structural boundary and tries once more.
+ *
+ * `mark`: when given, it is written into the string being closed (before
+ * the closing quote) so the caller can tell the salvaged-partial string from
+ * a complete one after parsing — see dropTruncated. Default: no mark, the
+ * historical behaviour.
  */
-export function completeJson(s: string): string {
+export function completeJson(s: string, mark = ''): string {
   const closers: string[] = [];
   let inString = false;
   let escaped = false;
@@ -85,7 +158,7 @@ export function completeJson(s: string): string {
     else if (ch === '}' || ch === ']') closers.pop();
   }
   let out = s;
-  if (inString) out += '"';
+  if (inString) out += mark + '"';
   out = out.replace(/,\s*$/, '');
   for (let i = closers.length - 1; i >= 0; i--) out += closers[i];
   return out;

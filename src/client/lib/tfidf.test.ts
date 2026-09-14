@@ -11,6 +11,7 @@ import {
   cosineSearch,
   buildSummaryDocs,
   summaryLines,
+  summaryIndexText,
 } from './tfidf';
 import type { ChatEntry } from './types';
 
@@ -303,5 +304,37 @@ describe('buildSummaryDocs (spec 08 S3 — the summary corpus)', () => {
 
   it('summaryLines trims and drops blank lines', () => {
     expect(summaryLines(summary([' a ', ''], ['b'], ['  ']))).toEqual(['a', 'b']);
+  });
+});
+
+describe('summary cues in the index, never in the rendered lines (spec 09)', () => {
+  const T0 = 1_700_000_000_000;
+  const entry = (summary: NonNullable<ChatEntry['summary']>): ChatEntry[] => [
+    { role: 'user', content: 'q', createdAt: T0 },
+    { role: 'assistant', content: 'a', createdAt: T0, summary },
+    { role: 'user', content: 'b', createdAt: T0 }, { role: 'assistant', content: 'b', createdAt: T0 },
+    { role: 'user', content: 'b', createdAt: T0 }, { role: 'assistant', content: 'b', createdAt: T0 },
+  ];
+
+  it('summaryIndexText includes cues; summaryLines excludes them', () => {
+    const s = { persistent: ['said they admire Harrow'], volatile: [], established_patterns: [], cues: ['hero', 'idol'] };
+    expect(summaryIndexText(s)).toBe('said they admire Harrow. hero. idol');
+    expect(summaryLines(s)).toEqual(['said they admire Harrow']);
+  });
+
+  it('a cue-only stem reaches the doc tokens but never doc.summaryLines', () => {
+    const docs = buildSummaryDocs(entry({ persistent: ['said they admire Harrow'], volatile: [], established_patterns: [], cues: ['hero'] }), 4);
+    expect(docs).toHaveLength(1);
+    expect(docs[0].tokens).toContain('hero');
+    expect(docs[0].summaryLines).toEqual(['said they admire Harrow']);
+  });
+
+  it('a cue-only summary (nothing to render) builds NO doc', () => {
+    expect(buildSummaryDocs(entry({ persistent: [], volatile: [], established_patterns: [], cues: ['hero'] }), 4)).toEqual([]);
+  });
+
+  it('summaryLines tolerates a non-array field', () => {
+    const bad = { persistent: 'not an array', volatile: ['ok'], established_patterns: null } as unknown as NonNullable<ChatEntry['summary']>;
+    expect(summaryLines(bad)).toEqual(['ok']);
   });
 });

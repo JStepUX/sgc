@@ -1,0 +1,159 @@
+spec: Retrieval cues from the state turn — the memory axis's alias bridge, and a home for what the person says about themselves
+status: approved                  # 2026-09-14 — drafted from the spec 08 live session; Codex (Sol) adversarial read done 2026-09-14 and folded in (see `review`); all three calls under `decisions_for_james` ruled by James the same day (novelty; C2 as written; budget 12); go given
+date: 2026-09-14
+goal: >
+  Make the summary corpus (spec 08 S3) earn its keep. Tonight's live test showed the corpus is quiet for a
+  structural reason, not a bug: the state turn writes summaries in an abstract register by design ("shift from
+  visceral tension to philosophical affinity"), so a later query in the person's own words ("who I admire") shares
+  no token with them. Two bounded changes: (C1) the state turn emits RETRIEVAL CUES per turn — OTHER words a person
+  might later use for the exchange (its label, plainer names, a nickname), never words already in it — indexed by the
+  summary corpus and never rendered as text Sal reads; (C2) the summary's "persistent" list gets a rule again, as attributed, dated STATEMENTS
+  the person made about themselves or their world ("said they're a huge fan of Alan Watts") — rendered for two turns,
+  then retrievable — distinct from the continuity sheet's current scene conditions. C2 reverses a spec 07 ruling
+  (see decisions_for_james). James tests in place, same chat, same questions.
+
+evidence:                     # live session 2026-09-13/14, dev-DB chat 6c0b5c74 (62 → 88 entries), local provider, traced with scripts/eval/trace-turn.ts (lab, untracked)
+  miss_admire: "'Any idea who I admire?' → tokens [ani, idea, admir]. 21 summaries share NO token. Raw: 'admir' appears nowhere; incidental 'idea' hits under the gate. Production: nothing. Sal confabulated (local path renders no absence marker — by design, plot-loss regression 2026-07)."
+  miss_someone: "'Someone I told you about.' → [someon, told]; same shape; nothing."
+  hit_fan: "'I said I was a huge fan.' → [said, huge, fan]; RAW turn 33 ('I'm just a huge fan of Alan Watts is all') scored 0.140 via [huge, fan]; retrieved; Sal answered 'Alan Watts'. The summary corpus still contributed nothing — the turn's summary says 'identification of Alan Watts as a primary intellectual touchstone'."
+  register: "every one of the 22 summaries in that chat describes the SHAPE of an exchange (shifts, tests, pivots). The single concrete label across all of them is 'Alan Watts'. This is what the prompt asks for (verified_facts.prompt_scope) — an interpretation of the prompt borne out by the session, not something code proves (Sol)."
+  no_home: "the statement 'I'm a huge fan of Alan Watts' landed nowhere durable: not in persistent (retired to the sheet by spec 07 — deliberately, dynamic-state.test.ts:479 pins it), not on the sheet (character slots are scene-shaped). Sal's own reply: 'no imprint of a specific person in the constitutional memories'."
+  names_by_turn_length: >
+    measured 2026-09-14 on REAL backgrounds (the 62-turn dev chat as corpus, a made-up restaurant name injected once into
+    an actual turn; product engine, 0.08 gate): 39-token turn — one word 0.153, two 0.266, three 0.337, all retrieved;
+    79-token turn — 0.089 / 0.166 / 0.217, all retrieved; 218-token turn — one word 0.030 (cosine 0.058) MISSED, two words
+    0.063 (cosine 0.083 — the one case product is stricter) MISSED, three words 0.089 retrieved. The same one-word name once
+    inside one of the chat's real summaries (28 tokens): 0.122, retrieved. So James is right that a novel name pings hard in
+    short and median turns; in a long turn (200+ tokens — the shape of the long-paragraph corpus A) a one- or two-word name
+    mentioned once is under the gate for both engines, and a summary/persistent LINE that carries the name is its second
+    chance. That second chance belongs to the lines (C2 asks for exactly that), not to cues — cue_novelty RULED accordingly.
+  junk_shape: "the same number cuts both ways: ONE wrong cue in a summary doc clears 0.08 on its own (0.098). And adding 20 unrelated tokens to a 40-token doc drags an existing correct match from 0.0999 to 0.0733 — cues dilute the lines they ride with. Both from Sol's probe against the real scorer; both bound C1's cap (D1)."
+  miss_sock_s1: "unrelated to this spec, recorded for the ledger: 'Was it a sock?' → the clothing turn scored 0.075 under product (cosine 0.12 would have retrieved it). Spec 08 trade (c) biting live for the first time. The gate decision stays with James."
+  precedent: "the knowledge axis already does C1: lib/brains.ts indexes `text + summary + topics + aliases` per chunk (:16, :118) as 'the lexical bridge across the author's and the reader's vocabulary'. The Atlantis preparer (C:/Projects/Atlantis-SGC/atlantis/classify.py:61-69) prompts THIS SAME LOCAL MODEL for aliases with a rule that has held up in use (James's session evidence, not SGC code) — adapted in D2."
+
+review:                       # Sol (Codex) adversarial read, 2026-09-14 — 12 findings; each re-verified against the code before acting
+  accepted_and_folded: "2 (junk/dilution → token budget + stem dedup, D1), 4 ('both' loses summary provenance → summaryMatchedTerms, D5), 5 (cue-only summary → empty pointer; inspector guard, D3/D4), 6 (hydrated blob unvalidated → normalize at the boundary, D6), 7 (C2 boundary: speaker attribution + precedence, C2 D1), 8 (persistent = dated statements, not current truth; spec 07's retirement was deliberate — wording corrected; retraction case tested as a documented limit), 9 (truncation salvage → drop the string the repair closed, D7), 10 (dynamic-state.test.ts:479 must flip; negative probes with forbidTurns), 11 (sheet slot inventory corrected), 12 (line budgets: coercer lives in turn-parser.ts; architecture test in the landing check)"
+  reframed: >
+    1 (blocker: 'never rendered' vs `via summary "hero"`): the prefix shows MATCHED terms, and a matched term is by definition
+    a stem the person typed in the query — no cue text Sal has not already seen can appear. The invariant is narrowed to say
+    exactly that (invariant_check.model_in_retrieval); provenance stays, because it is how a bad cue is diagnosed from the
+    prompt side. 3 (the rule contradicts itself — 'a name mentioned' vs 'never words already in the exchange'): Sol was right
+    that the draft was inconsistent. Claude first proposed resolving it toward salience (let cues repeat key names, for the
+    short-doc second chance); James pushed back that novel names already ping, the numbers (evidence.names_by_turn_length)
+    showed they do in short and median turns and that the long-turn second chance belongs to the summary LINES, so the rule
+    went Sol's way: cues are novel vocabulary only.
+  sol_dissent_kept: "none outstanding — Sol's novelty position was adopted after measurement."
+
+invariant_check:
+  new_api_call: none — cues ride in the existing state-turn payload (spec 03), one call, already retried-once on transport failure. Base loop stays 2 calls/turn, worst case 4 with recall.
+  model_in_retrieval: >
+    none in the RETRIEVAL path — ranking stays conceptSearch over both corpora. Cues WIDEN the raise spec 08 S3 recorded
+    (model-distilled index text): the model now also guesses the person's future vocabulary for an exchange. Same control
+    surface (per-message gating covers the whole pair, cues included; SUMMARY_CONCEPT_THRESHOLD), plus cues are visible in
+    the inspector's summary card. Cue TEXT never renders into a prompt: the distilled buffer, the S3 pointer, the 'both' body
+    and the dimmed appendage read the three summary arrays only. The one place a cue can surface is the fragment prefix's
+    provenance (`via summary "admir"`), and only as a stem the person themselves typed in the query that matched it.
+  sal_ephemeral: unchanged.
+  guardrail_call_count: unchanged.
+
+verified_facts:               # observed 2026-09-14; Sol re-verified the structural claims
+  prompt_scope: "dynamic-state.ts:207-212 TURN SUMMARY rules list ONLY volatile and established_patterns; persistent appears in the JSON shape (:232) as [] with no rule; the prose says 'conditions that hold belong on the continuity sheet, not here'. dynamic-state.test.ts:479 pins that retirement: 'no longer asks for a persistent list — that lifetime belongs to the sheet' (spec 07, deliberate)."
+  parse_path: "dynamic-state.ts:471 parseStateResponse → coerceSummary(o.turn_summary) (turn-parser.ts:56-65) — accepts an object with at least one of the three known keys, coerces each via toStringList (strings only, whitespace-collapsed, empties dropped). An unknown key is silently dropped today."
+  repair: "turn-parser.ts:73 completeJson closes an unterminated string (:88) and open brackets, returning only the repaired text — the caller (dynamic-state.ts:435,442) cannot tell a closed-by-repair string from a complete one. A token-capped response ending mid-string therefore yields a partial list item today (for volatile/patterns too — pre-existing)."
+  type: "types.ts:18-22 TurnSummary { persistent, volatile, established_patterns }; header says it 'does NOT touch retrieval' — false since spec 08 S3; fix the comment."
+  render_sites: "prompt.ts:218-243 distilled buffer renders persistent/volatile/established patterns inline per turn; prompt.ts formatGrepFragment renders summaryLines for S3 'summary'/'both' hits and matchedTerms (top 3) in the prefix; TurnInspector.tsx:79-84 hasSummary checks the three arrays, :435-445 lists them; the dimmed appendage under a reply reads the same three; estimateNaiveContextTokens passes no summaries. inspector_json stores the whole object but is never fed to Sal (Sol)."
+  index_site: "tfidf.ts summaryLines() (:199) flattens the three arrays; buildSummaryDocs (:222) tokenizes summaryLines().join('. ') and carries summaryLines on the doc for rendering — ONE function serves both index text and rendered text today."
+  state_provider: "state-turn.ts:160 runTurn(..., input.provider) — the state turn runs on the reply's provider, so on the local path the local model writes summaries and would write cues."
+  sheet_slots: "continuity.ts:64-78 CharacterRecord: present, absence_reason, immediate_location, stance, apparel, items, physical_state, disposition_to_user, unaware_of. No slot for a durable fact ABOUT the person outside the scene (tastes, history, people they admire). The sheet is rendered every turn and NOT indexed (spec 08 not_indexed)."
+  hydration: "turn-data.ts summaryFromInspector (:201) returns the persisted `summary` object unvalidated; tfidf.ts summaryLines tolerates a MISSING array only — a non-array value (`cues: \"hero\"`, `cues: {}`) would spread as characters or throw (Sol). Pre-existing for the three arrays; D6 fixes it for all four."
+  fusion: "time-score.ts searchScored 'both' keeps the RAW hit's matchedTerms/scores and attaches only the summary's lines — the summary side's provenance is dropped (Sol). Raw-first fill, either-half gating, separate corpus statistics, SUMMARY_CORPUS_MIN_DOCS 5 and the 0.08 summary gate are as spec 08 says."
+  line_budgets: "src/architecture.test.ts: dynamic-state.ts 480/500, TurnInspector.tsx 483/500, neither with an exception; turn-parser.ts 240, tfidf.ts 285. Parser tests live in prompt.test.ts (there is no turn-parser.test.ts)."
+  lab: "scripts/eval/trace-turn.ts --chat <id> [--last N] prints, per user turn, query tokens, which docs in each corpus share ANY token, top-3 at threshold 0, and the production result — the tool that produced the evidence above."
+
+design:
+  C1_retrieval_cues:
+    D1_schema_and_caps: >
+      TurnSummary gains `cues?: string[]` (optional — legacy rows and failed parses have none). turn-parser.ts gains
+      coerceCues(value): string[] — strings only via toStringList, each ≤ 40 chars, then a deterministic TOKEN BUDGET:
+      tokenize each cue, drop tokens already present in the summary lines' tokens or an earlier cue (stem dedup), keep cues
+      in order while the running total of NOVEL tokens ≤ CUE_TOKEN_BUDGET (constants.ts, start 12), drop the rest, cap the
+      list at 6. The budget is what bounds retrieval influence (evidence.junk_shape): at most 12 new stems can enter the doc,
+      so dilution of the summary lines is bounded and a doc cannot become a cue soup. coerceSummary calls coerceCues; the
+      same coercer runs at hydration (D6).
+    D2_prompt: >
+      dynamic-state.ts TURN SUMMARY gains one rule and one shape line (kept tight — the file has 20 lines of budget):
+        - "cues": 0–6 short strings for SEARCH ONLY, never shown to anyone: OTHER words a person might later use to refer
+          back to this exchange that appear nowhere in it or in your summary — the label they would give it ("the harbour
+          trip"), everyday words for jargon used here, a nickname, a plainer name for a thing. Never: words already in the
+          exchange or your summary, inflections of them, generic words ("discussion", "feelings"), or anything you would
+          have to wonder about. [] is fine and usual.
+      Shape: "cues": [] added to the turn_summary JSON example. The Atlantis alias rule (classify.py:61-69), adapted. Names
+      and labels that ARE in the exchange belong in the summary lines (C2), where they get their short-doc second chance
+      (evidence.names_by_turn_length); the coercer's stem dedup (D1) makes an accidental repeat harmless.
+    D3_index_vs_render: >
+      Split the one function into two: summaryLines(summary) stays the RENDERED lines (persistent + volatile + patterns);
+      new summaryIndexText(summary) = summaryLines + cues, joined '. '. buildSummaryDocs tokenizes summaryIndexText and
+      carries summaryLines on the doc as today — and ADMITS a doc only when summaryLines is non-empty (a cue-only summary
+      would render an empty pointer; Sol 5). Cues reach the corpus, the IDF and matchedTerms (so a cue-carried hit shows
+      `via summary "admir"`), and never reach a prompt body.
+    D4_render_and_inspector: "no prompt change. TurnInspector: hasSummary (:79) also counts non-empty cues; the summary card gains a fourth row 'cues' (diagnostic — the person sees what the model guessed). The dimmed appendage under a reply: unchanged. Line budget: the inspector row is ~8 lines; if the file crosses 500, extract the summary card into its own component rather than raise the budget."
+    D5_provenance_through_fusion: "ScoredResult and GrepDetail gain summaryMatchedTerms?: string[] — the SUMMARY side's matchedTerms on 'summary' and 'both' hits (on 'both' the raw side's stay in matchedTerms as today). Diagnostic only: the prompt prefix keeps rendering matchedTerms; the RetrievalDetailModal shows `summary matched \"…\"` beneath, so a cue that caused an appendage is visible. Persisted optional; legacy rows have none."
+    D6_hydration_boundary: "turn-data.ts summaryFromInspector runs the object through coerceSummary (all four arrays coerced, cues capped) before returning it — a malformed or oversized persisted blob is normalised at the boundary, not tolerated field-by-field downstream. summaryLines keeps its ?? [] as belt-and-braces."
+    D7_truncation: "completeJson gains a sibling that also reports whether it closed an open string (turn-parser.ts; the existing export's signature stays). parseStateResponse, when the repair closed a string, drops the LAST element of the list that string belonged to — the partial item — before coercion. Applies to all four lists (pre-existing weakness, consequential now that persistent lines are facts). Continuity's own incomplete-fact rejection is untouched."
+    D8_gating: "unchanged — buildSummaryDocs skips the pair when either half is gated; cues go with it."
+    D9_lab: "trace-turn.ts reports which shared tokens came from cues (rebuilds cue tokens from the entry) — lab only."
+  C2_persistent_as_statements:
+    D1_rule: >
+      dynamic-state.ts TURN SUMMARY gains the rule, with attribution and precedence (Sol 7):
+        - "persistent": statements the PERSON (not their character) made in THIS exchange about themselves or their own
+          world — who they admire, what they do, a stated preference, a piece of their history — as short attributed
+          lines ("said they're a huge fan of Alan Watts"). Not scene conditions (those belong on the continuity sheet) and
+          not behaviour you inferred (that is "established_patterns" — a stated preference is persistent, a demonstrated
+          one is a pattern). [] when the exchange stated none (most turns).
+      These are DATED STATEMENTS, not current truth (Sol 8): the fragment prefix carries when-said, and the RETRIEVED
+      HISTORY block already says newer supersedes older. A later retraction is a separate statement; nothing reconciles
+      them. Recorded as a documented limit and tested as one.
+    D2_boundary_with_sheet: "sheet = current conditions of the SCENE, folded, rendered every turn, not indexed; persistent = what the person SAID, rendered two turns (distilled buffer), then retrievable through the summary corpus. Keep 'conditions that hold belong on the continuity sheet'; add 'what the person states about themselves belongs in persistent'."
+    D3_types_and_tests: "types.ts:9-16 TurnSummary header: restore persistent's meaning as dated statements; delete 'It does NOT touch retrieval'. dynamic-state.test.ts:479 flips from 'no longer asks for a persistent list' to the new boundary contract (still asserts the sheet sentence)."
+    D4_not_a_sheet_slot: "argued both ways (Sol 8): a sheet slot would fold to a current value and be in every prompt, but the sheet is scene-attributed, bounded scalar, not indexed, and would broaden the always-present block with personal facts. Statements in persistent are bounded, non-recurring and retrievable. No sheet slot in this spec; revisit if the retraction limit bites live."
+  not_in_scope:
+    - "Indexing the continuity sheet (rendered every turn already — spec 08 not_indexed stands)."
+    - "Backfilling summaries/cues for pre-state-turn history — a separate decision (one state call per old turn; ~20 for the test chat)."
+    - "The local-path absence marker (Sal confabulating when nothing surfaced) — spec 08 back-pocket item with caveat 2."
+    - "The 0.08 gate under the product engine (the sock miss) — James's decision, spec 08 ledger."
+  tests:
+    - "prompt.test.ts (parser section): coerceCues — strings only, ≤ 40 chars, stem-dedup against summary lines and earlier cues, novel-token budget 12 drops later cues, cap 6; coerceSummary accepts cues; absent → undefined; a legacy 3-key object still coerces; malformed `cues: \"hero\"` / `cues: {}` → [] not a throw"
+    - "prompt.test.ts: completeJson sibling reports a closed string; parseStateResponse drops the partial trailing item of the open list and keeps the rest (persistent, volatile, patterns, cues each)"
+    - "tfidf.test.ts: summaryIndexText includes cues, summaryLines excludes them; buildSummaryDocs tokens contain a cue-only stem; doc.summaryLines never contains it; a cue-only summary (three empty arrays) builds NO doc"
+    - "turn-data.test.ts: summaryFromInspector normalises a blob with an oversized or non-array cues field"
+    - "prompt.test.ts: a summary-only fragment, a 'both' fragment and the distilled buffer never contain a cue-only phrase; a cue-carried hit's prefix reads `via summary \"<cue stem>\"`"
+    - "time-score.test.ts: the admire case — raw says 'huge fan of <name>', summary line says '<name> is a touchstone', cues ['admires <name>', 'hero']; query 'who I admire' retrieves the turn via summary; with cues stripped it does not. Plus: a wrong cue on an unrelated turn does NOT displace a raw hit (raw-first holds); a 'both' hit carries summaryMatchedTerms"
+    - "eval: summaries fixture gains cues on two turns + probes: (a) hits only via a cue; (b) NEGATIVE — a query that shares a cue with the wrong turn uses forbidTurns to pin that the wrong turn is not pulled at 0.08 when the right one exists; (c) dilution — the existing label probe still hits with cues present; ratchet unchanged"
+    - "dynamic-state.test.ts: the prompt contains the cues rule and the persistent rule; the JSON shape has \"cues\": []; :479 rewritten"
+    - "src/architecture.test.ts in the landing check (budgets)"
+  live_test:                  # James, same chat, local provider
+    - "state a fact about yourself in your own register ('I'm a huge fan of X'); two turns later the inspector's summary card shows persistent carrying it as an attributed line and cues carrying other words for it"
+    - "five+ turns later ask about it in words the exchange never used ('who do I admire', 'my hero'); inspector shows the hit `via summary` with the cue as provenance"
+    - "say something in-fiction as your CHARACTER ('I work the harbour as a doctor') and check it lands on the sheet, not in persistent — the attribution split (C2 D1) on the local model"
+    - "state a fact, retract it ten turns later, ask about it after both left the buffers — expect the documented limit (either statement may surface); note whether it bites"
+    - "watch ordinary turns for pulls that weren't there before (trace-turn attributes any) — the cost of cues is junk cues"
+
+sequence:                     # implement → tests/typecheck/lint/architecture → present; no gate until James runs /pre-commit-qa
+  - "C1 + C2 in one landing (same prompt block, same type, same coercer); changelog entry; README grep row gains 'plus retrieval cues the state turn writes for it'"
+  - "post: James runs the live_test; trace-turn attributes anything odd"
+
+decisions_for_james:          # the calls the review left open; a recommendation is given for each
+  cue_novelty: "RULED 2026-09-14 — novelty (Sol's / Atlantis's rule): cues are other words only, never words already in the exchange or summary. James: novel names already ping hard; measured true for short and median turns (evidence.names_by_turn_length). The long-turn miss (one or two words once in 200+ tokens) is answered by C2's lines carrying the name, not by cues. Spec 08 ledger gains the two-word long-turn case as a product-vs-cosine data point (0.063 vs 0.083)."
+  c2_reverses_spec_07: "Spec 07 retired 'persistent' to the sheet deliberately (its test says so). C2 brings it back with a narrower meaning — attributed, dated statements by the person, not conditions. The retraction limit is real and documented. Alternative: cues only (C1), no persistent rule — the fact is then findable only by its other words, and never rendered in the distilled buffer. RECOMMEND C2 as written; it is the smaller of the two changes to the state turn's job and the only one that gives 'I'm a fan of X' a rendered home."
+  cue_token_budget: "12 novel stems per turn, 6 cues, 40 chars each — guesses bounded by Sol's numbers (one stem clears the gate alone; 20 stems dilute a real match by a quarter). Tune live via the inspector; the constant is one site."
+
+implementation_notes:
+  C1_C2: >
+    Landed 2026-09-14 (uncommitted; live test pending). As designed, with these specifics: coerceCues lives in turn-parser.ts
+    (imports tokenize from tfidf.ts — no cycle); the truncation mark is a private-use code point written by completeJson(s, mark)
+    and stripped/dropped by dropTruncated before coercion (scalars keep their partial text as before; array items are dropped);
+    summaryFromInspector normalises through coerceSummary; summaryIndexText is the indexed text, summaryLines the rendered;
+    a cue-only summary builds no doc. New tests in turn-parser.test.ts (created), tfidf/time-score/prompt/turn-data/eval
+    extended; dynamic-state.test.ts's retired-persistent assertion flipped to the spec 09 contract. Eval: 38 probes, recall@3
+    1.000 / MRR 1.000 (two new: label-via-cue, wrong-cue-does-not-outrank); ratchet 0.90 unchanged. Line budgets held
+    (architecture test green).

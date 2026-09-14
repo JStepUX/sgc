@@ -183,3 +183,24 @@ describe('canonEntryCount (ephemeral tangent, spec 04)', () => {
     expect(canonEntryCount(ord([1, 2, 3, 4]), 4)).toBe(4);
   });
 });
+
+describe('summaryFromInspector normalises the hydrated blob (spec 09 D6)', () => {
+  it('coerces a non-array cues field and caps an oversized one', () => {
+    const bad = JSON.stringify({ summary: { persistent: ['a'], volatile: [], established_patterns: [], cues: 'hero' } });
+    expect(summaryFromInspector(bad)?.cues).toEqual([]);
+    const many = JSON.stringify({ summary: { persistent: ['a'], volatile: [], established_patterns: [], cues: Array.from({ length: 30 }, (_, i) => `c${i}`) } });
+    expect(summaryFromInspector(many)!.cues!.length).toBeLessThanOrEqual(6);
+  });
+
+  it('a legacy blob without cues hydrates without a cues key', () => {
+    const legacy = JSON.stringify({ summary: { persistent: ['a'], volatile: ['b'], established_patterns: [] } });
+    const s = summaryFromInspector(legacy)!;
+    expect(s.persistent).toEqual(['a']);
+    expect('cues' in s).toBe(false);
+  });
+
+  it('a non-array persistent field no longer reaches the caller unbounded', () => {
+    const bad = JSON.stringify({ summary: { persistent: 'oops', volatile: ['b'], established_patterns: [] } });
+    expect(summaryFromInspector(bad)?.persistent).toEqual([]);
+  });
+});

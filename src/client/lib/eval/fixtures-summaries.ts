@@ -25,10 +25,15 @@ import { daysAgo, hoursAgo } from './fixture-time';
 
 /** A pair whose assistant half carries a summary (assistant rows only —
  * production stamps summaries there, buildSummaryDocs reads them there). */
-function spair(userContent: string, assistContent: string, createdAt: number, persistent: string[]): ChatEntry[] {
+function spair(userContent: string, assistContent: string, createdAt: number, persistent: string[], cues?: string[]): ChatEntry[] {
   return [
     { role: 'user', content: userContent, createdAt },
-    { role: 'assistant', content: assistContent, createdAt, summary: { persistent, volatile: [], established_patterns: [] } },
+    {
+      role: 'assistant',
+      content: assistContent,
+      createdAt,
+      summary: { persistent, volatile: [], established_patterns: [], ...(cues ? { cues } : {}) },
+    },
   ];
 }
 
@@ -46,6 +51,9 @@ export const summariesLog: ChatEntry[] = [
     'Two baskets in an hour is quick work; the rain would have ended it anyway.',
     daysAgo(10),
     ['orchard visit: ladders, two baskets, rain cut it short'],
+    // spec 09 cues: OTHER words for the outing — none appear in the raw text
+    // or the summary line. 'fruit picking' is the label-via-cue probe.
+    ['fruit picking', 'the farm trip'],
   ),
   // turn 3 – filler (disjoint: bicycle brakes)
   ...spair(
@@ -67,6 +75,9 @@ export const summariesLog: ChatEntry[] = [
     'Not always — the Philidor position holds the draw.',
     daysAgo(4),
     ['rook endgame, extra pawn, Philidor draw'],
+    // A cue that is WRONG for this turn (an orchard word on the chess turn):
+    // the documented cost of cues — see the summaries.wrong-cue probe.
+    ['orchard'],
   ),
   // turn 6 – filler (disjoint: coffee)
   ...spair(

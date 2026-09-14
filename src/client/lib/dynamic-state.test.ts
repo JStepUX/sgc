@@ -476,12 +476,18 @@ describe('buildStatePrompt — the continuity sheet', () => {
     expect(user).not.toContain('Use null (not an empty string) when a field has nothing in it');
   });
 
-  it('no longer asks for a persistent list — that lifetime belongs to the sheet', () => {
+  it('asks for persistent as attributed statements by the person, and cues for search (spec 09)', () => {
+    // Spec 07 retired the persistent rule to the sheet; spec 09 C2 restores it
+    // with a narrower meaning — what the person SAID about themselves — and
+    // keeps the sheet sentence for scene conditions.
     const { user } = buildStatePrompt('P', 'doc', recent, null);
-    expect(user).not.toContain('- "persistent"');
+    expect(user).toContain('- "persistent": statements the PERSON (not their character)');
     expect(user).toContain('belong on the continuity sheet');
-    // The key stays in the shape so old parsers and the type remain valid.
+    expect(user).toContain('belongs in "persistent"');
+    expect(user).toContain('- "cues": 0–6 short strings for SEARCH ONLY');
+    expect(user).toContain('Never words already in the exchange or your summary');
     expect(user).toContain('"persistent": []');
+    expect(user).toContain('"cues": []');
   });
 
   it('is deterministic with a sheet too', () => {

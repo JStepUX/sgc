@@ -109,6 +109,11 @@ export interface ScoredResult {
   source: RetrievalSource;
   /** The matched summary's lines — present on 'summary' and 'both' hits. */
   summaryLines?: string[];
+  /** The summary corpus's provenance terms (spec 09 D5): on a 'summary' hit
+   * the same as matchedTerms; on a 'both' hit the terms the SUMMARY matched
+   * on, which matchedTerms (the raw side's) does not show. Diagnostic — the
+   * prompt prefix renders matchedTerms only. */
+  summaryMatchedTerms?: string[];
 }
 
 // ============================================================
@@ -365,6 +370,7 @@ export function searchScored(
       source,
     };
     if (c.summaryLines) r.summaryLines = c.summaryLines;
+    if (source === 'summary') r.summaryMatchedTerms = c.matchedTerms;
     return r;
   };
   const byCombined = (a: ScoredResult, b: ScoredResult) => b.combinedScore - a.combinedScore;
@@ -394,7 +400,12 @@ export function searchScored(
   const fused: ScoredResult[] = raw.map((r) => {
     const h = bySummary.get(r.turnIndex);
     if (!h) return r;
-    const both: ScoredResult = { ...r, source: 'both', summaryLines: h.summaryLines };
+    const both: ScoredResult = {
+      ...r,
+      source: 'both',
+      summaryLines: h.summaryLines,
+      summaryMatchedTerms: h.matchedTerms,
+    };
     return both;
   });
   const have = new Set(fused.map((r) => r.turnIndex));

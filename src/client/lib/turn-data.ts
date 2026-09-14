@@ -1,4 +1,5 @@
 import type { SpontaneityInspector } from './spontaneity/engine';
+import { coerceSummary } from './turn-parser';
 import type { PacingInspector } from './pacing';
 import { operatorLabel } from './spontaneity/flexDeck';
 import type { ChatEntry, DynamicState, TurnSummary } from './types';
@@ -46,6 +47,10 @@ export interface GrepDetail {
    * and 'both' hits. For a 'summary' hit this IS the served text; the raw
    * halves are empty because Sal never read them. */
   summaryLines?: string[];
+  /** The SUMMARY corpus's own provenance terms for this hit (spec 09 D5) —
+   * on a 'both' hit `matchedTerms` is the raw side's, so without this a cue
+   * that caused the appendage would be invisible. Diagnostic only. */
+  summaryMatchedTerms?: string[];
   /** Epoch ms + timeless flag, so the modal can date the retrieved turn
    * (relative to viewing time — the prompt's own prefix was relative to
    * serve time, which isn't persisted). */
@@ -213,7 +218,11 @@ export function canonEntryCount(
 export function summaryFromInspector(inspectorJson: string | null): TurnSummary | undefined {
   if (!inspectorJson) return undefined;
   try {
-    return (JSON.parse(inspectorJson) as Partial<TurnData>).summary ?? undefined;
+    const stored = (JSON.parse(inspectorJson) as Partial<TurnData>).summary;
+    // Normalise at the boundary (spec 09 D6): the persisted blob is whatever
+    // was written — an oversized or non-array field (a hand-edited row, an
+    // older writer) must not reach the index or the inspector unbounded.
+    return stored ? (coerceSummary(stored) ?? undefined) : undefined;
   } catch {
     return undefined;
   }

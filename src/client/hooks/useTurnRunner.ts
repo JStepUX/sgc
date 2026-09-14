@@ -221,6 +221,7 @@ export function useTurnRunner(
           bm25Score: r.bm25Score,
           source: r.source,
           summaryLines: r.summaryLines,
+          summaryMatchedTerms: r.summaryMatchedTerms,
           createdAt: r.createdAt,
           timeless: r.timeless,
         }));

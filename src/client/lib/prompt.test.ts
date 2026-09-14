@@ -1133,3 +1133,33 @@ describe('formatGrepFragment corpus provenance (spec 08 S3)', () => {
     expect(prompt).toContain('[Turn 9 · 3 days ago · via summary "harbour, trip"] Summary:\n  - the ferry was cancelled');
   });
 });
+
+describe('cues never render (spec 09)', () => {
+  const now = new Date(2026, 4, 23, 14, 30).getTime();
+  const summary = { persistent: ['said they admire Harrow'], volatile: [], established_patterns: [], cues: ['zebrafinch'] };
+  const base: ScoredResult = {
+    turnIndex: 4, userContent: '', assistContent: '', conceptScore: 0.5, timeScore: 0.9, combinedScore: 0.45,
+    createdAt: now - 3 * 24 * 60 * 60 * 1000, timeless: false, matchedTerms: ['admir'], cosineScore: 0.7, bm25Score: 0.7,
+    source: 'summary', summaryLines: ['said they admire Harrow'], summaryMatchedTerms: ['admir'],
+  };
+
+  it('a summary-only fragment shows the lines and the matched stem, never the cue text', () => {
+    const frag = formatGrepFragment(base, now);
+    expect(frag).toContain('via summary "admir"');
+    expect(frag).toContain('- said they admire Harrow');
+    expect(frag).not.toContain('zebrafinch');
+  });
+
+  it("a 'both' fragment shows the raw pair and the lines, never the cue text", () => {
+    const frag = formatGrepFragment({ ...base, source: 'both', userContent: 'u', assistContent: 'a', summaryMatchedTerms: ['zebrafinch'] }, now);
+    expect(frag).toContain('] User: u');
+    expect(frag).not.toContain('zebrafinch');
+  });
+
+  it('the distilled buffer renders the three arrays and never the cues', () => {
+    const entry = { role: 'assistant' as const, content: 'a', createdAt: now - 60_000, summary };
+    const prompt = buildPrompt({ constitutional: 'c', summaryBuffer: [entry], now });
+    expect(prompt).toContain('persistent: said they admire Harrow');
+    expect(prompt).not.toContain('zebrafinch');
+  });
+});

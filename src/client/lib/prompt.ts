@@ -54,7 +54,7 @@ export type GrepFragmentSource = Pick<
   ScoredResult,
   'turnIndex' | 'userContent' | 'assistContent' | 'createdAt' | 'timeless' | 'matchedTerms'
 > &
-  Partial<Pick<ScoredResult, 'source' | 'summaryLines'>>;
+  Partial<Pick<ScoredResult, 'source' | 'summaryLines' | 'summaryMatchedTerms'>>;
 
 /**
  * Format one retrieved turn-pair for Sal — shared by the ambient RETRIEVED

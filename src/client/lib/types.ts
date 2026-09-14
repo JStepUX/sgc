@@ -5,20 +5,30 @@ import type { ContinuityDelta } from './continuity';
 /**
  * The turn summary produced for every completed turn — a fresh, per-turn
  * structured observation, never accumulated:
- *  - persistent: things true until explicitly changed
+ *  - persistent: statements the PERSON made about themselves or their own
+ *    world in this exchange, as attributed lines ("said they're a huge fan of
+ *    Alan Watts") — dated statements, not current truth (spec 09 C2; a later
+ *    retraction is a separate statement, nothing reconciles them). Scene
+ *    conditions live on the continuity sheet instead.
  *  - volatile: things that shifted this turn
  *  - established_patterns: behavioral rules that have been demonstrated
+ *  - cues (optional, spec 09 C1): OTHER words a person might later use to
+ *    refer back to this exchange. Search plumbing only: indexed by the
+ *    summary corpus (lib/tfidf.ts summaryIndexText), never rendered into a
+ *    prompt, shown in the inspector. Capped by lib/turn-parser.ts coerceCues.
  *
  * Produced by the post-reply state turn (lib/dynamic-state.ts) alongside the
  * DynamicState below — Sal's own reply no longer carries a `<turn-summary>`
- * block. Rendered as a dimmed one-line appendage beneath the reply and fed
- * forward (last couple of turns only) as the distilled summary buffer. It does
- * NOT touch retrieval.
+ * block. Rendered as a dimmed one-line appendage beneath the reply, fed
+ * forward (last couple of turns only) as the distilled summary buffer, and —
+ * since spec 08 S3 — indexed as the memory grep's second corpus, so a label
+ * the raw prose never restated can still retrieve the turn.
  */
 export interface TurnSummary {
   persistent: string[];
   volatile: string[];
   established_patterns: string[];
+  cues?: string[];
 }
 
 /**

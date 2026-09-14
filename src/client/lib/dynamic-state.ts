@@ -27,7 +27,7 @@
 // ============================================================
 
 import type { ChatEntry, DynamicState, TurnSummary } from './types';
-import { coerceSummary, completeJson } from './turn-parser';
+import { coerceSummary, completeJson, dropTruncated, TRUNCATION_MARK } from './turn-parser';
 import { isSheetEmpty, type ContinuitySheet } from './continuity';
 
 /**
@@ -206,9 +206,11 @@ CONTINUITY — you are also this story's continuity record: the established cond
 Each value is one concise line, 160 characters at most. When nothing changed — or the conversation has no scene at all — return {"story": {}, "location": {}, "characters": {}}.
 
 TURN SUMMARY — a fresh observation of THIS exchange, in short lists of plain-language strings:
+- "persistent": statements the PERSON (not their character) made in this exchange about themselves or their own world — who they admire, what they do, a stated preference, a piece of their history — as short attributed lines ("said they're a huge fan of Alan Watts"). Not scene conditions (those belong on the continuity sheet) and not behaviour you inferred (that is "established_patterns" — a stated preference is persistent, a demonstrated one is a pattern).
 - "volatile": things that shifted in this turn specifically — a new mood, a changed plan, a one-off detail.
 - "established_patterns": behavioral rules the person has now demonstrated — how they like to work, recurring asks, standing conventions.
-Leave a list empty ([]) when nothing fits — most turns add little. This is an observation of this turn, not a running ledger; conditions that hold belong on the continuity sheet, not here.
+- "cues": 0–6 short strings for SEARCH ONLY, never shown to anyone: OTHER words a person might later use to refer back to this exchange that appear nowhere in it or in your summary — the label they would give it ("the harbour trip"), everyday words for jargon used here, a nickname, a plainer name for a thing. Never words already in the exchange or your summary, inflections of them, or generic words ("discussion", "feelings"); if you have to wonder, leave it out.
+Leave a list empty ([]) when nothing fits — most turns add little. This is an observation of this turn, not a running ledger; conditions that hold belong on the continuity sheet, not here; what the person states about themselves belongs in "persistent".
 
 INTERNAL STATE — where you are now, carried forward from the state above rather than reinvented. Let it move when the exchange moved it and hold when it didn't:
 - "goal": what you are trying to do in this conversation right now. One sentence, max 30 words.
@@ -231,7 +233,8 @@ For the internal state, use null (not an empty string) when a field has nothing 
   "turn_summary": {
     "persistent": [],
     "volatile": ["<short plain-language string>"],
-    "established_patterns": []
+    "established_patterns": [],
+    "cues": []
   },
   "internal_state": {
     "goal": "<one sentence, max 30 words>",
@@ -432,14 +435,17 @@ export function parseStateResponse(raw: string): ParsedStateResponse {
   const end = unfenced.lastIndexOf('}');
   if (end > start) push(unfenced.slice(start, end + 1));
   push(body);
-  push(completeJson(body));
+  // The repaired candidate carries TRUNCATION_MARK on the string it had to
+  // close; dropTruncated below discards that half-finished list item (spec
+  // 09 D7) rather than persisting and indexing a partial statement.
+  const repaired = completeJson(body, TRUNCATION_MARK);
+  push(repaired);
 
   // The continuity delta: from a candidate that parsed WITHOUT mechanical
   // repair when one exists (exact JSON key semantics — escapes and all), else
   // brace-matched out of the raw text (complete text only, never a repaired
   // string — see extractCompleteContinuity). Decided before the halves so a
   // repaired candidate can never supply it.
-  const repaired = completeJson(body);
   let sheetDelta: Record<string, unknown> | null = null;
   let cleanParsed = false;
   for (const candidate of attempts) {
@@ -466,7 +472,7 @@ export function parseStateResponse(raw: string): ParsedStateResponse {
       continue;
     }
     if (parsed === null || typeof parsed !== 'object') continue;
-    const o = parsed as Record<string, unknown>;
+    const o = dropTruncated(parsed as Record<string, unknown>);
     // Tolerate a model that flattened the two halves into one object.
     const summary = coerceSummary('turn_summary' in o ? o.turn_summary : o);
     const state = coerceState('internal_state' in o ? o.internal_state : o);

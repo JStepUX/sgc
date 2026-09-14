@@ -120,6 +120,11 @@ export function RetrievalDetailModal({ selection, onClose }: RetrievalDetailModa
     if (g.source === 'summary') meta.push('via summary');
     else if (g.source === 'both') meta.push('turn + summary');
     if (stems.length > 0) meta.push(`matched "${stems.join(', ')}"`);
+    // On a 'both' hit the summary side's own terms (spec 09 D5) — the only
+    // place a cue that caused the appendage is visible.
+    if (g.source === 'both' && g.summaryMatchedTerms && g.summaryMatchedTerms.length > 0) {
+      meta.push(`summary matched "${g.summaryMatchedTerms.join(', ')}"`);
+    }
   } else {
     meta.push(`score ${selection.detail.score.toFixed(3)}`);
   }

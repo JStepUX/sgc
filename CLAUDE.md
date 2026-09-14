@@ -18,9 +18,9 @@ a Windows Electron shell.
 
 Every turn, client-assembled context tiers — a per-chat **constitutional
 document**, a 2-turn verbatim **local buffer** (a distilled summary buffer just
-behind it), a deterministic TF-IDF cosine grep over older history
-(**"Grepory"** — pure math, no model; Sal can also re-query it mid-turn via the
-`recall` tool), and mounted **knowledge packs** — feed **Sal**, an ephemeral
+behind it), a deterministic lexical grep over older history — TF-IDF cosine × a squashed
+BM25 veto, over the raw turns and the state turn's own summaries (**"Grepory"**
+— pure math, no model; Sal can also re-query it mid-turn via the `recall` tool), and mounted **knowledge packs** — feed **Sal**, an ephemeral
 reasoning instance built fresh for the turn and retired after it. A small
 post-reply **state turn** distils the finished exchange into a turn summary +
 Sal's bounded, user-editable Dynamic State. Base loop: 2 API calls/turn; the
@@ -54,6 +54,11 @@ growing transcript, no model carrying its own state). Two rules protect that:
   Since spec 07 (2026-09-07) that same call also returns **continuity sheet**
   deltas — a fixed-schema, accreting scene record merged by code — still no
   new call, still nothing retrieved.
+  Since specs 08 and 09 (2026-09-13/14) the grep also INDEXES that call's
+  output — each turn's summary lines plus a few retrieval cues — as a second
+  corpus beside the raw turns. That is model-distilled text used as index
+  material, recorded as a raise on the corpus side: ranking over it stays pure
+  math, still no model in the retrieval path, still no new call.
   (Web/knowledge retrieval is a separate axis from memory — see the web-tools
   entry in `AGENTS.md`.)
 

@@ -194,13 +194,23 @@ export function buildTurnDocs(chatLog: ChatEntry[], excludeLastN = LOCAL_BUFFER_
 }
 
 /** A turn summary's three arrays as one flat list of trimmed, non-empty
- * lines — the summary corpus's document text and the prompt's bullet body.
- * Tolerant of a missing array: the hydrated blob is unvalidated
- * (turn-data.ts summaryFromInspector). */
+ * lines — the RENDERED text: the prompt's bullet body for a summary hit and
+ * the inspector's served text. Never includes cues. Belt-and-braces tolerant
+ * of a missing or non-array field even though turn-data.ts normalises the
+ * hydrated blob (spec 09 D6). */
 export function summaryLines(summary: NonNullable<ChatEntry['summary']>): string[] {
-  return [...(summary.persistent ?? []), ...(summary.volatile ?? []), ...(summary.established_patterns ?? [])]
+  const arr = (v: unknown): string[] => (Array.isArray(v) ? v : []);
+  return [...arr(summary.persistent), ...arr(summary.volatile), ...arr(summary.established_patterns)]
     .map((l) => (typeof l === 'string' ? l.trim() : ''))
     .filter((l) => l.length > 0);
+}
+
+/** The INDEXED text of a summary: its rendered lines plus its retrieval cues
+ * (spec 09 C1). Cues are search plumbing — they reach the corpus, the IDF and
+ * the provenance terms, and nothing else. */
+export function summaryIndexText(summary: NonNullable<ChatEntry['summary']>): string {
+  const cues = Array.isArray(summary.cues) ? summary.cues.filter((c): c is string => typeof c === 'string') : [];
+  return [...summaryLines(summary), ...cues].join('. ');
 }
 
 /**
@@ -233,7 +243,10 @@ export function buildSummaryDocs(chatLog: ChatEntry[], excludeLastN = LOCAL_BUFF
     if (!assistEntry?.summary) continue;
     if (userEntry?.active === false || assistEntry.active === false) continue;
     const lines = summaryLines(assistEntry.summary);
-    const tokens = tokenize(lines.join('. '));
+    // A doc must have something to RENDER: a cue-only summary would surface
+    // as an empty pointer, so it is not admitted however well its cues match.
+    if (lines.length === 0) continue;
+    const tokens = tokenize(summaryIndexText(assistEntry.summary));
     if (tokens.length === 0) continue;
     const counts: TFVector = {};
     for (const t of tokens) counts[t] = (counts[t] || 0) + 1;

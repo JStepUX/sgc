@@ -391,4 +391,22 @@ export const PROBES: Probe[] = [
     expectation: 'pass',
     note: 'The same turn by its raw words — the raw corpus still wins the slot (source turn or both), the summary corpus adds nothing here. Guards the raw-first fusion rule.',
   },
+  {
+    id: 'summaries.label-via-cue',
+    fixture: 'summaries',
+    query: 'fruit picking',
+    expectTurns: [2],
+    expectTopTurn: 2,
+    expectation: 'pass',
+    note: "'fruit' and 'picking' appear in no raw text and no summary LINE — only in turn 2's cues (spec 09 C1). The hit can only arrive through the indexed cues. Failing this means cues stopped reaching the index (tfidf.ts summaryIndexText).",
+  },
+  {
+    id: 'summaries.wrong-cue-does-not-outrank',
+    fixture: 'summaries',
+    query: 'the orchard visit',
+    expectTurns: [2],
+    expectTopTurn: 2,
+    expectation: 'pass',
+    note: "Turn 5 (chess) carries a WRONG cue 'orchard'. It may surface behind the real hit — one novel stem in a short doc clears the gate on its own, the documented cost of cues (spec 09 evidence.junk_shape) — but it must never outrank turn 2, whose summary LINE carries the label. Also pins dilution: turn 2's own cues must not drag its line match under the gate.",
+  },
 ];

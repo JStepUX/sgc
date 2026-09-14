@@ -46,6 +46,22 @@ export const SUMMARY_CONCEPT_THRESHOLD = 0.08;
 export const SUMMARY_CORPUS_MIN_DOCS = 5;
 
 /**
+ * Retrieval-cue caps (spec 09 C1, 2026-09-14). The state turn may emit up
+ * to CUE_MAX short strings per turn — OTHER words a person might later use
+ * for the exchange — that the summary corpus indexes and no prompt renders.
+ * The cap that matters for retrieval is CUE_TOKEN_BUDGET: the number of
+ * NOVEL stems (not already in the summary lines or an earlier cue) a turn's
+ * cues may add to its summary doc. Measured against the real scorer: one
+ * unique stem in a ~40-token doc clears the 0.08 gate on its own (0.098),
+ * and twenty unrelated stems drag a correct match from 0.100 to 0.073 — so
+ * the budget bounds both a wrong cue's reach and the dilution of the lines
+ * the cues ride with. lib/turn-parser.ts coerceCues enforces all three.
+ */
+export const CUE_MAX = 6;
+export const CUE_MAX_CHARS = 40;
+export const CUE_TOKEN_BUDGET = 12;
+
+/**
  * The local-buffer window, in *messages* (not turns): the last 2 turns ×
  * (user + assistant) = 4 entries, passed verbatim every turn.
  *

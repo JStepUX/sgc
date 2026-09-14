@@ -81,7 +81,8 @@ export const TurnInspector = memo(function TurnInspector({
     summary !== null &&
     (summary.persistent.length > 0 ||
       summary.volatile.length > 0 ||
-      summary.established_patterns.length > 0);
+      summary.established_patterns.length > 0 ||
+      (summary.cues?.length ?? 0) > 0);
   // No state of its own → show the one being carried forward instead (D13).
   const effectiveState = state ?? carriedState ?? null;
   const stateIsCarried = !state && carriedState !== null;
@@ -443,6 +444,8 @@ export const TurnInspector = memo(function TurnInspector({
                   ['persistent', summary.persistent],
                   ['volatile', summary.volatile],
                   ['patterns', summary.established_patterns],
+                  // Search plumbing (spec 09): shown here, never in a prompt.
+                  ['cues', summary.cues ?? []],
                 ] as const
               ).map(([label, items]) =>
                 items.length > 0 ? (

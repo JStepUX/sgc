@@ -590,3 +590,58 @@ describe('searchScored fusion over the summary corpus (spec 08 S3)', () => {
     expect(hit.matchedTerms).toContain('harbour');
   });
 });
+
+describe('cues bridge the person\'s own words (spec 09)', () => {
+  const nowMs = NOW.getTime();
+  const sum = (persistent: string[], cues?: string[]) => ({ persistent, volatile: [], established_patterns: [], ...(cues ? { cues } : {}) });
+  const pairAt = (i: number, user: string, assistant: string, summary: ReturnType<typeof sum>): ChatEntry[] => {
+    const t = nowMs - (10 - i) * DAY;
+    return [
+      { role: 'user', content: user, createdAt: t },
+      { role: 'assistant', content: assistant, createdAt: t, summary },
+    ];
+  };
+  const log: ChatEntry[] = [
+    ...pairAt(1, 'the kiln ran hot all afternoon', 'the glaze crazed on the second shelf', sum(['kiln overheated, glaze crazed'])),
+    ...pairAt(2, "I'm just a huge fan of Harrow is all", 'Harrow is a fine bridge for this', sum(['said they are a huge fan of Harrow'], ['admires', 'hero'])),
+    ...pairAt(3, 'the telescope mount kept slipping', 'tighten the azimuth clutch', sum(['telescope mount slipping; azimuth clutch'])),
+    ...pairAt(4, 'she taught the knitting class again', 'cables this time, not lace', sum(['knitting class: cables'])),
+    ...pairAt(5, 'the sourdough starter died', 'too cold on the sill', sum(['sourdough starter died on the cold sill'], ['bread'])),
+    ...pairAt(6, 'the harbour ferry was cancelled by the storm', 'we drove the long way round', sum(['harbour ferry cancelled by storm; drove round'])),
+    { role: 'user', content: 'buffer one', createdAt: nowMs - 2 * HOUR },
+    { role: 'assistant', content: 'buffer one reply', createdAt: nowMs - 2 * HOUR },
+    { role: 'user', content: 'buffer two', createdAt: nowMs - HOUR },
+    { role: 'assistant', content: 'buffer two reply', createdAt: nowMs - HOUR },
+  ];
+  const opts = { excludeLastN: 4, topK: 3, threshold: 0.08, engine: 'product' as const };
+
+  it('the admire case: a question in words the exchange never used retrieves the turn via its cue', () => {
+    const r = searchScored('any idea who I admire?', log, nowMs, opts);
+    const hit = r.find((x) => x.turnIndex === 2);
+    expect(hit).toBeDefined();
+    expect(hit!.source).toBe('summary');
+    expect(hit!.matchedTerms).toContain('admir');
+    expect(hit!.summaryMatchedTerms).toContain('admir');
+    // Strip the cues: the same question finds nothing on turn 2.
+    const stripped = log.map((e) => (e.summary ? { ...e, summary: { ...e.summary, cues: undefined } } : e));
+    expect(searchScored('any idea who I admire?', stripped, nowMs, opts).some((x) => x.turnIndex === 2)).toBe(false);
+  });
+
+  it("a 'both' hit carries the summary side's provenance separately from the raw side's", () => {
+    // 'sourdough' matches raw AND the summary line; 'bread' only the cue.
+    const r = searchScored('sourdough bread', log, nowMs, opts);
+    const hit = r.find((x) => x.turnIndex === 5)!;
+    expect(hit.source).toBe('both');
+    expect(hit.matchedTerms).toContain('sourdough');
+    expect(hit.summaryMatchedTerms).toContain('bread');
+  });
+
+  it('a wrong cue on another turn never displaces a raw hit (raw-first holds)', () => {
+    // Give turn 4 (knitting) a wrong cue 'ferry'; the raw 'ferry' turn still wins slot one.
+    const wrong = log.map((e, i) => (i === 7 && e.summary ? { ...e, summary: { ...e.summary, cues: ['ferry'] } } : e));
+    const r = searchScored('the ferry', wrong, nowMs, { ...opts, topK: 1 });
+    expect(r).toHaveLength(1);
+    expect(r[0].turnIndex).toBe(6);
+    expect(r[0].source).not.toBe('summary');
+  });
+});
