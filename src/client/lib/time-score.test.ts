@@ -284,3 +284,309 @@ describe('searchScored', () => {
     expect(results.every((r) => r.turnIndex !== 3)).toBe(true);
   });
 });
+
+describe('searchScored with the product engine (spec 08 S1)', () => {
+  // A single continuous scene: every turn shares the same furniture words,
+  // exactly one turn carries an anchor. Synthetic vocabulary — the fixture
+  // illustrates a SHAPE (same scene, no anchor vs. one real anchor), nothing
+  // in the engine knows these words.
+  const nowMs = NOW.getTime();
+  function scene(pairs: number, anchorAt: number): ChatEntry[] {
+    const log: ChatEntry[] = [];
+    for (let i = 0; i < pairs; i++) {
+      const t = nowMs - (pairs + 2 - i) * HOUR;
+      const anchor = i === anchorAt ? ' She mentioned Harrow and the ferry timetable.' : '';
+      log.push(
+        { role: 'user', content: `The lantern on the table threw light across the window.${anchor}`, createdAt: t },
+        { role: 'assistant', content: 'Lantern, table, window; the room held still.', createdAt: t },
+      );
+    }
+    // Two trailing pairs form the excluded local buffer.
+    log.push(
+      { role: 'user', content: 'buffer one', createdAt: nowMs - 2 * HOUR },
+      { role: 'assistant', content: 'buffer one reply', createdAt: nowMs - 2 * HOUR },
+      { role: 'user', content: 'buffer two', createdAt: nowMs - HOUR },
+      { role: 'assistant', content: 'buffer two reply', createdAt: nowMs - HOUR },
+    );
+    return log;
+  }
+  const opts = { excludeLastN: 4, topK: 3, threshold: 0.08, engine: 'product' as const };
+  const FURNITURE = 'the lantern on the table by the window';
+  const ANCHOR = 'Harrow and the ferry timetable';
+
+  it('carries both engine components on every result, and combined = concept × time', () => {
+    const r = searchScored(ANCHOR, scene(12, 5), nowMs, opts);
+    expect(r.length).toBeGreaterThan(0);
+    expect(r[0].cosineScore).toBeGreaterThan(0);
+    expect(r[0].bm25Score).toBeGreaterThan(0);
+    expect(r[0].conceptScore).toBeCloseTo(r[0].cosineScore * r[0].bm25Score, 8);
+    expect(r[0].combinedScore).toBeCloseTo(r[0].conceptScore * r[0].timeScore, 8);
+  });
+
+  it('small corpus (4 retrievable turns): the furniture query scores under half the anchor query — a GAP, not silence', () => {
+    // At N=4 a universal term's BM25 IDF is small but not ~0 (ln(1 + 0.5/4.5)),
+    // so furniture still clears 0.08 here; the veto sharpens with N.
+    const log = scene(4, 2);
+    const furniture = searchScored(FURNITURE, log, nowMs, { ...opts, threshold: 0 });
+    const anchor = searchScored(ANCHOR, log, nowMs, { ...opts, threshold: 0 });
+    expect(anchor[0].turnIndex).toBe(3);
+    expect(furniture[0].combinedScore).toBeLessThan(anchor[0].combinedScore / 2);
+  });
+
+  it('scene of 12 turns: the furniture query returns NOTHING at 0.08 while the anchor query returns its turn', () => {
+    const log = scene(12, 5);
+    expect(searchScored(FURNITURE, log, nowMs, opts)).toEqual([]);
+    const anchor = searchScored(ANCHOR, log, nowMs, opts);
+    expect(anchor.map((r) => r.turnIndex)).toEqual([6]);
+  });
+
+  it('cosine, by contrast, retrieves the furniture query on the same 12-turn scene (the failure S1 removes)', () => {
+    const r = searchScored(FURNITURE, scene(12, 5), nowMs, { ...opts, engine: 'cosine' });
+    expect(r.length).toBe(3);
+  });
+});
+
+describe('parseTimeIntent narrative filters (spec 08 S2)', () => {
+  // Every assertion here runs against the REAL chrono output — the rules key
+  // on its certainty flags, and those are not what intuition says (a bare
+  // "April" is month-certain only; "this morning" has nothing certain;
+  // "4 years ago" is year-certain only). Change chrono, re-run, re-read.
+  const JUNE_15 = new Date(2026, 5, 15, 12, 0);
+  const JAN_1 = new Date(2026, 0, 1, 12, 0);
+  const SUNDAY_SEP_13 = new Date(2026, 8, 13, 12, 0);
+
+  it('R1: a character whose name is a month is not a date', () => {
+    const intent = parseTimeIntent('April: *she waves at him from the doorway*', JUNE_15);
+    expect(intent.anchor).toBeNull();
+    expect(intent.phrase).toBeNull();
+    expect(intent.rejected).toBe('April');
+  });
+
+  it('R1: a duration in years is not a date ("4 years ago", "in 4 years")', () => {
+    for (const q of ['we met 4 years ago', 'in 4 years this will be over']) {
+      const intent = parseTimeIntent(q, JUNE_15);
+      expect(intent.anchor, q).toBeNull();
+      expect(intent.rejected, q).toMatch(/4 years/);
+    }
+  });
+
+  it('documents that "we have at least 4 years" and "on the 9th" do not parse at all — they exercise nothing', () => {
+    for (const q of ['we have at least 4 years', 'on the 9th']) {
+      const intent = parseTimeIntent(q, JUNE_15);
+      expect(intent.anchor, q).toBeNull();
+      expect(intent.rejected, q).toBeUndefined();
+    }
+  });
+
+  it('R1: nothing-certain scene words are not dates ("this afternoon", "evening", "night")', () => {
+    for (const q of ['this afternoon she left', 'in the evening she left', 'night fell over the harbour']) {
+      const intent = parseTimeIntent(q, JUNE_15);
+      expect(intent.anchor, q).toBeNull();
+      expect(intent.rejected, q).toBeDefined();
+    }
+  });
+
+  it('R3: present-tense phrases at now are dropped ("right now", "tonight", "today")', () => {
+    for (const q of ['what is happening right now', 'tonight we rest', 'what did I say today']) {
+      const intent = parseTimeIntent(q, JUNE_15);
+      expect(intent.anchor, q).toBeNull();
+      expect(intent.rejected, q).toBeDefined();
+    }
+  });
+
+  it('R1 keeps "a month ago" (year + month certain, day implied)', () => {
+    const intent = parseTimeIntent('the argument we had a month ago', JUNE_15);
+    expect(intent.anchor).not.toBeNull();
+    const days = ((intent.anchor as number) - JUNE_15.getTime()) / DAY;
+    expect(days).toBeGreaterThan(-32);
+    expect(days).toBeLessThan(-28);
+    expect(intent.rejected).toBeUndefined();
+  });
+
+  it('R2: "May 1" with a log that starts in early May → anchored', () => {
+    const oldest = new Date(2026, 4, 5).getTime();
+    const intent = parseTimeIntent('that piece on May 1', JUNE_15, { oldest });
+    expect(intent.anchor).not.toBeNull();
+    expect(new Date(intent.anchor as number).getMonth()).toBe(4);
+  });
+
+  it('R2: "May 1" with a log that starts in June → rejected (no such turn exists)', () => {
+    const oldest = new Date(2026, 5, 1).getTime();
+    const intent = parseTimeIntent('that piece on May 1', JUNE_15, { oldest });
+    expect(intent.anchor).toBeNull();
+    expect(intent.rejected).toBe('May 1');
+  });
+
+  it('R2: year roll-back — "May 1" asked on Jan 1 means LAST May, not the coming one', () => {
+    // chrono with forwardDate:false still resolves this to May of the current
+    // year (+120 d). A year-uncertain anchor beyond next week rolls back.
+    const oldest = new Date(2025, 3, 1).getTime();
+    const intent = parseTimeIntent('that piece on May 1', JAN_1, { oldest });
+    expect(intent.anchor).not.toBeNull();
+    const d = new Date(intent.anchor as number);
+    expect(d.getFullYear()).toBe(2025);
+    expect(d.getMonth()).toBe(4);
+  });
+
+  it('documented pass-through: a bare weekday on a Sunday resolves to tomorrow and is kept (inside the +τ allowance)', () => {
+    const intent = parseTimeIntent('Monday', SUNDAY_SEP_13);
+    expect(intent.anchor).not.toBeNull();
+    const days = ((intent.anchor as number) - SUNDAY_SEP_13.getTime()) / DAY;
+    expect(days).toBeGreaterThan(0);
+    expect(days).toBeLessThan(2);
+  });
+
+  it('first SURVIVOR wins: a rejected phrase before a real cue does not block the cue, and is reported', () => {
+    const intent = parseTimeIntent('April asked what we said yesterday', JUNE_15);
+    expect(intent.anchor).not.toBeNull();
+    expect(intent.phrase?.toLowerCase()).toContain('yesterday');
+    expect(intent.rejected).toBe('April');
+  });
+
+  it('keeps: yesterday, last night, last Monday, 3 days ago, last week', () => {
+    for (const q of ['yesterday', 'last night', 'last Monday', '3 days ago', 'last week']) {
+      const intent = parseTimeIntent(`what did we say ${q}`, JUNE_15);
+      expect(intent.anchor, q).not.toBeNull();
+      expect(intent.rejected, q).toBeUndefined();
+    }
+  });
+});
+
+describe('searchScored under the narrative filters (spec 08 S2)', () => {
+  const nowMs = NOW.getTime();
+  const longAgo = nowMs - 30 * DAY;
+  const yesterday = nowMs - 1 * DAY;
+  const log: ChatEntry[] = [
+    { role: 'user', content: 'how do I make carbonara pasta sauce', createdAt: longAgo },
+    { role: 'assistant', content: 'carbonara needs eggs pancetta pasta', createdAt: longAgo },
+    { role: 'user', content: 'remind me about the carbonara recipe', createdAt: yesterday },
+    { role: 'assistant', content: 'eggs pancetta pasta still the answer', createdAt: yesterday },
+    { role: 'user', content: 'buffer one', createdAt: nowMs - 2 * HOUR },
+    { role: 'assistant', content: 'buffer one reply', createdAt: nowMs - 2 * HOUR },
+    { role: 'user', content: 'buffer two', createdAt: nowMs - HOUR },
+    { role: 'assistant', content: 'buffer two reply', createdAt: nowMs - HOUR },
+  ];
+
+  it('a narrative month name in the query scores exactly as a query with no time phrase', () => {
+    const plain = searchScored('carbonara', log, nowMs);
+    const narrative = searchScored('carbonara, April said', log, nowMs);
+    expect(narrative.map((r) => r.turnIndex)).toEqual(plain.map((r) => r.turnIndex));
+    expect(narrative.map((r) => r.timeScore)).toEqual(plain.map((r) => r.timeScore));
+  });
+
+  it('a real cue still steers: "yesterday" puts the yesterday turn first', () => {
+    const r = searchScored('carbonara yesterday', log, nowMs);
+    expect(r[0].turnIndex).toBe(2);
+    expect(r[0].timeScore).toBeCloseTo(1, 1);
+  });
+
+  it('R2 uses the eligible span: an absolute date before the log started does not anchor', () => {
+    // The log starts 30 days before now (2026-05-23). "May 1" is 22 days back,
+    // inside the span, so it anchors and re-ranks; "March 1" is before the
+    // oldest turn, so it is rejected and the ranking equals the plain query's.
+    const plain = searchScored('carbonara', log, nowMs);
+    const inside = searchScored('carbonara on May 1', log, nowMs);
+    expect(inside.map((r) => r.timeScore)).not.toEqual(plain.map((r) => r.timeScore));
+    const early = searchScored('carbonara on March 1', log, nowMs);
+    expect(early.map((r) => r.timeScore)).toEqual(plain.map((r) => r.timeScore));
+  });
+});
+
+describe('searchScored fusion over the summary corpus (spec 08 S3)', () => {
+  // Six retrievable pairs, every one with a summary (≥ SUMMARY_CORPUS_MIN_DOCS),
+  // plus the 4-entry buffer. Synthetic vocabulary throughout — the fixture
+  // illustrates the SHAPE S3 exists for: a label ("the harbour trip") that
+  // the raw prose never states and the summary does.
+  const nowMs = NOW.getTime();
+  const sum = (persistent: string[], volatile: string[] = []) => ({ persistent, volatile, established_patterns: [] });
+  const pairAt = (i: number, user: string, assistant: string, summary?: ReturnType<typeof sum>): ChatEntry[] => {
+    const t = nowMs - (10 - i) * DAY;
+    return [
+      { role: 'user', content: user, createdAt: t },
+      { role: 'assistant', content: assistant, createdAt: t, ...(summary ? { summary } : {}) },
+    ];
+  };
+  const log: ChatEntry[] = [
+    ...pairAt(1, 'the kiln ran hot all afternoon', 'the glaze crazed on the second shelf', sum(['kiln overheated, glaze crazed'])),
+    ...pairAt(2, 'we ate sandwiches on the bench by the water and watched the boats come in', 'the gulls took the crusts', sum(['harbour trip: bench by the water, sandwiches, watched the boats'])),
+    ...pairAt(3, 'the telescope mount kept slipping', 'tighten the azimuth clutch', sum(['telescope mount slipping; azimuth clutch'])),
+    ...pairAt(4, 'she taught the knitting class again', 'cables this time, not lace', sum(['knitting class: cables'])),
+    ...pairAt(5, 'the sourdough starter died', 'too cold on the sill', sum(['sourdough starter died on the cold sill'])),
+    ...pairAt(6, 'the harbour ferry was cancelled by the storm', 'we drove the long way round', sum(['harbour ferry cancelled by storm; drove round'])),
+    { role: 'user', content: 'buffer one', createdAt: nowMs - 2 * HOUR },
+    { role: 'assistant', content: 'buffer one reply', createdAt: nowMs - 2 * HOUR },
+    { role: 'user', content: 'buffer two', createdAt: nowMs - HOUR },
+    { role: 'assistant', content: 'buffer two reply', createdAt: nowMs - HOUR },
+  ];
+  const opts = { excludeLastN: 4, topK: 3, threshold: 0.08, engine: 'product' as const };
+
+  it('the label case: a query the raw prose never states retrieves the turn via its summary', () => {
+    const r = searchScored('our harbour trip', log, nowMs, opts);
+    const hit = r.find((x) => x.turnIndex === 2);
+    expect(hit).toBeDefined();
+    expect(hit!.source).toBe('summary');
+    expect(hit!.summaryLines).toEqual(['harbour trip: bench by the water, sandwiches, watched the boats']);
+    // A pointer serves no raw text.
+    expect(hit!.userContent).toBe('');
+    expect(hit!.assistContent).toBe('');
+    // Nothing on turn 2 matched by raw: with the summary corpus removed the turn is absent.
+    const stripped = log.map((e) => ({ ...e, summary: undefined }));
+    expect(searchScored('our harbour trip', stripped, nowMs, opts).some((x) => x.turnIndex === 2)).toBe(false);
+  });
+
+  it('a turn matched in both corpora is ONE result: raw rank, raw body, source both, summary lines attached', () => {
+    const r = searchScored('the sourdough starter', log, nowMs, opts);
+    const hits = r.filter((x) => x.turnIndex === 5);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].source).toBe('both');
+    expect(hits[0].userContent).toContain('sourdough');
+    expect(hits[0].summaryLines).toEqual(['sourdough starter died on the cold sill']);
+  });
+
+  it('raw fills first; summary hits only take the slots raw left empty; total ≤ topK', () => {
+    // 'harbour' is raw-only on turn 6, summary-only on turn 2. Raw wins the
+    // first slot regardless of score; the summary pointer fills the next.
+    const r = searchScored('harbour', log, nowMs, opts);
+    expect(r.length).toBeLessThanOrEqual(3);
+    expect(r[0].turnIndex).toBe(6);
+    expect(r[0].source).not.toBe('summary');
+    expect(r.find((x) => x.turnIndex === 2)?.source).toBe('summary');
+    // Every raw hit precedes every summary-only hit.
+    const firstSummary = r.findIndex((x) => x.source === 'summary');
+    const lastRaw = r.map((x) => x.source).lastIndexOf('turn');
+    if (firstSummary !== -1 && lastRaw !== -1) expect(lastRaw).toBeLessThan(firstSummary);
+  });
+
+  it('a summary hit never displaces a raw hit when raw already fills topK', () => {
+    // Turn 6 matches 'harbour' by raw (and its own summary, so it reads
+    // 'both'); turn 2 matches only by summary. With one slot, raw keeps it.
+    const r = searchScored('harbour trip', log, nowMs, { ...opts, topK: 1 });
+    expect(r).toHaveLength(1);
+    expect(r[0].turnIndex).toBe(6);
+    expect(r[0].source).not.toBe('summary');
+    expect(r[0].userContent).toContain('harbour ferry');
+  });
+
+  it('the summary corpus is not searched below SUMMARY_CORPUS_MIN_DOCS', () => {
+    // Keep only two summaries (turn 2's among them): the label case then
+    // finds nothing via summary — only the raw 'harbour' hit on turn 6.
+    const sparse = log.map((e, i) => (i === 3 || i === 5 ? e : { ...e, summary: undefined }));
+    const r = searchScored('our harbour trip', sparse, nowMs, opts);
+    expect(r.some((x) => x.turnIndex === 2)).toBe(false);
+    expect(r.every((x) => x.source === 'turn')).toBe(true);
+  });
+
+  it('a gated user half hides the pair from the summary corpus too', () => {
+    const gated = log.map((e, i) => (i === 2 ? { ...e, active: false } : e));
+    expect(searchScored('our harbour trip', gated, nowMs, opts).some((x) => x.turnIndex === 2)).toBe(false);
+  });
+
+  it('summary hits carry both engine components and time, like raw hits', () => {
+    const r = searchScored('our harbour trip', log, nowMs, opts);
+    const hit = r.find((x) => x.turnIndex === 2)!;
+    expect(hit.cosineScore).toBeGreaterThan(0);
+    expect(hit.bm25Score).toBeGreaterThan(0);
+    expect(hit.combinedScore).toBeCloseTo(hit.conceptScore * hit.timeScore, 8);
+    expect(hit.matchedTerms).toContain('harbour');
+  });
+});

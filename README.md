@@ -29,7 +29,7 @@ reasoning instance:
 |------|-----------|------|
 | **Constitutional Memories** | One freeform per-chat document about the user (prose, edited in a modal; carried forward at "Begin again" on request); not model-scored | in-prompt |
 | **Local Buffer** | The last 2 turns, verbatim | in-prompt |
-| **Cosine Grep ("Grepory")** | TF-IDF + cosine similarity over older history (Porter-stemmed tokens, so "needle" finds "needles") — pure math, no model; individual turns can be gated out of retrieval in the chat memory editor | 0 ms, 0 tokens |
+| **Cosine Grep ("Grepory")** | TF-IDF cosine similarity multiplied by a squashed BM25 score over older history (Porter-stemmed tokens, so "needle" finds "needles"; BM25's IDF vetoes words that appear in every turn, so scene furniture can't carry a pull on its own). A second corpus over the state turn's per-turn summaries fills whatever slots the raw text leaves empty — raw first, summary as a pointer — so a label the prose never restated ("the orchard visit") still retrieves — pure math, no model; individual turns can be gated out of retrieval in the chat memory editor | 0 ms, 0 tokens |
 
 These feed **Sal**, an ephemeral reasoning instance that exists for exactly one
 turn and is then retired. Sal's reply is prose only — no output format, no

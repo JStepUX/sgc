@@ -451,6 +451,9 @@ describe('buildPrompt', () => {
         createdAt: now - 26 * 60 * 60 * 1000, // ~yesterday
         timeless: false,
         matchedTerms: [],
+        cosineScore: 0.5,
+        bm25Score: 0.5,
+        source: 'turn',
       },
     ];
     const prompt = buildPrompt({ constitutional, grepResults: grep, now });
@@ -473,6 +476,9 @@ describe('buildPrompt', () => {
         createdAt: now - 2 * 60 * 60 * 1000,
         timeless: true,
         matchedTerms: [],
+        cosineScore: 0.6,
+        bm25Score: 0.6,
+        source: 'turn',
       },
     ];
     const prompt = buildPrompt({ constitutional, grepResults: grep, now });
@@ -493,6 +499,9 @@ describe('buildPrompt', () => {
         createdAt: now - 3 * 60 * 60 * 1000, // 3 hours back
         timeless: false,
         matchedTerms: [],
+        cosineScore: 0.5,
+        bm25Score: 0.5,
+        source: 'turn',
       },
     ];
     expect(buildPrompt({ constitutional, grepResults: grep, now })).toContain('[Turn 3 · 3 hr ago]');
@@ -656,6 +665,7 @@ describe('buildPrompt — CONTINUITY block (spec 07)', () => {
     const grep: ScoredResult[] = [{
       turnIndex: 1, userContent: 'who runs the docks', assistContent: 'nobody admits to it',
       conceptScore: 0.5, timeScore: 0.9, combinedScore: 0.45, createdAt: now - 86_400_000, timeless: false, matchedTerms: [],
+      cosineScore: 0.5, bm25Score: 0.5, source: 'turn',
     }];
     const prompt = buildPrompt({ constitutional, localBuffer, grepResults: grep, summaryBuffer, sheet, now });
     const grepAt = prompt.indexOf('RETRIEVED HISTORY');
@@ -893,6 +903,9 @@ describe('buildPrompt — deliberate recall surfaces', () => {
     createdAt: now - 3 * 24 * 60 * 60 * 1000,
     timeless: false,
     matchedTerms: [],
+    cosineScore: 0.5,
+    bm25Score: 0.5,
+    source: 'turn',
     ...over,
   });
 
@@ -1060,5 +1073,63 @@ describe('buildPrompt — pacing line', () => {
     const p = withCeiling(2);
     expect(p.indexOf('Size your reply to the moment')).toBeGreaterThan(p.indexOf('flowchart TD'));
     expect(p.indexOf('Size your reply to the moment')).toBeLessThan(p.indexOf('YOUR TASK:'));
+  });
+});
+
+describe('formatGrepFragment corpus provenance (spec 08 S3)', () => {
+  const now = new Date(2026, 4, 23, 14, 30).getTime();
+  const base: ScoredResult = {
+    turnIndex: 4,
+    userContent: 'we ate sandwiches on the bench by the water',
+    assistContent: 'the gulls took the crusts',
+    conceptScore: 0.5,
+    timeScore: 0.9,
+    combinedScore: 0.45,
+    createdAt: now - 3 * 24 * 60 * 60 * 1000,
+    timeless: false,
+    matchedTerms: ['harbour', 'trip'],
+    cosineScore: 0.7,
+    bm25Score: 0.7,
+    source: 'turn',
+  };
+
+  it("a summary-only hit renders the pointer: `via summary` provenance and bulleted lines, NO raw text", () => {
+    const frag = formatGrepFragment(
+      { ...base, source: 'summary', userContent: '', assistContent: '', summaryLines: ['harbour trip: bench by the water', 'sandwiches, boats'] },
+      now,
+    );
+    expect(frag).toBe(
+      '  [Turn 4 · 3 days ago · via summary "harbour, trip"] Summary:\n' +
+        '  - harbour trip: bench by the water\n' +
+        '  - sandwiches, boats',
+    );
+    expect(frag).not.toContain('User:');
+  });
+
+  it("a 'both' hit renders the raw pair, then the summary lines beneath it", () => {
+    const frag = formatGrepFragment({ ...base, source: 'both', summaryLines: ['harbour trip: bench by the water'] }, now);
+    const prefix = '[Turn 4 · 3 days ago · via "harbour, trip"]';
+    expect(frag).toBe(
+      `  ${prefix} User: we ate sandwiches on the bench by the water\n` +
+        `  ${prefix} Assistant: the gulls took the crusts\n` +
+        `  ${prefix} Summary:\n` +
+        '  - harbour trip: bench by the water',
+    );
+  });
+
+  it("a plain 'turn' hit is unchanged, and summaryLines on it are ignored", () => {
+    const frag = formatGrepFragment({ ...base, summaryLines: ['ignored'] }, now);
+    expect(frag).not.toContain('Summary');
+    expect(frag).toContain('] User: we ate sandwiches');
+  });
+
+  it('the RETRIEVED HISTORY block carries a summary pointer alongside raw fragments', () => {
+    const prompt = buildPrompt({
+      constitutional: 'c',
+      grepResults: [base, { ...base, turnIndex: 9, source: 'summary', userContent: '', assistContent: '', summaryLines: ['the ferry was cancelled'] }],
+      now,
+    });
+    expect(prompt).toContain('[Turn 4 · 3 days ago · via "harbour, trip"] User:');
+    expect(prompt).toContain('[Turn 9 · 3 days ago · via summary "harbour, trip"] Summary:\n  - the ferry was cancelled');
   });
 });

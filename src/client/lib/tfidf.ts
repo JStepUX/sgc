@@ -21,13 +21,22 @@ export type TFVector = Record<string, number>;
 /** An inverse-document-frequency map: term → idf weight. */
 export type IDFMap = Record<string, number>;
 
-/** A turn-pair document: a user message + the assistant reply, tokenized. */
-interface TurnDoc {
+/** A turn-pair document: a user message + the assistant reply, tokenized.
+ * Exported so sibling engines (lib/bm25.ts) score the SAME corpus the cosine
+ * grep does — one document builder, one gating rule, one turnIndex scheme. */
+export interface TurnDoc {
   tokens: string[];
+  /** Length-normalized term frequency (cosine's vector). */
   tf: TFVector;
+  /** Raw term counts — BM25 saturates on counts, not on proportions. */
+  counts: TFVector;
   turnIndex: number;
   userContent: string;
   assistContent: string;
+  /** Present on SUMMARY-corpus docs only (buildSummaryDocs): the summary
+   * lines the doc was built from, forwarded so a summary hit can be served
+   * and inspected as exactly the text that matched. */
+  summaryLines?: string[];
 }
 
 /** A cosine-similarity match returned by {@link cosineSearch}. */
@@ -44,7 +53,7 @@ export interface GrepResult extends TurnDoc {
  * inspector's term highlighting; the prompt's `via "…"` line takes only the
  * top PROMPT_PROVENANCE_TERMS of these (prompt.ts) so Sal's prefix stays
  * terse. */
-const MATCHED_TERMS_CAP = 8;
+export const MATCHED_TERMS_CAP = 8;
 
 const STOP_WORDS = new Set<string>([
   'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had',
@@ -135,11 +144,110 @@ export function applyIDF(tf: TFVector, idf: IDFMap): TFVector {
 /** The terms two TF-IDF vectors share, ranked by contribution to their dot
  * product (queryVec[t] * docVec[t], descending), capped. Pure provenance —
  * it reports WHY a match scored, it never changes what matches. */
-function topSharedTerms(queryVec: TFVector, docVec: TFVector, cap: number): string[] {
+export function topSharedTerms(queryVec: TFVector, docVec: TFVector, cap: number): string[] {
   return Object.keys(queryVec)
     .filter((t) => (queryVec[t] || 0) > 0 && (docVec[t] || 0) > 0)
     .sort((a, b) => queryVec[b] * docVec[b] - queryVec[a] * docVec[a])
     .slice(0, cap);
+}
+
+/**
+ * Build the turn-pair corpus the concept engines score: every entry outside
+ * the last `excludeLastN` (the local buffer carries those verbatim), grouped
+ * user+assistant, per-message gating applied.
+ *
+ * Per-message gating: a turn the user switched off in the chat memory editor
+ * is excluded from retrieval. `active !== false` treats undefined (the common
+ * case — entries with no flag) as active, so this is a no-op for ungated
+ * logs. A gated half contributes nothing to the document text, the IDF
+ * statistics, or the returned `userContent`/`assistContent` (so its words
+ * never reach Sal's prompt). This is deterministic curation of the memory
+ * tier — no model decides what's retrievable, the person does.
+ *
+ * Both halves gated off (or genuinely content-free) → the turn drops out of
+ * the corpus entirely. turnIndex stays position-based (`i / 2`), so the
+ * diagnostics panel's "Turn N" labels are unaffected by what's gated.
+ */
+export function buildTurnDocs(chatLog: ChatEntry[], excludeLastN = LOCAL_BUFFER_SIZE): TurnDoc[] {
+  if (chatLog.length <= excludeLastN) return [];
+  const searchable = chatLog.slice(0, chatLog.length - excludeLastN);
+  const turnDocs: TurnDoc[] = [];
+  for (let i = 0; i < searchable.length; i += 2) {
+    const userEntry = searchable[i];
+    const assistEntry = searchable[i + 1];
+    const userMsg = userEntry && userEntry.active !== false ? userEntry.content : '';
+    const assistMsg = assistEntry && assistEntry.active !== false ? assistEntry.content : '';
+    const tokens = tokenize(`${userMsg} ${assistMsg}`);
+    if (tokens.length === 0) continue;
+    const counts: TFVector = {};
+    for (const t of tokens) counts[t] = (counts[t] || 0) + 1;
+    turnDocs.push({
+      tokens,
+      tf: buildTFVector(tokens),
+      counts,
+      turnIndex: Math.floor(i / 2) + 1,
+      userContent: userMsg,
+      assistContent: assistMsg,
+    });
+  }
+  return turnDocs;
+}
+
+/** A turn summary's three arrays as one flat list of trimmed, non-empty
+ * lines — the summary corpus's document text and the prompt's bullet body.
+ * Tolerant of a missing array: the hydrated blob is unvalidated
+ * (turn-data.ts summaryFromInspector). */
+export function summaryLines(summary: NonNullable<ChatEntry['summary']>): string[] {
+  return [...(summary.persistent ?? []), ...(summary.volatile ?? []), ...(summary.established_patterns ?? [])]
+    .map((l) => (typeof l === 'string' ? l.trim() : ''))
+    .filter((l) => l.length > 0);
+}
+
+/**
+ * Build the SUMMARY corpus (spec 08 S3): one document per retrievable turn
+ * pair whose assistant half carries a state-turn summary — same entry-space
+ * slice, same exclusion, same `i += 2` walk and turnIndex numbering as
+ * buildTurnDocs, so a hit in either corpus names the same turn. The text is
+ * the summary's lines alone; the raw halves are NOT included (the raw corpus
+ * covers them — this one exists for the label the prose never restated).
+ *
+ * Gating is honoured for EITHER half: a fact the person switched off in the
+ * user message must not resurface through the assistant's summary of it.
+ * Pairs without a summary contribute nothing — no fallback text. The docs
+ * carry empty userContent/assistContent on purpose: a summary-only hit
+ * serves the summary, never the raw text, and the inspector must show
+ * exactly what Sal read.
+ *
+ * Model-distilled text in the index — a deliberate raise, recorded in spec
+ * 08: ranking stays pure math, but the model's choice of what to compress
+ * into a summary now decides which older turns are discoverable by label.
+ * The control surface is per-message gating plus SUMMARY_CONCEPT_THRESHOLD.
+ */
+export function buildSummaryDocs(chatLog: ChatEntry[], excludeLastN = LOCAL_BUFFER_SIZE): TurnDoc[] {
+  if (chatLog.length <= excludeLastN) return [];
+  const searchable = chatLog.slice(0, chatLog.length - excludeLastN);
+  const docs: TurnDoc[] = [];
+  for (let i = 0; i < searchable.length; i += 2) {
+    const userEntry = searchable[i];
+    const assistEntry = searchable[i + 1];
+    if (!assistEntry?.summary) continue;
+    if (userEntry?.active === false || assistEntry.active === false) continue;
+    const lines = summaryLines(assistEntry.summary);
+    const tokens = tokenize(lines.join('. '));
+    if (tokens.length === 0) continue;
+    const counts: TFVector = {};
+    for (const t of tokens) counts[t] = (counts[t] || 0) + 1;
+    docs.push({
+      tokens,
+      tf: buildTFVector(tokens),
+      counts,
+      turnIndex: Math.floor(i / 2) + 1,
+      userContent: '',
+      assistContent: '',
+      summaryLines: lines,
+    });
+  }
+  return docs;
 }
 
 /**
@@ -156,40 +264,7 @@ export function cosineSearch(
   topK = 3,
   threshold = 0.08,
 ): GrepResult[] {
-  if (chatLog.length <= excludeLastN) return [];
-
-  const searchable = chatLog.slice(0, chatLog.length - excludeLastN);
-  if (searchable.length === 0) return [];
-
-  // Build turn-pair documents (user + assistant grouped).
-  //
-  // Per-message gating: a turn the user switched off in the chat memory editor
-  // is excluded from retrieval. `active !== false` treats undefined (the common
-  // case — entries with no flag) as active, so this is a no-op for ungated
-  // logs. A gated half contributes nothing to the document text, the IDF
-  // statistics, or the returned `userContent`/`assistContent` (so its words
-  // never reach Sal's prompt). This is deterministic curation of the memory
-  // tier — no model decides what's retrievable, the person does.
-  const turnDocs: TurnDoc[] = [];
-  for (let i = 0; i < searchable.length; i += 2) {
-    const userEntry = searchable[i];
-    const assistEntry = searchable[i + 1];
-    const userMsg = userEntry && userEntry.active !== false ? userEntry.content : '';
-    const assistMsg = assistEntry && assistEntry.active !== false ? assistEntry.content : '';
-    const tokens = tokenize(`${userMsg} ${assistMsg}`);
-    // Both halves gated off (or genuinely content-free) → the turn drops out of
-    // the corpus entirely. turnIndex stays position-based (`i / 2`), so the
-    // diagnostics panel's "Turn N" labels are unaffected by what's gated.
-    if (tokens.length === 0) continue;
-    turnDocs.push({
-      tokens,
-      tf: buildTFVector(tokens),
-      turnIndex: Math.floor(i / 2) + 1,
-      userContent: userMsg,
-      assistContent: assistMsg,
-    });
-  }
-
+  const turnDocs = buildTurnDocs(chatLog, excludeLastN);
   if (turnDocs.length === 0) return [];
 
   const idf = computeIDF(turnDocs);

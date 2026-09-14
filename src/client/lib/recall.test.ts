@@ -145,3 +145,64 @@ describe('executeRecall — invalid input (never throws)', () => {
     expect(out.content).toContain('may not exist in this conversation');
   });
 });
+
+describe('recall over the summary corpus (spec 08 S3)', () => {
+  const T = NOW;
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const sum = (persistent: string[]) => ({ persistent, volatile: [], established_patterns: [] });
+  const pairAt = (i: number, user: string, assistant: string, summary?: ReturnType<typeof sum>): ChatEntry[] => {
+    const t = T - (12 - i) * DAY_MS;
+    return [
+      { role: 'user', content: user, createdAt: t },
+      { role: 'assistant', content: assistant, createdAt: t, ...(summary ? { summary } : {}) },
+    ];
+  };
+  // Eight pairs so that turns 1–4 sit outside both the summary window and the
+  // local buffer (recall's neighbour fetch refuses turns inside either).
+  const log: ChatEntry[] = [
+    ...pairAt(1, 'the kiln ran hot all afternoon', 'the glaze crazed on the second shelf', sum(['kiln overheated, glaze crazed'])),
+    ...pairAt(2, 'we ate sandwiches on the bench by the water and watched the boats come in', 'the gulls took the crusts', sum(['harbour trip: bench by the water, sandwiches, watched the boats'])),
+    ...pairAt(3, 'the telescope mount kept slipping', 'tighten the azimuth clutch', sum(['telescope mount slipping; azimuth clutch'])),
+    ...pairAt(4, 'she taught the knitting class again', 'cables this time, not lace', sum(['knitting class: cables'])),
+    ...pairAt(5, 'the sourdough starter died', 'too cold on the sill', sum(['sourdough starter died on the cold sill'])),
+    ...pairAt(6, 'the lantern wick needed trimming', 'she trimmed it by feel', sum(['lantern wick trimmed'])),
+    ...pairAt(7, 'buffer-adjacent filler about the tide tables', 'the tide turns at six', sum(['tide tables'])),
+    ...pairAt(8, 'more filler about the weather glass', 'falling all morning', sum(['weather glass falling'])),
+  ];
+  const none = new Set<number>();
+
+  it('a recall query surfaces a summary-only hit as a pointer and reports it as summary-only', () => {
+    const out = executeRecall({ query: 'our harbour trip' }, log, T, none);
+    expect(out.mode).toBe('query');
+    expect(out.surfaced).toContain(2);
+    expect(out.surfacedSummaryOnly).toEqual([2]);
+    expect(out.content).toContain('via summary');
+    expect(out.content).toContain('- harbour trip: bench by the water');
+    expect(out.content).not.toContain('sandwiches on the bench');
+  });
+
+  it('a turn seen only as a summary pointer is NOT a duplicate when the raw text now matches', () => {
+    const out = executeRecall({ query: 'sandwiches and boats' }, log, T, new Set([2]), new Set([2]));
+    expect(out.surfaced).toContain(2);
+    expect(out.surfacedSummaryOnly).not.toContain(2);
+    expect(out.content).toContain('sandwiches on the bench');
+  });
+
+  it('a second summary hit on a summary-seen turn IS a duplicate', () => {
+    const out = executeRecall({ query: 'our harbour trip' }, log, T, new Set([2]), new Set([2]));
+    expect(out.surfaced).not.toContain(2);
+  });
+
+  it('around_turn on a summary-seen turn fetches the turn ITSELF plus its neighbours', () => {
+    const out = executeRecall({ around_turn: 2 }, log, T, new Set([2]), new Set([2]));
+    expect(out.mode).toBe('neighbors');
+    expect(out.surfaced).toEqual([2, 1, 3]);
+    expect(out.content).toContain('[Turn 2 ·');
+    expect(out.content).toContain('sandwiches on the bench');
+  });
+
+  it('around_turn on a raw-seen turn still fetches neighbours only', () => {
+    const out = executeRecall({ around_turn: 2 }, log, T, new Set([2]));
+    expect(out.surfaced).toEqual([1, 3]);
+  });
+});

@@ -24,6 +24,7 @@
 //   • buffer exclusion
 //   • synonymy ledger (known-gap)
 //   • inflection ledger (pass + known-gap)
+//   • summary corpus (spec 08 S3): label-only-in-summary retrieves; raw keyword unaffected
 // ============================================================
 
 import { FIXTURES } from './fixtures';
@@ -369,5 +370,25 @@ export const PROBES: Probe[] = [
     expectTurns: [5],
     expectation: 'known-gap',
     note: "Planted 'ran', probed 'running' — 'ran' stems to 'ran', 'running' to 'run'. Porter is suffix arithmetic; irregular (ablaut) inflection has no suffix to strip. Gap closed → promote to 'pass' and investigate what added the bridge.",
+  },
+
+  // ---- summary corpus (spec 08 S3) ----
+  {
+    id: 'summaries.label-only-in-summary',
+    fixture: 'summaries',
+    query: 'the orchard visit',
+    expectTurns: [2],
+    expectTopTurn: 2,
+    expectation: 'pass',
+    note: "'orchard' appears in NO raw text — only in turn 2's state-turn summary. The hit can only arrive through the summary corpus (source 'summary'); before S3 this query returned nothing. Failing this means the summary corpus stopped being searched (check SUMMARY_CORPUS_MIN_DOCS against the fixture's six summaries).",
+  },
+  {
+    id: 'summaries.raw-keyword-unaffected',
+    fixture: 'summaries',
+    query: 'ladders and baskets',
+    expectTurns: [2],
+    expectTopTurn: 2,
+    expectation: 'pass',
+    note: 'The same turn by its raw words — the raw corpus still wins the slot (source turn or both), the summary corpus adds nothing here. Guards the raw-first fusion rule.',
   },
 ];

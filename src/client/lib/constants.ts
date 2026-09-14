@@ -1,5 +1,50 @@
 // Shared structural constants for the SGC memory tiers.
 
+import type { ConceptEngine } from './bm25';
+
+/**
+ * Which concept scorer ranks the memory grep's turn corpus (lib/bm25.ts
+ * conceptSearch). The ONE site that chooses; both production call sites
+ * (turn-context.ts ambient grep, recall.ts deliberate recall) and the eval
+ * harness read it, so retrieval and its ratchet always run the same engine.
+ *
+ * 'product' = cosine × squashed BM25 (spec 08 S1, 2026-09-13). Evidence from
+ * the local replay lab over four labelled roleplay corpora (21–65 turns):
+ * anchor recall equal to cosine on all four, junk-pull rate 0.62 → 0.24 on the
+ * long-paragraph corpus, never worse. Each engine vetoes the other's failure
+ * mode — cosine's "same scene, no anchor" and BM25's "one rare incidental
+ * word". BM25 ORDERING was tried and withdrawn (won short queries, lost long
+ * ones); only its veto is robust. Documented trades: below ~10 turns the
+ * furniture veto is weak, a term present in every turn retrieves nothing, and
+ * one rare word mentioned once in a long turn falls under the gate — pinned by
+ * bm25.test.ts so nobody rediscovers them.
+ *
+ * conceptSearch's own default stays 'cosine' (a pure-function default the
+ * engine tests rely on); this constant is what production passes.
+ */
+export const CONCEPT_ENGINE: ConceptEngine = 'product';
+
+/**
+ * Summary-corpus knobs (spec 08 S3, 2026-09-13). The memory grep runs a
+ * SECOND corpus beside the raw turn text: the per-turn summaries the state
+ * turn already writes (lib/tfidf.ts buildSummaryDocs). It exists for the
+ * label the prose never restated — "the harbour trip", "the broken ribs" —
+ * which a summary states in plain words. Fusion is raw-first: a summary hit
+ * only fills a slot the raw corpus left empty, and never outranks a raw hit,
+ * because the two corpora keep separate statistics (summary docs are ~40
+ * tokens, raw ~300) and their scores are not comparable.
+ *
+ * SUMMARY_CONCEPT_THRESHOLD — the summary corpus's own gate (final AND
+ * rescue). Its own knob because short docs score higher on cosine; start at
+ * the raw corpus's 0.08 and tune in place via the inspector's source badge.
+ *
+ * SUMMARY_CORPUS_MIN_DOCS — below this many summaries the corpus is not
+ * searched at all: in a handful of docs every term is rare and IDF says
+ * nothing (the lesson of the withdrawn background prior, spec 08 evidence).
+ */
+export const SUMMARY_CONCEPT_THRESHOLD = 0.08;
+export const SUMMARY_CORPUS_MIN_DOCS = 5;
+
 /**
  * The local-buffer window, in *messages* (not turns): the last 2 turns ×
  * (user + assistant) = 4 entries, passed verbatim every turn.

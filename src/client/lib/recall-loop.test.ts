@@ -310,3 +310,35 @@ describe('runTurnWithRecall — deltas and status', () => {
     expect(deltas.some((d) => d.startsWith('Recalling now.\n\n') && d !== deltas.at(-1))).toBe(true);
   });
 });
+
+describe('summary-only bookkeeping across rounds (spec 08 S3)', () => {
+  it('seeds summaryOnly, forgets a turn once its raw text is served, and learns new summary-only turns', async () => {
+    const toolUse = { id: 'tu_1', name: 'recall', input: { query: 'x' } };
+    const { fake } = scriptedCallTurn([
+      result({ stopReason: 'tool_use', toolUses: [toolUse] }),
+      result({ stopReason: 'tool_use', toolUses: [{ ...toolUse, id: 'tu_2' }] }),
+      result({ text: 'Answer.' }),
+    ]);
+    const snapshots: { surfaced: number[]; summaryOnly: number[] }[] = [];
+    await runTurnWithRecall({
+      ...baseOpts(fake, TOOLS),
+      initialSurfaced: [1, 2],
+      initialSummaryOnly: [2],
+      executeTool: (_input, surfaced, summaryOnly) => {
+        snapshots.push({
+          surfaced: [...surfaced].sort((a, b) => a - b),
+          summaryOnly: [...summaryOnly].sort((a, b) => a - b),
+        });
+        // Round 1 serves turn 2's raw text and a new summary-only turn 7;
+        // round 2 serves nothing new.
+        return snapshots.length === 1
+          ? okOutcome({ surfaced: [2, 7], surfacedSummaryOnly: [7] })
+          : okOutcome({ surfaced: [] });
+      },
+    });
+    expect(snapshots).toEqual([
+      { surfaced: [1, 2], summaryOnly: [2] },
+      { surfaced: [1, 2, 7], summaryOnly: [7] },
+    ]);
+  });
+});

@@ -12,7 +12,7 @@
 
 import type { ChatEntry } from './types';
 import type { WireTool } from './api';
-import { LOCAL_BUFFER_SIZE, SUMMARY_BUFFER_SIZE } from './constants';
+import { CONCEPT_ENGINE, LOCAL_BUFFER_SIZE, SUMMARY_BUFFER_SIZE } from './constants';
 import { searchScored } from './time-score';
 import { formatGrepFragment } from './prompt';
 
@@ -61,6 +61,10 @@ export interface RecallOutcome {
   content: string;
   /** turnIndexes newly surfaced (for the caller's dedup set + the inspector). */
   surfaced: number[];
+  /** The subset of `surfaced` that Sal saw only as a SUMMARY pointer (spec 08
+   * S3) — the loop keeps them expandable: a later raw match on such a turn is
+   * new information, and `around_turn` on it fetches the turn itself. */
+  surfacedSummaryOnly?: number[];
   mode: 'query' | 'neighbors';
 }
 
@@ -92,24 +96,29 @@ export function executeRecall(
   chatLog: ChatEntry[],
   now: number,
   alreadySurfaced: ReadonlySet<number>,
+  summaryOnly: ReadonlySet<number> = EMPTY_SET,
 ): RecallOutcome {
   const query = typeof input.query === 'string' ? input.query.trim() : '';
   if (query.length > 0) {
-    return recallByQuery(query, chatLog, now, alreadySurfaced);
+    return recallByQuery(query, chatLog, now, alreadySurfaced, summaryOnly);
   }
   if (typeof input.around_turn === 'number' && Number.isInteger(input.around_turn)) {
-    return recallNeighbors(input.around_turn, chatLog, now, alreadySurfaced);
+    return recallNeighbors(input.around_turn, chatLog, now, alreadySurfaced, summaryOnly);
   }
   // Neither field usable — honest-empty, never a throw (the loop would abort
   // the whole turn on an exception; a bad tool call doesn't deserve that).
   return { content: NOTHING_CAME_BACK, surfaced: [], mode: 'query' };
 }
 
+/** Turns Sal has seen only as a summary pointer, when the caller tracks none. */
+const EMPTY_SET: ReadonlySet<number> = new Set<number>();
+
 function recallByQuery(
   query: string,
   chatLog: ChatEntry[],
   now: number,
   alreadySurfaced: ReadonlySet<number>,
+  summaryOnly: ReadonlySet<number>,
 ): RecallOutcome {
   // Identical params to the ambient tier (turn-context.ts) — deliberate: a
   // recall differs from ambient retrieval only in WHO authored the query.
@@ -117,8 +126,14 @@ function recallByQuery(
     excludeLastN: LOCAL_BUFFER_SIZE,
     topK: 3,
     threshold: 0.08,
+    engine: CONCEPT_ENGINE,
   });
-  const fresh = results.filter((r) => !alreadySurfaced.has(r.turnIndex));
+  // D5 dedup, with one S3 exception: a turn Sal has seen only as a summary
+  // pointer is NOT a duplicate when the raw text now matches — that is the
+  // exchange itself, which it hasn't read. A second summary hit on it is.
+  const fresh = results.filter(
+    (r) => !alreadySurfaced.has(r.turnIndex) || (summaryOnly.has(r.turnIndex) && r.source !== 'summary'),
+  );
   if (fresh.length === 0) {
     return {
       content: results.length > 0 ? ALL_ALREADY_SURFACED : NOTHING_CAME_BACK,
@@ -129,6 +144,7 @@ function recallByQuery(
   return {
     content: fresh.map((r) => formatGrepFragment(r, now)).join('\n\n'),
     surfaced: fresh.map((r) => r.turnIndex),
+    surfacedSummaryOnly: fresh.filter((r) => r.source === 'summary').map((r) => r.turnIndex),
     mode: 'query',
   };
 }
@@ -138,6 +154,7 @@ function recallNeighbors(
   chatLog: ChatEntry[],
   now: number,
   alreadySurfaced: ReadonlySet<number>,
+  summaryOnly: ReadonlySet<number>,
 ): RecallOutcome {
   // The retrievable range mirrors the grep corpus: everything before the
   // verbatim local buffer. Turns INSIDE the buffers are handled below with an
@@ -154,9 +171,15 @@ function recallNeighbors(
   const notes: string[] = [];
   const surfaced: number[] = [];
 
-  for (const n of [aroundTurn - 1, aroundTurn + 1]) {
+  // The centre turn itself is fetched only when Sal has seen it as a summary
+  // pointer and nothing more (spec 08 S3): "around that" then means "that,
+  // and around it" — the raw exchange behind the pointer is the point.
+  const centreExpandable = summaryOnly.has(aroundTurn);
+  const targets = centreExpandable ? [aroundTurn, aroundTurn - 1, aroundTurn + 1] : [aroundTurn - 1, aroundTurn + 1];
+  for (const n of targets) {
     if (n < 1 || n > totalTurns) continue; // clamped: no such turn
-    if (alreadySurfaced.has(n)) continue; // D5: never duplicate this turn's context
+    // D5: never duplicate this turn's context — except the summary-only centre.
+    if (alreadySurfaced.has(n) && !(n === aroundTurn && centreExpandable)) continue;
     const userIdx = (n - 1) * 2;
     if (n > maxRetrievableTurn || userIdx >= summaryWindowStart) {
       // Local buffer (verbatim) or summary window (distilled) — either way

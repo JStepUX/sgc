@@ -206,7 +206,9 @@ export function useTurnRunner(
           // Inspector tile reads `score` — surface the combined score so the
           // visible ranking matches what was actually used to retrieve.
           score: r.combinedScore,
-          preview: r.userContent.slice(0, 80),
+          // A summary-only hit served no raw text: its card previews the
+          // pointer itself (spec 08 S3).
+          preview: (r.source === 'summary' ? (r.summaryLines ?? []).join(' · ') : r.userContent).slice(0, 80),
           // The full served text + provenance, for the RetrievalDetailModal.
           // Persisted verbatim (not looked up at render) so the diagnostic
           // stays what Sal ACTUALLY read even after memory edits.
@@ -215,6 +217,10 @@ export function useTurnRunner(
           matchedTerms: r.matchedTerms,
           conceptScore: r.conceptScore,
           timeScore: r.timeScore,
+          cosineScore: r.cosineScore,
+          bm25Score: r.bm25Score,
+          source: r.source,
+          summaryLines: r.summaryLines,
           createdAt: r.createdAt,
           timeless: r.timeless,
         }));
@@ -248,8 +254,10 @@ export function useTurnRunner(
           setStreamingText(stripStreamingMeta(rawSoFar));
         },
         onStatus: setTurnStatus,
-        executeTool: (input, surfaced) => executeRecall(input, chatLog, turnStartedAt, surfaced),
+        executeTool: (input, surfaced, summaryOnly) =>
+          executeRecall(input, chatLog, turnStartedAt, surfaced, summaryOnly),
         initialSurfaced: grepResults.map((r) => r.turnIndex),
+        initialSummaryOnly: grepResults.filter((r) => r.source === 'summary').map((r) => r.turnIndex),
         maxParagraphs: pacingCeiling,
       });
       // Sal's reply is prose only now — the summary contract moved to the state

@@ -104,10 +104,21 @@ export function RetrievalDetailModal({ selection, onClose }: RetrievalDetailModa
     const g = selection.detail;
     meta.push(`score ${g.score.toFixed(3)}`);
     if (typeof g.conceptScore === 'number' && typeof g.timeScore === 'number') {
-      meta.push(`concept ${g.conceptScore.toFixed(3)} × time ${g.timeScore.toFixed(2)}`);
+      // Engine components (spec 08 S1): shown when the row carries both, so
+      // the person can see which engine vetoed or carried a hit. Rows
+      // persisted before the product engine show the bare concept score.
+      const parts =
+        typeof g.cosineScore === 'number' && typeof g.bm25Score === 'number'
+          ? ` (cosine ${g.cosineScore.toFixed(2)} × bm25 ${g.bm25Score.toFixed(2)})`
+          : '';
+      meta.push(`concept ${g.conceptScore.toFixed(3)}${parts} × time ${g.timeScore.toFixed(2)}`);
     }
     if (g.timeless) meta.push('timeless');
     else if (typeof g.createdAt === 'number') meta.push(formatRelative(g.createdAt, Date.now()));
+    // Corpus provenance (spec 08 S3) — only worth a word when it isn't the
+    // raw turn: a summary POINTER, or the pair plus its summary.
+    if (g.source === 'summary') meta.push('via summary');
+    else if (g.source === 'both') meta.push('turn + summary');
     if (stems.length > 0) meta.push(`matched "${stems.join(', ')}"`);
   } else {
     meta.push(`score ${selection.detail.score.toFixed(3)}`);
@@ -153,8 +164,22 @@ export function RetrievalDetailModal({ selection, onClose }: RetrievalDetailModa
           {isTurn ? (
             selection.detail.userContent !== undefined ? (
               <div className="flex flex-col gap-4">
-                <ServedBlock label="You" text={selection.detail.userContent} stems={stems} />
-                <ServedBlock label="Sal" text={selection.detail.assistContent ?? ''} stems={stems} />
+                {selection.detail.source !== 'summary' && (
+                  <>
+                    <ServedBlock label="You" text={selection.detail.userContent} stems={stems} />
+                    <ServedBlock label="Sal" text={selection.detail.assistContent ?? ''} stems={stems} />
+                  </>
+                )}
+                {selection.detail.summaryLines && selection.detail.summaryLines.length > 0 && (
+                  <div>
+                    <div className={`${BLOCK_LABEL} mb-1`}>Summary</div>
+                    <ul className={`${BODY} list-disc pl-5`}>
+                      {selection.detail.summaryLines.map((line, i) => (
+                        <li key={i}>{renderWithHighlights(line, stems)}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="flex flex-col gap-3">

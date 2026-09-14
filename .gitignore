@@ -50,3 +50,7 @@ Thumbs.db
 
 # Archived/superseded specs — kept locally, out of version control
 docs/ignored/
+
+# Retrieval lab — replay scripts and gold labels built from real chats (dev DB, transcripts,
+# PIPPA records). Never commit: the gold files quote people's chat content. Local only.
+scripts/eval/

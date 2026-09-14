@@ -9,6 +9,8 @@ import {
   computeIDF,
   applyIDF,
   cosineSearch,
+  buildSummaryDocs,
+  summaryLines,
 } from './tfidf';
 import type { ChatEntry } from './types';
 
@@ -220,5 +222,86 @@ describe('cosineSearch', () => {
       expect(turn1?.userContent).toContain('quantum');
       expect(turn1?.assistContent).toBe('');
     });
+  });
+});
+
+describe('buildSummaryDocs (spec 08 S3 — the summary corpus)', () => {
+  const T0 = 1_700_000_000_000;
+  const summary = (persistent: string[], volatile: string[] = [], established_patterns: string[] = []) => ({
+    persistent,
+    volatile,
+    established_patterns,
+  });
+  // Six pairs + a 4-entry buffer. Summaries on pairs 1, 2, 3, 5 (not 4, not 6).
+  const log: ChatEntry[] = [
+    { role: 'user', content: 'we walked the sea wall', createdAt: T0 },
+    { role: 'assistant', content: 'the wind came off the water', createdAt: T0, summary: summary(['harbour walk: sea wall, wind']) },
+    { role: 'user', content: 'she fixed the lantern', createdAt: T0 + 1 },
+    { role: 'assistant', content: 'the wick caught', createdAt: T0 + 1, summary: summary(['lantern repaired'], ['wick trimmed'], ['she fixes things quietly']) },
+    { role: 'user', content: 'gated user half', createdAt: T0 + 2, active: false },
+    { role: 'assistant', content: 'active assistant half', createdAt: T0 + 2, summary: summary(['a fact from the gated user message']) },
+    { role: 'user', content: 'no summary here', createdAt: T0 + 3 },
+    { role: 'assistant', content: 'state call failed for this one', createdAt: T0 + 3 },
+    { role: 'user', content: 'active user half', createdAt: T0 + 4 },
+    { role: 'assistant', content: 'gated assistant half', createdAt: T0 + 4, active: false, summary: summary(['should not index']) },
+    { role: 'user', content: 'buffer', createdAt: T0 + 5 },
+    { role: 'assistant', content: 'buffer', createdAt: T0 + 5, summary: summary(['inside the excluded buffer']) },
+    { role: 'user', content: 'buffer', createdAt: T0 + 6 },
+    { role: 'assistant', content: 'buffer', createdAt: T0 + 6, summary: summary(['inside the excluded buffer too']) },
+  ];
+
+  it('builds one doc per retrievable pair that carries a summary, numbered like the raw corpus', () => {
+    const docs = buildSummaryDocs(log, 4);
+    expect(docs.map((d) => d.turnIndex)).toEqual([1, 2]);
+    expect(docs[0].userContent).toBe('');
+    expect(docs[0].assistContent).toBe('');
+    expect(docs[0].summaryLines).toEqual(['harbour walk: sea wall, wind']);
+  });
+
+  it('joins the three summary arrays, in order, into the doc text', () => {
+    const docs = buildSummaryDocs(log, 4);
+    expect(docs[1].summaryLines).toEqual(['lantern repaired', 'wick trimmed', 'she fixes things quietly']);
+    expect(docs[1].tokens).toContain('lantern');
+    expect(docs[1].tokens).toContain('wick');
+    expect(docs[1].tokens).toContain('fix'); // 'fixes', Porter-stemmed
+  });
+
+  it('skips a pair when the USER half alone is gated — a switched-off fact must not resurface via the summary', () => {
+    const docs = buildSummaryDocs(log, 4);
+    expect(docs.some((d) => d.turnIndex === 3)).toBe(false);
+  });
+
+  it('skips a pair when the assistant half is gated, and pairs with no summary', () => {
+    const docs = buildSummaryDocs(log, 4);
+    expect(docs.some((d) => d.turnIndex === 4)).toBe(false);
+    expect(docs.some((d) => d.turnIndex === 5)).toBe(false);
+  });
+
+  it('honours excludeLastN in entry space exactly like the raw corpus', () => {
+    expect(buildSummaryDocs(log, 4).some((d) => d.turnIndex >= 6)).toBe(false);
+    expect(buildSummaryDocs(log, 0).map((d) => d.turnIndex)).toEqual([1, 2, 6, 7]);
+    expect(buildSummaryDocs(log.slice(0, 3), 4)).toEqual([]);
+  });
+
+  it('tolerates a hydrated summary missing one of its arrays (the blob is unvalidated)', () => {
+    const partial = {
+      role: 'assistant' as const,
+      content: 'x',
+      createdAt: T0,
+      summary: { persistent: ['only persistent survived'] } as unknown as NonNullable<ChatEntry['summary']>,
+    };
+    const docs = buildSummaryDocs([{ role: 'user', content: 'q', createdAt: T0 }, partial, ...log.slice(10)], 4);
+    expect(docs).toHaveLength(1);
+    expect(docs[0].summaryLines).toEqual(['only persistent survived']);
+  });
+
+  it('drops a summary whose lines tokenize to nothing', () => {
+    const empty = { role: 'assistant' as const, content: 'x', createdAt: T0, summary: summary(['', '  '], ['a'], []) };
+    const docs = buildSummaryDocs([{ role: 'user', content: 'q', createdAt: T0 }, empty, ...log.slice(10)], 4);
+    expect(docs).toEqual([]);
+  });
+
+  it('summaryLines trims and drops blank lines', () => {
+    expect(summaryLines(summary([' a ', ''], ['b'], ['  ']))).toEqual(['a', 'b']);
   });
 });

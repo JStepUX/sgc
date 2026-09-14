@@ -34,6 +34,18 @@ export interface GrepDetail {
   matchedTerms?: string[];
   conceptScore?: number;
   timeScore?: number;
+  /** The concept score's two engine components (lib/bm25.ts) — absent on rows
+   * persisted before spec 08 S1 (2026-09-13); the modal shows them only when
+   * both are present. */
+  cosineScore?: number;
+  bm25Score?: number;
+  /** Corpus provenance (spec 08 S3): raw turn text, the turn's state-turn
+   * summary, or both. Absent on rows persisted before S3 — read as 'turn'. */
+  source?: 'turn' | 'summary' | 'both';
+  /** The matched summary's lines, exactly as served — present on 'summary'
+   * and 'both' hits. For a 'summary' hit this IS the served text; the raw
+   * halves are empty because Sal never read them. */
+  summaryLines?: string[];
   /** Epoch ms + timeless flag, so the modal can date the retrieved turn
    * (relative to viewing time — the prompt's own prefix was relative to
    * serve time, which isn't persisted). */

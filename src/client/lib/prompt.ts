@@ -47,12 +47,14 @@ When the person shares a link, its text is usually pre-loaded for you below as a
 /**
  * The minimal shape formatGrepFragment needs — structurally satisfied by
  * ScoredResult (the ambient grep path) and by the hand-built neighbor
- * fragments in lib/recall.ts (which have no query, so matchedTerms is []).
+ * fragments in lib/recall.ts (which have no query, so matchedTerms is [],
+ * and no corpus provenance, so `source` defaults to 'turn').
  */
 export type GrepFragmentSource = Pick<
   ScoredResult,
   'turnIndex' | 'userContent' | 'assistContent' | 'createdAt' | 'timeless' | 'matchedTerms'
->;
+> &
+  Partial<Pick<ScoredResult, 'source' | 'summaryLines'>>;
 
 /**
  * Format one retrieved turn-pair for Sal — shared by the ambient RETRIEVED
@@ -78,9 +80,22 @@ export function formatGrepFragment(r: GrepFragmentSource, now: number): string {
   // predates provenance (inspector_json blobs) won't carry it. Terms arrive
   // ranked by contribution desc, so the slice keeps the strongest.
   const terms = (r.matchedTerms ?? []).slice(0, PROMPT_PROVENANCE_TERMS);
-  const via = terms.length > 0 ? ` · via "${terms.join(', ')}"` : '';
+  const source = r.source ?? 'turn';
+  // A summary hit says so in its provenance — `via summary "…"` — so Sal can
+  // tell a pointer from the exchange itself (spec 08 S3).
+  const via = terms.length > 0 ? ` · via ${source === 'summary' ? 'summary ' : ''}"${terms.join(', ')}"` : '';
   const prefix = `[Turn ${r.turnIndex} · ${when}${via}]`;
-  return `  ${prefix} User: ${r.userContent}\n  ${prefix} Assistant: ${r.assistContent}`;
+  // Corpus provenance decides the body: 'turn' is the raw pair; 'summary' is
+  // the summary lines ALONE (a pointer — the raw text was never served, so it
+  // must not appear here or in the inspector); 'both' is the pair with the
+  // summary lines beneath it — the meat is in the turn, the summary is the
+  // pointer, and the label Sal is being asked about often lives only there.
+  const lines = source !== 'turn' ? (r.summaryLines ?? []) : [];
+  const summary =
+    lines.length > 0 ? `  ${prefix} Summary:\n${lines.map((l) => `  - ${l}`).join('\n')}` : '';
+  if (source === 'summary' && summary) return summary;
+  const pair = `  ${prefix} User: ${r.userContent}\n  ${prefix} Assistant: ${r.assistContent}`;
+  return summary ? `${pair}\n${summary}` : pair;
 }
 
 /**

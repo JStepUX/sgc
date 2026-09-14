@@ -17,7 +17,7 @@
 // and the buildPrompt argument order all live here, in one place.
 
 import type { ChatEntry, FetchedDoc } from './types';
-import { LOCAL_BUFFER_SIZE, SUMMARY_BUFFER_SIZE } from './constants';
+import { CONCEPT_ENGINE, LOCAL_BUFFER_SIZE, SUMMARY_BUFFER_SIZE } from './constants';
 import { searchScored, type ScoredResult } from './time-score';
 import { searchBrains, type BrainIndex, type KnowledgeBlock } from './brains';
 import { newestDynamicState } from './dynamic-state';
@@ -102,6 +102,7 @@ export function assembleTurnContext(input: TurnContextInput): TurnContextResult 
     excludeLastN: LOCAL_BUFFER_SIZE,
     topK: 3,
     threshold: 0.08,
+    engine: CONCEPT_ENGINE,
   });
 
   // ---- PERSONA KNOWLEDGE: the knowledge axis, separate from memory ----

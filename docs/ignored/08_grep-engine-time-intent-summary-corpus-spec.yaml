@@ -1,0 +1,215 @@
+spec: Grep engine flip (cosine × BM25 product), time-intent hardening, and a second retrieval corpus over turn summaries
+status: approved                  # 2026-09-13 — drafted from the retrieval lab session (James + Claude); Codex (Sol) adversarial read done 2026-09-13 and folded in (see `review`); James ruled the three calls under `decisions` the same day and gave the go
+date: 2026-09-13
+goal: >
+  Three bounded changes to the deterministic memory tier, landed in order, each
+  verifiable alone: (S1) make the concept engine cosine × squashed-BM25 so scene
+  furniture ("eyes", "bed", "sheet") can no longer carry a pull; (S2) stop the
+  chrono time-intent parser firing on narrative text (a character named April,
+  "4 years ago", "tonight") and zeroing every retrieval; (S3) grep a second corpus —
+  the per-turn summaries the state turn already writes — fused with the raw-turn
+  corpus, so label-shaped callbacks ("the broken ribs", "our trip to New
+  Orleans") retrieve when the raw prose never restates them. James tests S3 in
+  place on live chats rather than on mocked summaries.
+
+evidence:                     # local replay lab (untracked), 2026-09-13 — 4 labelled corpora (A: a 47-turn dev-DB roleplay, long user paragraphs; B: a 21-turn exported text-RPG, short user lines; C, D: two long records from a public roleplay dataset, ~65 turns), 39 anchor / 54 junk queries, labels hand-made from user turns only
+  product_vs_cosine: "anchor recall equal on all 4 corpora; junk-pull rate 0.62→0.24 on A, unchanged elsewhere; never worse. All four corpora are 21–65 turns — the product's small-N behaviour (verified_facts.small_N) was NOT exercised by the lab."
+  bm25_ranking_withdrawn: "BM25-ordered variants won on short one-anchor queries (B: 0.75→0.88), lost on long same-scene queries (C: 0.75→0.58) — the BM25 VETO is robust, the BM25 ORDER is not"
+  background_prior_withdrawn: "a genre IDF prior built from the public dataset helps corpora with <20 turns and hurts at ≈40; steep IDF is anti-synergistic with cosine (penalises a document's own rare vocabulary). Stays in the lab. (Same lesson governs S3's sparse-corpus guard: in a corpus of a handful of docs every term is rare and IDF says nothing.)"
+  time_intent_bug: "C: 38 of 65 user turns carry a chrono intent — a character whose name is also a month (anchor +139 d), a duration in years ('4 years ago' → −1461 d), and present-tense words (now, night, evening). Combined score → ~0 for every candidate; results survive only via the concept rescue and rank by pool order. Pre-existing; affects production with real timestamps identically."
+  ceiling: "ordinary-noun callbacks inside one continuous scene (D) — every lexical engine 0.45 recall, junk 1.00. Summaries state those facts in plain words; this is what S3 targets. Not measurable in the lab without generated summaries — deliberately deferred to in-place testing."
+  eval_probes: "retrieval-eval.test.ts probes, run directly on both engines (Sol, 2026-09-13): cosine recall@3 1.000 / MRR 0.969; product 1.000 / 1.000. The probes are keyword-shaped and cover none of the failure shapes below — re-measure at landing."
+
+review:                       # Sol (Codex) adversarial read, 2026-09-13 — 17 findings, every one re-verified against the code and real chrono/engine output before acting
+  accepted_and_folded: "7 (vacuous S2 tests), 9 (user-half gating resurrects a gated fact via the summary), 10 (turnIndex arithmetic / entry-space slicing), 13 (summary-only hit not expandable through recall), 14 (inspector reads persisted GrepDetail, not ScoredResult; GrepFragmentSource is a Pick), 15 (re-spin is current-prefix reconstruction), 16 (summaryFromInspector hands back an unvalidated blob), 17 (sequence said 'lab files land'; no eval:replay script exists)"
+  reframed: >
+    1 (S1 furniture test): true that the proposed test fails on the 4-doc bm25.test.ts scene (product 0.205 / 0.153 for 'bed sheet eyes') —
+    the veto is corpus-size dependent and bm25.test.ts:55 already says the contract there is the gap, not an absolute. The TEST was wrong,
+    not the math; fixed under S1.tests. 2 (thresholds at small/large N): numbers confirmed (verified_facts.small_N); recorded as documented
+    trades, not a calibration blocker — the lab's 21–65-turn corpora are the shape James runs. 3 (rescue gate): the gate collapse is
+    PRE-EXISTING (verified_facts.gate_collapse), not introduced by S0; S0's rescue keying is API-only. 4/5/6 (S2 rules): the chrono
+    facts are right and reshaped R1/R2/R3 below; the 'narrative yesterday survives' class is inherent to any lexical rule and is
+    accepted. 8 (S3 raise): the spec's claim that summaries are user-editable was FALSE (types.ts:33 is DynamicState's card);
+    invariant_check rewritten. 11/12 (fusion): real; resolved by the raw-first fill policy proposed under `decisions` (ruled raw-first).
+  sol_dissent_kept: "Sol wants R1/R3 replaced by a recall-context gate (fire time intent only when the query also carries a recall cue). Not adopted here — it is a different design; recorded under `decisions` as the sanctioned next step with the evidence that would justify it."
+
+invariant_check:
+  new_api_call: none — S1/S2 are arithmetic; S3 indexes text the state turn (spec 03) ALREADY produces for the summary buffer. Base loop stays 2 calls/turn, worst case 4 with recall.
+  model_in_retrieval: >
+    none in the RETRIEVAL path — ranking stays conceptSearch (pure math) over both corpora, Sal stays ephemeral. S3 is nonetheless a
+    RAISE and should be read as one: the summary corpus is model-DISTILLED text (persistent/volatile/established_patterns from
+    TurnSummary, types.ts:18-22). Raw assistant replies were always indexed, so "model-authored" is not new; what IS new is that the
+    model's choice of what to compress into a summary now decides which older turns are DISCOVERABLE by label. Summaries are NOT
+    user-editable (the editable card at types.ts:33 is DynamicState; TurnInspector.tsx:435 only displays a summary; editing the reply
+    clears and regenerates it). The control surface is per-message gating (ChatMemoryEditor) — S3 honours it for EITHER half (D1) —
+    plus a summary-threshold knob and the inspector's source badge. Recorded as such; the continuity sheet is NOT indexed (rendered every turn already, spec 07).
+  sal_ephemeral: unchanged — retrieved summaries are DATA rendered into a rebuilt-fresh prompt.
+  guardrail_call_count: unchanged.
+
+verified_facts:               # observed 2026-09-13
+  engine_dispatch: "lib/bm25.ts conceptSearch(query, log, {engine: 'cosine'|'bm25'|'product', excludeLastN, topK, threshold}) returns ConceptResult (GrepResult + cosineScore + bm25Score); engine 'cosine' is bit-for-bit cosineSearch — scores, filter→sort→slice order, stable ties, matchedTerms (bm25.test.ts:28, re-verified by Sol)"
+  orchestrator: "lib/time-score.ts searchScored(query, chatLog, now, {excludeLastN, topK, threshold, engine}) — pools poolK=max(9, 3·topK) at CANDIDATE_CONCEPT_THRESHOLD 0.02, time-scores, filters combined>=threshold OR concept>=(opts.threshold ?? 0.08), sorts by combined, slices topK"
+  gate_collapse: "PRE-EXISTING: INTENT_WEIGHT_ALPHA is 1.0 and timeScore ≤ 1, so combined = concept × time ≤ concept; with both gates at 0.08 the filter reduces to concept ≥ 0.08 and time only RE-RANKS within the pool. A 0.02–0.08 candidate cannot be promoted by time. searchScored's header comment describes two independent gates — misleading; S1 fixes the comment, not the behaviour. S0's 'rescue keys on opts.threshold' changes only non-default callers (none exist)."
+  callsites: "turn-context.ts:101 (ambient, {excludeLastN: LOCAL_BUFFER_SIZE, topK: 3, threshold: 0.08}); recall.ts:116 (deliberate recall, same params). Neither passes `engine` today → cosine."
+  small_N: "product on the 4-doc bm25.test.ts scene: 'bed sheet eyes' → t2 0.205 (cos 0.64 × bm25 0.32), t4 0.153; 'Maren' → t3 0.415. A term in EVERY doc: N=4 → 0.084, N=10 → 0.023, N=40 → 0.004 (cosine 1.0 for all). One rare word mentioned once in a 100-token turn among N=20: 0.017 (cosine 0.100, itself marginal). One doc alone in a corpus (N=1): 0.632 for any term it holds."
+  time_intent: "time-score.ts:105 parseTimeIntent → chrono.parse(query, now, {forwardDate: false}) takes results[0] unconditionally; anchor = start.date(). timeScore with an anchor uses INTENT_DECAY_TAU_MS (7 d) from the anchor."
+  chrono_certainty: >
+    real chrono-node output (repo version, now = 2026-06-15 / 2026-09-13), certain components of results[0].start:
+    yesterday {y,m,d} · last night {y,m,d} · today/now/right now/tonight/tomorrow {y,m,d} · 3 days ago {y,m,d,weekday} · last week {y,m,d}
+    · 2 weeks ago {y,m,d} · in a few days {y,m,d,weekday} · May 1 / June 9th / September 12 {m,d} · last Monday / Monday {weekday}
+    · a month ago / this month {y,m} · 4 years ago / in 4 years / for 4 years {y} · April / last April / in April {m}
+    · this morning / this afternoon / evening / night / this week {} (nothing certain).
+    NO PARSE AT ALL: "we have at least 4 years", "4 years", "on the 9th", "the 9th", "in 2024", "the other day", "a while ago".
+  chrono_resolution: "forwardDate:false is 'not forced forward', NOT 'past': bare 'Monday' on a Sunday → tomorrow (+1 d); 'May 1' with now = Jan 1 → May 1 of the SAME year (+120 d) while 'September 12' → the previous year. A year-uncertain result can land in the future."
+  time_tests: "time-score.test.ts pins: no phrase → no anchor (:21); 'yesterday' (:27); 'last Monday' (:37); absolute 'May 1' (:45); phrase echoed (:53); searchScored with 'yesterday' (:166). eval probe temporal.time-intent-yesterday-bathroom (probes.ts:197)."
+  no_intent_diagnostics: "TurnData carries no time-intent field — parseTimeIntent's phrase never reaches the inspector today; a `rejected` phrase would have no path either."
+  summary_storage: "ChatEntry.summary?: TurnSummary (types.ts:99) on the ASSISTANT entry only; hydrated from inspector_json by turn-data.ts replayEntry (summaryFromInspector, :201 — returns the blob's `summary` UNVALIDATED, so a partial object with a missing array is possible); absent before the state turn shipped (2026-08-02) and on failed state calls; 'invisible to the cosine grep' (types.ts:104) — the sentence S3 changes"
+  gating: "per MESSAGE (ChatMemoryEditor.tsx:172): a user half can be off while its assistant half is on. buildTurnDocs (tfidf.ts:174) drops each gated half's text separately."
+  prompt_render: "prompt.ts formatGrepFragment (:76-81) prefix `[Turn N · when · via \"term, term\"]`, PROMPT_PROVENANCE_TERMS; grep block :248-267 incl. the absence marker; GrepFragmentSource is a Pick of ScoredResult (:52) also satisfied by recall.ts's hand-built neighbour fragments"
+  inspector_projection: "RetrievalDetailModal.tsx:106-107 renders `concept × time` from the PERSISTED GrepDetail (turn-data.ts:23), projected field-by-field at useTurnRunner.ts:204 — not from ScoredResult. New scorer fields reach the modal only if that projection and GrepDetail both gain them (optional, so pre-existing rows still render)."
+  recall_dedup: "recall.ts:121 drops query hits whose turnIndex is already surfaced this turn; recallNeighbors (:157) fetches n−1 and n+1 only, skipping surfaced ones — the centre turn itself is never fetched."
+  respin: "useResponseEditor.ts:140 slices priorLog; state-turn.ts:211 writes summaries asynchronously onto older entries — a re-spin sees the prefix's summaries as they are NOW, not as they were when the original turn ran (same property as newestDynamicState)."
+  eval_ratchet: "retrieval-eval.test.ts RATCHET_RECALL_AT_3 0.90 / RATCHET_MRR 0.90; measured 1.000 / 0.969 on cosine, 1.000 / 1.000 on product"
+  lab_invocation: "`npx tsx scripts/eval/replay-grep.ts --chat <id> [--engines cosine,bm25,product] [--no-time]` — no npm script; scripts/eval/ is untracked and gitignored"
+  brains_untouched: "lib/brains.ts searchBrains uses computeIDF/cosineSimilarity directly — knowledge axis, not in scope"
+
+design:
+  S0_engine_already_in_tree:  # unlanded engine work from the lab session — lands WITH S1
+    files:
+      - "src/client/lib/bm25.ts, src/client/lib/bm25.test.ts (synthetic fixtures only)"
+      - "src/client/lib/tfidf.ts (buildTurnDocs extracted, TurnDoc.counts)"
+      - "src/client/lib/time-score.ts (engine opt; rescue keyed on opts.threshold — API-only, see verified_facts.gate_collapse)"
+      - ".gitignore (scripts/eval/)"
+    lab_stays_local: >
+      The replay lab (scripts/eval/: loaders, replay scripts, gold label files, background-IDF builder) is a design
+      bench, not product, and its gold files quote people's chat content. It is gitignored (.gitignore, 2026-09-13)
+      and NEVER lands. No package.json script points at it. Evidence above is summarised without chat content.
+
+  S1_engine_flip:
+    D1_constant: "lib/constants.ts: export const CONCEPT_ENGINE: ConceptEngine = 'product'; header comment cites evidence.product_vs_cosine. ONE site; conceptSearch's own default stays 'cosine' (pure-function default, tests)."
+    D2_callsites: "turn-context.ts:101 and recall.ts:116 pass engine: CONCEPT_ENGINE"
+    D3_scored_result: "ScoredResult gains cosineScore: number; bm25Score: number (forwarded from ConceptResult). GrepDetail (turn-data.ts) gains the same two as OPTIONAL fields; useTurnRunner.ts:204 forwards them. GrepFragmentSource Pick unchanged."
+    D4_inspector: "RetrievalDetailModal.tsx:107 line becomes `concept 0.xxx (cosine 0.xx × bm25 0.xx) × time 0.xx` when both components are present, today's line otherwise (legacy rows); matchedTerms already engine-aware"
+    D5_thresholds: >
+      unchanged: 0.08 final / rescue, 0.02 pool. Lab: product at 0.09 edged 0.08 on one junk query — not enough to move. Documented
+      trades (verified_facts.small_N), each pinned by a test so nobody rediscovers them: (a) below ~10 turns the furniture veto is weak
+      — the local + summary buffers cover most of such a chat anyway; (b) a term present in EVERY turn retrieves nothing (cosine returned
+      an arbitrary 1.0 tie; it is furniture by definition); (c) one rare word mentioned once inside a long turn falls under the gate
+      (cosine put it at 0.10, itself marginal). Anchor recall on the 21–65-turn lab corpora was unaffected.
+    D6_gate_comment: "fix searchScored's header (time-score.ts:~160): under production defaults the rescue gate is the binding one and time re-ranks; no behaviour change (verified_facts.gate_collapse)."
+    tests:
+      - "bm25.test.ts / time-score.test.ts: the furniture contract as a GAP on the 4-doc scene (product 'bed sheet eyes' top hit < half the 'Maren' hit), and as an ABSOLUTE on a ≥12-turn synthetic scene (furniture-only query returns nothing at 0.08 while the anchor query returns its turn)"
+      - "bm25.test.ts: pin trades (b) and (c) from D5 with their numbers"
+      - "retrieval-eval.test.ts: run with CONCEPT_ENGINE; record measured recall/MRR in implementation_notes; ratchet stays 0.90 unless it fails, in which case STOP and report"
+      - "prompt.test.ts: no change expected — assert by running"
+
+  S2_time_intent_hardening:   # time-score.ts parseTimeIntent — accept a chrono result only when it can plausibly be a RETRIEVAL cue
+    R1_precision_predicate: >
+      ONE predicate, on the real certainty flags (verified_facts.chrono_certainty):
+        keep iff start.isCertain('day') || start.isCertain('weekday') || (start.isCertain('year') && start.isCertain('month'))
+      Keeps: yesterday, last night, 3 days ago, last week, 2 weeks ago, May 1, June 9th, last Monday, a month ago, this month.
+      Rejects: a character named April ({m}), 4 years ago / in 4 years ({y}), this morning / evening / night / this week ({}).
+      Known loss, accepted: 'in April' / 'last April' ({m}) — a month-wide intent under a 7-day τ from the 1st was a poor anchor anyway.
+    R2_anchor_inside_log_span: >
+      span = [oldest ELIGIBLE createdAt − INTENT_DECAY_TAU_MS, now + INTENT_DECAY_TAU_MS], eligible = outside excludeLastN, active,
+      not timeless (synthetic dates). No eligible entry → skip R2. Year roll-back first: if !isCertain('year') and anchor > now +
+      INTENT_DECAY_TAU_MS, subtract one year (chrono's implied year is the current one, not the past — verified_facts.chrono_resolution;
+      'May 1' asked in January means last May). Then reject an anchor outside the span. parseTimeIntent(query, now, span?: {oldest: number}).
+      Accepted pass-through: a bare weekday resolving to tomorrow, and narrative 'tomorrow', sit inside the +τ allowance.
+    R3_present_tense_words: >
+      after R1, the only present-tense survivors are the day-certain ones: reject when the matched text, lowercased and trimmed, is one of
+      now, right now, today, tonight. Cost is nil in ORDER: an anchor at now (τ 7 d) and the default decay from now (τ 14 d) are both
+      monotone in age — 'what did I say today' ranks identically either way. 'last night' stays (a real −1 d cue).
+    order: "R1 → R3 → R2; first surviving result wins (keeps 'multi-intent takes the first' v1 trade-off). TimeIntent gains `rejected?: string` (the phrase seen and dropped) — for tests and the lab; no inspector path exists (verified_facts.no_intent_diagnostics) and adding one is out of scope."
+    inherent_limit: "no lexical rule separates narrative 'yesterday' / 'on September 12' / 'we leave tomorrow' from a recall cue with the same words. Accepted: their anchors are near now or inside the span, so they mis-steer within a week, not by years. See decisions.recall_context_gate for the alternative."
+    keeps: [ "yesterday", "last night", "last Monday", "3 days ago", "last week", "a month ago", "May 1 (inside the span, year rolled back if needed)", "June 9th" ]
+    tests:
+      - "'April: *she waves*' → anchor null, rejected 'April' (R1, month-only)"
+      - "'4 years ago' and 'in 4 years' → anchor null (R1, year-only) — assert on the real chrono output; NOTE 'we have at least 4 years' does not parse at all and proves nothing"
+      - "'this afternoon' / 'evening' / 'night' → anchor null (R1, nothing certain)"
+      - "'right now' / 'tonight' / 'today' → anchor null (R3)"
+      - "'a month ago' → anchor set ≈ −31 d (R1 keeps year+month)"
+      - "'May 1' with now in June and a log that starts in May → anchor set (existing :45 test gains a span)"
+      - "'May 1' with now = Jan 1 and a log that starts the previous April → anchor = May 1 of the previous year (R2 year roll-back)"
+      - "'May 1' with a log that starts in June → anchor null (R2)"
+      - "'Monday' asked on a Sunday → anchor set, +1 d (documented pass-through)"
+      - "existing :27 :37 :53 :166 unchanged; eval probe temporal.time-intent-yesterday-bathroom unchanged"
+    lab_hook: "the local lab's --no-time switch exists; after S2 the timed and --no-time runs on corpus C should agree on recall (today they agree only because the rescue saves everything). Also count `rejected` per corpus — the number that would justify a recall-context gate."
+
+  S3_summary_corpus:
+    D1_docs: >
+      lib/tfidf.ts buildSummaryDocs(chatLog, excludeLastN): TurnDoc[] — slice in ENTRY space exactly as buildTurnDocs (same
+      excludeLastN, same `i += 2` walk over original pairs, turnIndex = floor(i/2) + 1), take the summary from the ASSISTANT half,
+      text = [...(persistent ?? []), ...(volatile ?? []), ...(established_patterns ?? [])].join('. ') (arrays coerced — the hydrated
+      blob is unvalidated), same tokenize. Skip the pair when EITHER half is active === false (a fact the person switched off in
+      the user message must not resurface through the assistant's summary), when there is no summary, or when the text tokenizes
+      empty. Entries without a summary contribute nothing — no fallback text (the raw corpus covers them).
+    D2_search: "bm25.ts conceptSearch gains opts.docs?: TurnDoc[] (caller-built corpus); when given, buildTurnDocs is skipped. IDF is computed over the corpus it is given — the two corpora never share statistics (summary docs are ~40 tokens, raw docs ~300), so their scores are NOT comparable (short docs → higher cosine; a lone doc → 0.63 on anything it holds). Fusion (D3) must not compare scores across corpora."
+    D3_fusion: >
+      time-score.ts searchScored: raw results exactly as today (topK, threshold, rescue). Then, only if fewer than topK came back AND the
+      summary corpus has ≥ SUMMARY_CORPUS_MIN_DOCS docs, run conceptSearch over the summary corpus with the same engine at
+      SUMMARY_CONCEPT_THRESHOLD, time-score, and FILL the remaining slots with summary hits whose turnIndex is not already present.
+      A turn present in both is one result: raw rank, raw body, source 'both', summaryText attached. Raw never loses a slot to a summary;
+      summary hits never outrank raw ones (no cross-corpus score comparison, so Sol's non-monotonic case cannot arise). Total ≤ topK.
+      ScoredResult gains source: 'turn' | 'summary' | 'both' and summaryText?: string (the joined summary lines).
+      [Policy proposed — decisions.fusion_policy]
+    D4_render: "prompt.ts formatGrepFragment: source 'summary' → prefix `[Turn N · when · via summary \"terms\"]`, body = summaryText as `- ` lines; 'turn' unchanged; 'both' → raw pair, then the summary lines (the label Sal is being asked about often lives only there — decisions.both_body). GrepFragmentSource Pick gains source? and summaryText? (optional, so recall.ts's hand-built neighbour fragments still satisfy it). Absence marker unchanged."
+    D5_recall_tool: "recall.ts:116 uses the same fused searchScored — Sal's deliberate recall sees summaries too. Surfaced-set semantics: a turn surfaced via SUMMARY ONLY stays expandable — `around_turn: N` fetches N itself (raw pair) in addition to N±1 when N's ambient surface was summary-only; alreadySurfaced therefore carries the source (Map<turn, source>) instead of a bare Set."
+    D6_inspector: "GrepDetail gains source?, summaryText? (optional; legacy rows read as 'turn'); useTurnRunner.ts:204 forwards them. RetrievalDetailModal: source badge (turn / summary / both); detail body shows summaryText for summary hits and beneath the pair for 'both'; :95 highlighting applies to whichever text is shown"
+    D7_respin: "no code change. Honest description: a re-spin is CURRENT-PREFIX reconstruction — the sliced priorLog carries the prefix's summaries as they are now, including any whose state call finished after the original turn started (same property as newestDynamicState, turn-context.ts:122). Exact replay of summary availability is not a goal."
+    D8_thresholds: "constants.ts: SUMMARY_CONCEPT_THRESHOLD (start 0.08 — its own knob because short docs score higher on cosine) and SUMMARY_CORPUS_MIN_DOCS (start 5 — below that every term is rare and IDF is meaningless, the withdrawn-prior lesson) — James tunes in place via the inspector"
+    D9_naive_baseline: "estimateNaiveContextTokens unchanged (D7 discipline, spec 07)"
+    not_indexed: [ continuity sheet (rendered every turn), dynamicState (private), knowledge packs (separate axis) ]
+    tests:
+      - "tfidf.test.ts: buildSummaryDocs — skips pairs without a summary; skips when the USER half alone is gated (regression for the resurrected-fact case); skips when the assistant half is gated; tolerates a summary missing one of its arrays; joins the three arrays; turnIndex matches the raw corpus's numbering on an odd-length log with excludeLastN straddling a pair"
+      - "time-score.test.ts: fusion — raw fills first; a summary-only hit fills a remaining slot with source 'summary'; a turn in both dedups to one result with source 'both', raw body, summaryText attached; total ≤ topK; a summary corpus below SUMMARY_CORPUS_MIN_DOCS is not searched; a summary hit never displaces a raw hit"
+      - "time-score.test.ts: the label case — log where raw turns say 'ate sandwiches in the little park by the bayou' and the summary says 'trip to New Orleans: park by the bayou, sandwiches'; query 'our trip to New Orleans' retrieves that turn via summary and nothing via raw"
+      - "prompt.test.ts: snapshot of a summary-only fragment (prefix + bulleted body) and of a 'both' fragment"
+      - "recall.test.ts: recall query surfaces a summary-only hit; around_turn on a summary-only-surfaced turn returns the centre pair"
+      - "turn-data.test.ts: GrepDetail rows without source/summaryText still round-trip (legacy)"
+      - "eval: fixtures.ts gains one fixture with summaries + 2 probes (label query hits via summary; keyword query unaffected); ratchet unchanged"
+
+sequence:                     # each step: implement → tests/typecheck/lint → present; no gate until James runs /pre-commit-qa
+  - "S0+S1 (one landing): the engine files listed under S0 (bm25.ts, bm25.test.ts, tfidf.ts, time-score.ts, .gitignore) + engine flip + inspector/GrepDetail fields + gate comment + eval rerun; the lab under scripts/eval/ never lands. Changelog entry 'Grep engine: cosine × BM25 product (spec 08 S1)' citing evidence"
+  - "S2: time-intent hardening + tests; AGENTS.md gotcha entry (chrono on narrative text — character names that are months, durations; forwardDate:false is not 'past'; the lab's --no-time switch); changelog entry"
+  - "S3: summary corpus; README architecture paragraph gains one sentence (two lexical corpora, raw first then summary fill, still no model in retrieval); changelog entry records the raise (model-distilled index, gating is the control surface)"
+  - "post: James runs live; if a pull bites, `npx tsx scripts/eval/replay-grep.ts --chat <id> --corpus raw|summary|both` over the dev DB reproduces it (add --corpus to the local replay-grep as part of S3 — lab only, never lands)"
+
+decisions:                    # ruled by James, 2026-09-13
+  fusion_policy: "RULED raw-first-then-fill (D3). Cross-corpus scores are not comparable (D2); a sparse summary corpus must never outrank raw."
+  both_body: "RULED raw pair + summary lines for 'both' (D4). James's framing, kept as the design's one-liner: the meat is in the turn and its surrounding turns; the summary is the POINTER."
+  recall_context_gate: >
+    RULED: land the simple rules (R1–R3) now. James LEANS toward Sol's recall-context gate (fire time intent only when the query also
+    carries a recall cue) for later — recall is naturally iterative, the asker specifying further is fine — so read the lab's
+    `rejected` counts after S2 and revisit; it is the sanctioned next step if narrative pass-throughs still bite.
+  engine_visibility: "CONCEPT_ENGINE stays a constant — no UI for an engine choice the eval already made."
+  generic_not_targeted: >
+    RULED (James): build simple, robust mechanisms — never anything that caters to a specific instance. Concretely: no vocabulary
+    that names a chat, a character, or a place anywhere in src/; test fixtures ('Maren', 'New Orleans', the bayou) are synthetic
+    illustrations of a SHAPE (a label the raw prose never restates), not targets; the only word list in the design is R3's four
+    generic present-tense words. If an implementation step finds itself special-casing an example, that is the smell to stop on.
+
+implementation_notes:         # filled at landing: measured eval numbers per step, deviations
+  S0_S1: >
+    Landed 2026-09-13 (uncommitted, awaiting /pre-commit-qa). Eval on CONCEPT_ENGINE='product': recall@3 1.000 / MRR 1.000
+    (cosine: 1.000 / 0.969); ratchet stays 0.90. Tests added: furniture GAP on a 4-turn scene and ABSOLUTE on a 12-turn scene
+    (time-score.test.ts), trades (b) and (c) pinned with their numbers (bm25.test.ts). Deviations from the draft: none in behaviour;
+    GrepDetail/useTurnRunner/RetrievalDetailModal plumbing added per Sol finding 14; searchScored's gate comment rewritten (D6).
+    prompt.test.ts ScoredResult literals gained the two new required fields (no assertion changes).
+  S2: >
+    Landed 2026-09-13 (uncommitted). R1/R3/R2 in parseTimeIntent(query, now, span?); searchScored computes span.oldest from
+    eligible entries (outside excludeLastN, active, not timeless). Year roll-back applies with or without a span (a year-uncertain
+    future anchor is never what a chat about the past means) — slightly wider than the draft's "inside R2". DEVIATION: no AGENTS.md
+    entry — AGENTS.md's own rubric says push to source when a gotcha has a clear home, and this one does (parseTimeIntent's header
+    carries the chrono facts; time-score.test.ts pins real chrono output for every rule). `rejected` lands on TimeIntent for tests
+    and the lab; no inspector path (verified_facts.no_intent_diagnostics). Eval probe temporal.time-intent-yesterday-bathroom unchanged.
+  S3: >
+    Landed 2026-09-13 (uncommitted; live-chat testing HELD for James — needs the local model up). Deviations from the draft, all
+    in the summary's favour: (1) summaryLines: string[] rides on TurnDoc/ScoredResult/GrepDetail instead of a joined summaryText —
+    the prompt renders bullets and the inspector highlights per line; the INDEX text is still the '. ' join. (2) The summary corpus is
+    searched on every call (pure math, ~40-token docs), not only when raw < topK, so a raw hit can be marked 'both' and carry its
+    pointer; fill still happens only into empty slots. (3) Recall's surfaced set stays a Set<number>; a second set of summary-only
+    turns rides beside it (RecallOutcome.surfacedSummaryOnly, runTurnWithRecall.initialSummaryOnly) rather than a Map — smaller
+    ripple, same semantics. (4) turn-data.test.ts got no legacy round-trip test: GrepDetail's new fields are optional TYPES, there is
+    no runtime path to exercise. Eval: 36 probes, recall@3 1.000 / MRR 1.000 on product with the summaries fixture. Lab: load-chat
+    hydrates summaries from inspector_json; replay-grep gains --no-summaries (raw-only baseline) — local only.

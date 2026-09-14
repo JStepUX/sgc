@@ -101,10 +101,17 @@ export async function runTurnWithRecall(opts: {
   provider?: ProviderId;
   onDelta: (textSoFar: string) => void;
   onStatus: (status: 'streaming' | 'remembering') => void;
-  executeTool: (input: RecallInput, surfaced: ReadonlySet<number>) => RecallOutcome;
+  executeTool: (
+    input: RecallInput,
+    surfaced: ReadonlySet<number>,
+    summaryOnly: ReadonlySet<number>,
+  ) => RecallOutcome;
   /** Seed for the dedup set (D5) — the ambient grep's already-surfaced
    * turnIndexes, so a recall never re-fetches what the prompt already carries. */
   initialSurfaced?: Iterable<number>;
+  /** The subset of the seed Sal saw only as a summary pointer (spec 08 S3):
+   * still expandable by recall — see lib/recall.ts. */
+  initialSummaryOnly?: Iterable<number>;
   /** Reply pacing ceiling (lib/pacing.ts) — forwarded to every round. */
   maxParagraphs?: number;
   /** Injectable for tests. */
@@ -115,6 +122,9 @@ export async function runTurnWithRecall(opts: {
   // D5: one dedup set for the whole turn — seeded from ambient retrieval,
   // grown by every recall round, consulted by every executeTool call.
   const surfaced = new Set<number>(opts.initialSurfaced ?? []);
+  // S3: turns shown only as a summary pointer. A turn leaves this set the
+  // moment its raw text is served (by a query hit or an around_turn fetch).
+  const summaryOnly = new Set<number>(opts.initialSummaryOnly ?? []);
 
   const messages: WireMessage[] = [{ role: 'user', content: opts.userMessage }];
   const recalls: RecallEvent[] = [];
@@ -176,8 +186,12 @@ export async function runTurnWithRecall(opts: {
       const resultBlocks: ContentBlock[] = [];
       for (const tu of result.toolUses) {
         const input = toRecallInput(tu.input);
-        const outcome = opts.executeTool(input, surfaced);
-        for (const idx of outcome.surfaced) surfaced.add(idx);
+        const outcome = opts.executeTool(input, surfaced, summaryOnly);
+        for (const idx of outcome.surfaced) {
+          surfaced.add(idx);
+          summaryOnly.delete(idx);
+        }
+        for (const idx of outcome.surfacedSummaryOnly ?? []) summaryOnly.add(idx);
         recalls.push({ round: call, input, matches: outcome.surfaced.length });
         // Echo the tool_use block back verbatim (id/name/input) — the
         // provider requires every tool_use answered by a matching tool_result.

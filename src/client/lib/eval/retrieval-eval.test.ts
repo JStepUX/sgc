@@ -21,7 +21,7 @@ import { tokenize } from '../tfidf';
 import { FIXED_NOW, FIXTURES } from './fixtures';
 import { recallAtK, mrr } from './metrics';
 import { PROBES, type Probe } from './probes';
-import { LOCAL_BUFFER_SIZE } from '../constants';
+import { CONCEPT_ENGINE, LOCAL_BUFFER_SIZE } from '../constants';
 
 // ---- Production defaults (mirror lib/turn-context.ts — assembleTurnContext's searchScored call) ----
 const PROD_EXCLUDE_LAST_N = LOCAL_BUFFER_SIZE; // 4
@@ -52,6 +52,7 @@ function runProbe(probe: Probe) {
     excludeLastN: probe.params?.excludeLastN ?? PROD_EXCLUDE_LAST_N,
     topK:         probe.params?.topK         ?? PROD_TOP_K,
     threshold:    probe.params?.threshold    ?? PROD_THRESHOLD,
+    engine:       CONCEPT_ENGINE,
   };
   const results = searchScored(probe.query, fixture.log, FIXED_NOW, params);
   return results.map((r) => r.turnIndex);
