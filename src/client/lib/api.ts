@@ -111,6 +111,11 @@ export interface TurnOptions {
    *  reply back to its last complete paragraph client-side. REPLY calls only;
    *  the state turn never passes this (its output is JSON, not paragraphs). */
   maxParagraphs?: number;
+  /** Abort the round mid-stream (the sidecar's refresh button). The server
+   *  aborts its upstream call when the response closes (turn-route.ts), so a
+   *  cancelled reply stops costing tokens. runTurn rejects with the fetch's
+   *  AbortError — the caller that aborted is the one that swallows it. */
+  signal?: AbortSignal;
 }
 
 /** What a completed turn (one round-trip, one POST) returns to the caller. */
@@ -189,6 +194,7 @@ export async function runTurn(
       ...(tools && tools.length > 0 ? { tools } : {}),
       ...(maxParagraphs ? { maxParagraphs } : {}),
     }),
+    ...(options?.signal ? { signal: options.signal } : {}),
   });
 
   // A non-OK status means the server rejected the request BEFORE opening the
