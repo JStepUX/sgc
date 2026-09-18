@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PanelRightClose, PanelRightOpen, Split } from 'lucide-react';
+import { Split } from 'lucide-react';
 import { DEFAULT_PERSONA } from './lib/prompt';
 import { newestDynamicState } from './lib/dynamic-state';
 import { foldSheet } from './lib/continuity';
@@ -7,12 +7,15 @@ import { PROVIDER_LABEL } from './lib/provider';
 import { isDesktop } from './lib/desktop';
 import { AuroraBackground } from './components/AuroraBackground';
 import { PhaseBar } from './components/PhaseBar';
+import { ContextRail } from './components/ContextRail';
+import { SidecarPanel } from './components/SidecarPanel';
 import { MemoryPanel } from './components/MemoryPanel';
 import { TurnInspector } from './components/TurnInspector';
 import { TokenChart } from './components/TokenChart';
 import { AssistantMessage } from './components/AssistantMessage';
 import { UserPill } from './components/UserPill';
 import { Composer } from './components/Composer';
+import { FindBar } from './components/FindBar';
 import { ChatHistoryModal } from './components/ChatHistoryModal';
 import { BrainManagerModal } from './components/BrainManagerModal';
 import { ConfirmPersonaModal } from './components/ConfirmPersonaModal';
@@ -31,6 +34,8 @@ import { useResponseEditor } from './hooks/useResponseEditor';
 import { useTurnUndo } from './hooks/useTurnUndo';
 import { useMemoryEditSync } from './hooks/useMemoryEditSync';
 import { useTangent } from './hooks/useTangent';
+import { useSidecar } from './hooks/useSidecar';
+import { useThreadFind } from './hooks/useThreadFind';
 
 // ============================================================
 // SALIENCE-GATED COGNITION — Phase 1.5
@@ -90,6 +95,10 @@ export default function SalienceGatedCognition() {
   const { undoLatestTurn } = useTurnUndo(session);
   const memorySync = useMemoryEditSync(session);
   const tangentAxis = useTangent(session);
+  // The rail's co-author chat: reads the session, writes nothing, saved nowhere.
+  const sidecar = useSidecar(session, providerState);
+  // Ctrl/Cmd-F: literal substring find over the loaded thread.
+  const find = useThreadFind(session.messages);
   // Wipe is destructive → inline confirm (UI choreography, so root-owned).
   // Reset whenever the tangent closes by ANY path (resolve, chat switch,
   // Begin again) so a later tangent never opens straight into the confirm.
@@ -171,8 +180,9 @@ export default function SalienceGatedCognition() {
               session.tangent !== null ? 'bg-ember/[0.045]' : ''
             }`}
           >
+            <FindBar find={find} />
             <div className="sal-scroll flex-1 overflow-x-hidden overflow-y-auto pt-[30px] pb-3">
-              <div className="mx-auto flex max-w-[680px] flex-col gap-[18px] px-8">
+              <div ref={find.threadRef} className="mx-auto flex max-w-[680px] flex-col gap-[18px] px-8">
                 {session.messages.length === 0 && (
                   <div className="mx-auto mt-[12vh] max-w-[440px] text-center text-pretty text-sm leading-[1.7] text-fg-3">
                     A local buffer holds what's near; cosine grep reaches for what's
@@ -194,11 +204,22 @@ export default function SalienceGatedCognition() {
                   // boundary (spec 04, D6 — the only guard the tangent needs).
                   const tangentAtZero = session.tangent !== null
                     && session.messages.length === session.tangent.canonEntries;
-                  const nodes = session.messages.map((msg, i) =>
-                    msg.role === 'user'
-                      ? <UserPill key={i} text={msg.content} />
+                  // Each message sits in a wrapper the find bar can aim at
+                  // (data-msg-index) and tint: every match faintly, the
+                  // active one clearly.
+                  const matched = new Set(find.matches);
+                  const nodes = session.messages.map((msg, i) => (
+                    <div
+                      key={i}
+                      data-msg-index={i}
+                      className={`-mx-3 rounded-[14px] px-3 transition-colors duration-300 ${
+                        i === find.activeIndex ? 'bg-ember/[0.10] outline outline-1 outline-ember/40'
+                          : matched.has(i) ? 'bg-ember/[0.04]' : ''
+                      }`}
+                    >
+                    {msg.role === 'user'
+                      ? <UserPill text={msg.content} />
                       : <AssistantMessage
-                          key={i}
                           text={msg.content}
                           label={session.activeMask}
                           summary={msg.summary}
@@ -207,8 +228,9 @@ export default function SalienceGatedCognition() {
                           canEdit={i === lastAssistantIdx && !runner.isProcessing && typeof msg.id === 'number' && !tangentAtZero}
                           onUndo={i === lastAssistantIdx ? handleUndoTurn : undefined}
                           canUndo={i === lastAssistantIdx && !runner.isProcessing && typeof msg.id === 'number' && !tangentAtZero}
-                        />,
-                  );
+                        />}
+                    </div>
+                  ));
                   // Boundary divider — tangent entries are always the visible
                   // tail, so it sits at index canonEntries (equal to length on
                   // a fresh tangent: the divider then closes the thread).
@@ -333,28 +355,13 @@ export default function SalienceGatedCognition() {
             />
           </div>
 
-          {/* Context-rail collapse toggle — a small tab pinned to the chat/rail
-              seam. Desktop only (hidden lg:flex); its `right` offset animates in
-              lockstep with the rail's width so the tab rides the closing edge. */}
-          <button
-            type="button"
-            onClick={toggleRail}
-            aria-label={railCollapsed ? 'Show context rail' : 'Hide context rail'}
-            aria-expanded={!railCollapsed}
-            className={`absolute top-1/2 z-30 hidden size-7 -translate-y-1/2 items-center justify-center rounded-full border border-hairline-strong bg-surface-thin text-fg-3 transition-[right,color,border-color] duration-300 ease-out hover:border-ember hover:text-ember lg:flex ${
-              railCollapsed ? 'right-2' : 'right-[346px]'
-            }`}
-          >
-            {railCollapsed ? <PanelRightOpen size={15} /> : <PanelRightClose size={15} />}
-          </button>
-
-          {/* Context rail */}
-          <aside
-            className={`sal-scroll relative z-20 flex max-h-[45vh] w-full flex-col gap-7 overflow-y-auto border-t border-hairline px-6 pt-[26px] pb-8 lg:h-full lg:max-h-none lg:shrink-0 lg:border-t-0 lg:border-l lg:transition-[width,opacity] lg:duration-300 lg:ease-out ${
-              railCollapsed
-                ? 'lg:w-0 lg:overflow-hidden lg:border-l-0 lg:px-0 lg:opacity-0 lg:pointer-events-none'
-                : 'lg:w-[360px] lg:opacity-100'
-            }`}
+          {/* Context rail — collapse toggle, tabs and frame live in ContextRail;
+              the Sidecar tab is the co-author chat, the children are the
+              Context tab. */}
+          <ContextRail
+            collapsed={railCollapsed}
+            onToggleCollapsed={toggleRail}
+            sidecar={<SidecarPanel sidecar={sidecar} />}
           >
             <MemoryPanel
               constitutional={session.constitutional}
@@ -381,7 +388,7 @@ export default function SalienceGatedCognition() {
               sheet={sheet}
             />
             <TokenChart tokenHistory={session.tokenHistory} />
-          </aside>
+          </ContextRail>
         </div>
       </div>
 
