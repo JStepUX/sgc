@@ -154,6 +154,31 @@ from "latest pair" to "everything since the bookmark": pure curation, no model
 in the loop. (Chat-scoped things — the constitutional document, persona,
 mounted brains — are per-chat, not per-turn, so edits to them survive a wipe.)
 
+**The Sidecar (a co-author outside the story).** The right rail has two tabs:
+**Sidecar** and **Context** (everything the rail held before). The Sidecar is a
+second, smaller chat with a collaborator who is *not* Sal: same provider and
+transport as the persona, a different system prompt, and none of the turn
+machinery — no state turn, no pacing, no spontaneity, no tangents. On every
+message it is handed a fresh read-only snapshot of the story (persona,
+constitutional document, continuity sheet, inner state, the last four turns
+verbatim, summaries of the eight before that) plus whatever older turns the
+same deterministic grep pulls up for *your message* — so an out-of-character
+"has Steve told her yet?" finds the turn without becoming a canon turn, a
+summary, and grep material the way a `((OOC))` aside in the story does. It
+writes nothing back, and its conversation is saved nowhere: it lives in memory
+until you reload or press its refresh button. It is an ordinary transcript chat,
+deliberately — Sal's ephemerality is about the story's memory, which the
+Sidecar never touches. Each Sidecar message is one model call outside the turn
+loop; the grep behind it costs what it always costs, nothing.
+
+**Find in thread.** Ctrl/Cmd-F opens a find bar over the reading column: a
+literal, case-insensitive substring match over every loaded message — the
+exhaustive counterpart to the grep's ranked few, with no model and no index. It
+starts on the newest match (you are at the bottom); Enter walks older,
+Shift+Enter newer. Matching messages are tinted rather than the matched words.
+The Electron shell has no find of its own; on the web a second Ctrl-F falls
+through to the browser's.
+
 **Plug-in brains (the knowledge axis).** A chat can mount **knowledge packs** —
 `sgc-brain/1` JSON files of document chunks compiled offline by the sibling
 Atlantis repo (`python -m atlantis export`; fully model-free `--stub` builds

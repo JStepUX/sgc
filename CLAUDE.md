@@ -24,7 +24,11 @@ BM25 veto, over the raw turns and the state turn's own summaries (**"Grepory"**
 reasoning instance built fresh for the turn and retired after it. A small
 post-reply **state turn** distils the finished exchange into a turn summary +
 Sal's bounded, user-editable Dynamic State. Base loop: 2 API calls/turn; the
-retrieval costs 0 ms and 0 tokens. ("Sal" is the model's identity everywhere a
+retrieval costs 0 ms and 0 tokens. Beside the story, the rail's **Sidecar** tab
+is a co-author chat that is deliberately NOT Sal: an ordinary in-memory
+transcript (never persisted) that reads a snapshot of the session and writes
+nothing back — see `lib/sidecar.ts` before "fixing" it into the turn pipeline.
+("Sal" is the model's identity everywhere a
 user sees it; "turn" is the codebase's neutral word for one user input → one
 model call → one response.)
 
