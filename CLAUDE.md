@@ -70,8 +70,10 @@ growing transcript, no model carrying its own state). Two rules protect that:
 
 Detail lives in the path of alteration, not here:
 
-- **`README.md`** — the full architecture narrative and how to run it (web,
+- **`README.md`** — the public front page: pitch, turn loop, how to run it (web,
   desktop, local-model).
+- **`docs/architecture.md`** — the full present-tense architecture narrative:
+  tiers, grep, state turn, curation, invariants.
 - **File header comments** — the per-file truth. There is no structure map to
   keep in sync; orient with `bash scripts/agent/codebase-snapshot.sh` and read
   the headers of the files you touch.

@@ -2,6 +2,9 @@
 
 - `phase-1-5-reference.jsx` — the frozen original single-file artifact; the
   Phase 1.5 contract the Mission Brief (`CLAUDE.md`) protects. Never edit it.
+- `sidecar.png` — the README hero screenshot.
+- `architecture.md` — the full present-tense description of the turn loop,
+  the tiers, the state turn and the invariants. The README is the short form.
 - `*-spec.yaml` — implementation specs (format below).
 - `releasing.md` — the release runbook: bump → gate → pack → tag → GitHub
   release → CI mac DMG. Read it before cutting a release.

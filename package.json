@@ -2,6 +2,7 @@
   "name": "sgc",
   "version": "1.10.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Salience-Gated Cognition — a tiered-memory conversational architecture prototype.",
   "main": "dist/electron/main.cjs",

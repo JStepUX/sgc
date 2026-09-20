@@ -1,207 +1,82 @@
 # SGC — Salience-Gated Cognition
 
-A research prototype for a conversational memory architecture. SGC explores
-*how a reasoning agent should remember*: not one big context window, but tiered,
-salience-gated memory feeding a single ephemeral reasoning call.
+**An indefinitely long conversation with a character who never forgets and
+never drifts, without the context window ever growing.**
 
-## Why this exists
+![SGC mid-story: the reading column on the left, the Sidecar co-author panel on the right](docs/sidecar.png)
 
-It started as one question: *can I create an indefinite chat with an agent
-that resolves the worst excesses and sins of long context windows — drift,
-sycophancy, prompt abandonment?* Sal answered that a long time ago. What has
-grown since is a small **narrative runtime** — a roleplay engine its author
-uses for fun. Thinking-model separation decides what counts as an utterance,
-pacing decides how much of it becomes canon, and the continuity sheet decides
-which consequences survive recency. There is no product launch or paper behind
-it; it is a very novel, very interesting, very enjoyable side project, and the
-docs try to stay honest about that.
+*The header states the architecture. The grey line beneath the reply is the
+state turn's summary, which the grep indexes alongside the raw text. The
+Sidecar reads the story and never writes to it.*
 
-> **Phase 1.5** — Ephemeral Sal + TF-IDF Cosine Grep + 2-turn local buffer.
-> No model-based *memory* retrieval. One reasoning component per turn, rebuilt
-> fresh each time.
+SGC is a narrative runtime: a roleplay engine with a memory architecture
+underneath. Every reply is written by a fresh model instance that is handed
+only what a deterministic memory system decided was relevant, then retired.
+Retrieval over the story's history is pure math, TF-IDF cosine × BM25, at
+0 ms and 0 tokens. There is no vector database, no embeddings, and no model
+anywhere in the memory path.
 
-## The idea
+It exists to answer one question: can a chat run for thousands of turns and
+resolve the failure modes of long context windows, drift, sycophancy and
+prompt abandonment? It can. It is a personal research project, not a product,
+and the docs stay honest about that.
 
-Every turn, three memory tiers are assembled and handed to one short-lived
-reasoning instance:
+## How a turn works
 
-| Tier | What it is | Cost |
-|------|-----------|------|
-| **Constitutional Memories** | One freeform per-chat document about the user (prose, edited in a modal; carried forward at "Begin again" on request); not model-scored | in-prompt |
-| **Local Buffer** | The last 2 turns, verbatim | in-prompt |
-| **Cosine Grep ("Grepory")** | TF-IDF cosine similarity multiplied by a squashed BM25 score over older history (Porter-stemmed tokens, so "needle" finds "needles"; BM25's IDF vetoes words that appear in every turn, so scene furniture can't carry a pull on its own). A second corpus over the state turn's per-turn summaries fills whatever slots the raw text leaves empty — raw first, summary as a pointer — so a label the prose never restated ("the orchard visit") still retrieves; the state turn also writes a few retrieval cues per turn (other words a person might use later), indexed and never shown to Sal — pure math, no model; individual turns can be gated out of retrieval in the chat memory editor | 0 ms, 0 tokens |
+1. **The client assembles a context** from curated tiers: a per-chat
+   *constitutional document* about the user, a *continuity sheet* of scene
+   facts, the last two turns verbatim, the two before that as summaries, the
+   best matches from a deterministic grep over everything older, and any
+   mounted knowledge packs.
+2. **Sal replies.** Sal is the reasoning instance, built fresh for this turn
+   with that context and nothing else. If it senses there is more to
+   remember, it can re-query the grep with its own query (`recall`), up to
+   twice. The reply is prose only.
+3. **A small state turn distils the exchange** into a turn summary, a
+   schema-capped *inner state* (goal, feeling, what it noticed, what it wanted
+   to say and didn't) that colours the next reply without being narrated, and
+   deltas to the continuity sheet. Code merges the deltas. The summaries and
+   retrieval cues are indexed by the grep alongside the raw turns.
 
-These feed **Sal**, an ephemeral reasoning instance that exists for exactly one
-turn and is then retired. Sal's reply is prose only — no output format, no
-metadata block. Once it has streamed, a second small call (below) reads the
-exchange back and produces a per-turn summary (persistent / volatile /
-established_patterns). The last couple of turns' summaries are fed back as a
-small **distilled buffer** just behind the verbatim local buffer, so a turn that
-scrolls out of full-text recency survives as its summary rather than dropping
-straight to grep — bounded context, not accumulated memory.
+Two API calls per turn in the base loop. Nothing accumulates: the inner state
+is regenerated every turn and editable by the user, the continuity sheet
+accretes only through schema-bound deltas, and everything else is rebuilt from
+the tiers. The full description is in [`docs/architecture.md`](docs/architecture.md).
 
-**Dynamic State.** That same post-reply call also returns Sal's **inner state**:
-a small, schema-capped snapshot — goal, feeling, association, passing thought,
-what it noticed, what it wanted to say and didn't. The state is rendered into
-the *next* turn's prompt as a private block, in labelled prose rather than JSON,
-with an explicit instruction never to narrate or quote it: it colours the reply
-instead of being reported in it.
+## What you can do
 
-This is a **deliberate recurrence** — unlike the turn summaries, the state
-prompt consumes the previous state, which is exactly what makes slow-burn
-continuity possible and exactly what could drift. It's bounded three ways:
-the schema caps it, it's regenerated every turn from live context (never an
-accreting document), and it is **yours to edit** — the right rail's *Dynamic
-State* card shows the current state and opens an editor on it, so the drift
-surface is also a control surface. Sal is still rebuilt fresh every turn: the
-state is data in a prompt, not a model carrying its own memory. Two API calls
-per turn in the base loop, and the call count remains a guardrail, not the
-thesis.
+- **Edit or re-spin the latest reply.** Rewrite it by hand, or regenerate it
+  with history reconstructed as it was at that instant. The kept text is
+  re-indexed and its summary and state re-derived.
+- **Undo a turn.** The pair is deleted from the thread, the database and the
+  grep corpus, and your message returns to the composer.
+- **Open a tangent.** Bookmark the current turn, experiment, then make it
+  canon or wipe everything past the bookmark. Because state is stored per
+  turn, wiping the rows is the rollback.
+- **Talk to the Sidecar.** A co-author chat beside the story that reads a
+  snapshot of it and writes nothing back. Ask "has Steve told her yet?"
+  without it becoming a canon turn.
+- **Find in thread.** Ctrl/Cmd-F: exhaustive literal search over every
+  message, the counterpart to the grep's ranked few.
+- **Mount knowledge packs.** Read-only reference material, searched by the
+  same math and rendered as a separate tier. Knowledge about the world, not
+  memory of the person.
+- **Rewrite the persona** per chat or mid-chat with a forward-only edit
+  history, and give the character a display name that never reaches the
+  model.
+- **Paste a link.** The server extracts the page's text before the call and
+  folds it into the prompt. No browsing loop.
 
-**Continuity sheet.** Salience gating has a structural blind spot: facts that
-are durable but low-salience. A character's shirt is never the topic, so the
-grep never scores it, and it's rarely restated, so the buffers drop it after
-four entries. The turn summary's old "persistent" list promised permanence and
-delivered a four-turn horizon. The same post-reply call now also returns
-**continuity deltas** — what changed on a fixed-schema scene record: story
-(genre, time), location (name, type, one established environment line), and
-one record per named character (present or not and why, where they are,
-stance, apparel, items, physical state, standing disposition toward you, and
-what they don't yet know). Code merges the deltas; omission never deletes, a
-departed character keeps their record, a move replaces the location, and a
-truncated response can never write a half-fact. Each turn stores only its
-own delta beside the inner state, and the sheet is *folded* from the log
-whenever it's read, so two state calls landing in either order can't lose a
-fact, and re-spin, tangent rollback and edit roll it back for free. It renders
-into the next prompt above the distilled buffer as labelled lines. It is first-class over Dynamic State and, unlike it, it
-*accretes* rather than regenerates — its bounds are the schema, the caps, the
-deltas-only merge, and diegetic correction: there is no editor, because the
-person is there to be in the story, not to curate it. Correct the story and
-the next reflection applies the correction. The rail shows the sheet read-only.
+## Stack
 
-Sal has no live web access of its own. The one way a page reaches a turn is a
-deterministic, SSRF-guarded **URL pre-fetch**: when the person pastes a link,
-the server extracts its text (Readability) *before* the call and folds it into
-the prompt as a LINKED PAGE, read in one pass. No model, no search loop — the
-web-knowledge analogue of the cosine grep. (Anthropic's server-side
-`web_search`/`web_fetch` tools were tried and removed: they injected ~4–5k
-tokens of scaffolding into every turn's input whether or not Sal browsed, which
-wasn't worth it next to the free pre-fetch.) The per-turn call count is a
-guardrail, not the thesis; the thesis is Sal's per-turn ephemerality and the
-curated-tier context. See `CLAUDE.md` → Mission Brief.
-
-**Deliberate recall.** On top of the ambient grep, Sal carries a `recall` tool:
-when it senses there's more to remember — a name, a thread the person expects
-it to hold — it can pause mid-turn (the UI shows a quiet *Remembering…*) and
-re-query the **same deterministic engine** with a query it authors, or pull the
-immediate neighbors of a turn it has already seen (`around_turn`). Max two
-recall rounds per turn (worst case 3 reply calls — 4 total with the post-reply
-state turn; both are sanctioned raises in the Mission Brief), Anthropic-only
-for now, and results are deduplicated
-against what the prompt already carries. The invariant is untouched: the model
-proposes a *query*; what matches is still pure math. Retrieved fragments (both
-ambient and recalled) now carry term provenance — `[Turn 6 · 4 min ago · via
-"sister"]` — and when older history exists but nothing surfaced, the prompt
-says so honestly instead of staying silent, which is exactly the cue that makes
-the tool worth reaching for.
-
-Sal's persona — the head of the per-turn system prompt — is editable **per
-chat**: "Begin again" opens a Confirm Persona step where you can rewrite it and
-set an optional display-only name (a "mask") for the assistant's turns. It's
-also editable **mid-chat** from the **System Prompt** button in the right rail,
-which keeps a forward-only edit history (each save mints a new live version; old
-versions stay frozen and can be reloaded into the editor). This lets several
-personas be tested against the same architecture without editing source. It
-changes only *what* the system prompt says, not how memory works: the mask is
-cosmetic and never reaches the model, and editing a persona involves no model —
-the memory tiers stay exactly as above.
-
-Sal's **latest reply** is editable too — hover it for a pencil. You can rewrite
-the text by hand, or **re-spin** it: re-run the current model for that turn with
-its history reconstructed (the chat sliced to before the turn, recency anchored
-at its original instant — so no later turn leaks in) plus your current memories
-and persona. Whichever you keep becomes the turn and is re-indexed for the cosine
-grep going forward. Either way the turn's stale summary and inner state are
-cleared and re-derived from the text you kept. If a spontaneity operator fired
-on the turn, a re-spin runs *without*
-it by default — undoing the perturbation is the usual reason to re-spin — and a
-toggle in the editor replays the original directive verbatim instead. The
-reply's paragraph ceiling (see `src/client/lib/pacing.ts`) is replayed by
-default, and the same editor lets you raise, lower, or lift it before
-re-spinning — the usual reason to re-spin a cut reply is that the draw was too
-small for the beat. It edits
-that one reply only — later turns aren't regenerated — and it touches no
-memory-retrieval invariant: retrieval stays deterministic math, Sal stays
-ephemeral.
-
-The whole turn can also be **undone** — the ↺ beside the pencil deletes the
-latest user+assistant pair (from the thread, the DB, and therefore the grep
-corpus) and returns your message to the composer for editing: ask again,
-minus the answer you didn't want. Undo repeatedly to walk a chat back turn by
-turn. Pure curation, no model in the loop.
-
-**Ephemeral tangents.** The ⑂ button beside the composer opens a **tangent**:
-a bookmark drops at the current turn, the thread takes on an ember wash, and
-the conversation simply continues — same loop, same retrieval, same state turn;
-Sal is never told. When you're done experimenting, a strip above the composer
-resolves it: **Make canon** keeps everything (the turns were stored normally
-all along — the bookmark just clears), or **Wipe** deletes every turn past the
-boundary in one stroke. Because Sal's inner state and turn summaries live as
-per-turn snapshots, wiping the rows *is* the rollback — Dynamic State, the grep
-corpus, and the buffers all read as if the tangent never happened. The boundary
-persists per-chat, so a reload mid-tangent resumes it. It's undo generalized
-from "latest pair" to "everything since the bookmark": pure curation, no model
-in the loop. (Chat-scoped things — the constitutional document, persona,
-mounted brains — are per-chat, not per-turn, so edits to them survive a wipe.)
-
-**The Sidecar (a co-author outside the story).** The right rail has two tabs:
-**Sidecar** and **Context** (everything the rail held before). The Sidecar is a
-second, smaller chat with a collaborator who is *not* Sal: same provider and
-transport as the persona, a different system prompt, and none of the turn
-machinery — no state turn, no pacing, no spontaneity, no tangents. On every
-message it is handed a fresh read-only snapshot of the story (persona,
-constitutional document, continuity sheet, inner state, the last four turns
-verbatim, summaries of the eight before that) plus whatever older turns the
-same deterministic grep pulls up for *your message* — so an out-of-character
-"has Steve told her yet?" finds the turn without becoming a canon turn, a
-summary, and grep material the way a `((OOC))` aside in the story does. It
-writes nothing back, and its conversation is saved nowhere: it lives in memory
-until you reload or press its refresh button. It is an ordinary transcript chat,
-deliberately — Sal's ephemerality is about the story's memory, which the
-Sidecar never touches. Each Sidecar message is one model call outside the turn
-loop; the grep behind it costs what it always costs, nothing.
-
-**Find in thread.** Ctrl/Cmd-F opens a find bar over the reading column: a
-literal, case-insensitive substring match over every loaded message — the
-exhaustive counterpart to the grep's ranked few, with no model and no index. It
-starts on the newest match (you are at the bottom); Enter walks older,
-Shift+Enter newer. Matching messages are tinted rather than the matched words.
-The Electron shell has no find of its own; on the web a second Ctrl-F falls
-through to the browser's.
-
-**Plug-in brains (the knowledge axis).** A chat can mount **knowledge packs** —
-`sgc-brain/1` JSON files of document chunks compiled offline by the sibling
-Atlantis repo (`python -m atlantis export`; fully model-free `--stub` builds
-are first-class and badged in the UI). Mounted packs are searched each turn by
-the same deterministic TF-IDF cosine math as the grep — one union index across
-all mounts, client-side, 0 ms, 0 tokens — and the top chunks render as a
-PERSONA KNOWLEDGE prompt tier behind an always-present per-brain digest, so Sal
-can name what it *could* be asked even when nothing retrieves. Knowledge is
-reference material about the world, not memory of the person: packs are
-read-only, carry no embeddings (plain text + hand-editable `aliases`, the
-deterministic synonym bridge), and never touch the memory tiers. Mount at
-"Begin again" (which can also import packs), or mid-chat via the right rail's
-**Brain Manager** — one modal owning the whole pack lifecycle: import,
-per-pack mount toggles, and delete (for all chats, behind a confirm).
-
-**Spontaneity (experimental, a separate axis).** When the recent conversation is
-*circling*, a deterministic detector (average pairwise TF-IDF cosine over the last
-few turns — no model) can fire a single one-turn creative **operator** into Sal's
-prompt to break the rut, surfaced as a dimmed `⟐ <Operator>` marker beneath the
-reply and a slack reading in the inspector. This is deliberate behavioral
-perturbation, *not* part of the memory thesis, and it keeps the invariants (pure-
-math trigger, ephemeral Sal, no extra API call). See
-`src/client/lib/spontaneity/README.md` for the design and trade-offs.
+React + TypeScript (Vite, Tailwind v4, shadcn/ui) client. Express server that
+holds the provider keys, streams turns over SSE, enforces the reply's drawn
+paragraph ceiling, and persists to SQLite (better-sqlite3). Electron shell for
+Windows and macOS that embeds the server as a supervised child process.
+Providers: Anthropic, or any OpenAI-compatible local server (KoboldCPP,
+Ollama), switchable at runtime, with `<think>` blocks stripped at the
+provider boundary for reasoning models. Vitest, ESLint, GitHub Actions for
+the macOS build.
 
 ## Running it
 
@@ -211,53 +86,31 @@ cp .env.example .env          # then add your ANTHROPIC_API_KEY
 npm run dev
 ```
 
-`npm run dev` starts the Vite client (`:5555`) and the Express proxy (`:3000`)
-together. Open `http://localhost:5555`. The API key lives only on the server —
-the browser never touches `api.anthropic.com`.
+The Vite client is on `:5555` and the Express proxy on `:3000`. Open
+`http://localhost:5555`. The API key lives only on the server.
 
-**Optional — run Sal on a local model.** Sal's single reasoning call can target
-a local OpenAI-compatible server (KoboldCPP/Ollama) instead of Anthropic,
-switchable at runtime from the header provider chip. It's opt-in: uncomment
-`OPENAI_BASE_URL` in `.env` (see the LOCAL block in `.env.example`). The
-deterministic memory tiers work identically; Anthropic-only web tools are dark
-on the local path. Reasoning models (Qwen3 & co.) work too: the server strips
-their `<think>` block at the provider boundary so only the reply is streamed,
-stored, and remembered — give them a roomy `LLM_MAX_TOKENS` (default 4096),
-since the thinking comes out of that budget first. Reply length is
-not the cap's job: each reply draws a paragraph ceiling (one to five, weighted
-toward two and three, never the same twice running) that the prompt names
-and the server enforces at the Nth blank line — see `src/client/lib/pacing.ts`.
+**Local model.** Uncomment `OPENAI_BASE_URL` in `.env` (see the LOCAL block in
+`.env.example`) and pick the provider from the header chip. Give reasoning
+models a roomy `LLM_MAX_TOKENS` (default 4096); thinking comes out of that
+budget first.
 
-**Desktop (Windows).** `npm run dist:win` packages SGC as an NSIS installer in
-`release/` (electron-builder). The installed app embeds the same server as a
-supervised child process and configures both providers from the UI — click an
-unconfigured provider in the header chip (or the gear on a configured one) to
-set the Anthropic key / local base URL, model, and max tokens. Config lives in
-`%APPDATA%\sgc\sgc-config.json`; saving restarts the embedded server. No `.env`
-needed. The installer also ships **stock brains** — curated knowledge packs
-(the collected poems of Edgar Allan Poe; a world-knowledge almanac) seeded into
-your brains directory on first boot and offered in the Begin-again picker and
-the Brain Manager; delete one and it stays deleted.
-
-**Desktop (macOS).** Pushing a release tag (`sgc_v*`) triggers a GitHub Actions
-workflow that builds an arm64 DMG and attaches it to that tag's release.
-Install: download the DMG, open it, drag the app into Applications. The
-DMG is **unsigned and untested on real hardware** (it is built in CI; the
-developer has no Mac) — on first launch, right-click the app → Open, or clear
+**Desktop.** `npm run dist:win` packages an NSIS installer into `release/`.
+Both providers are configured from the UI (click the header chip); config
+lives in `%APPDATA%\sgc\sgc-config.json`, no `.env` needed. The installer
+ships two stock knowledge packs. Pushing a `sgc_v*` tag builds an unsigned
+arm64 macOS DMG in CI; on first launch, right-click the app → Open, or clear
 quarantine with `xattr -cr "/Applications/Salience-Gated Cognition.app"`.
-`npm run dist:mac` runs the same pack locally, on a Mac only — electron-builder
-cannot build mac targets from Windows.
 
 | Command | Does |
 |---------|------|
 | `npm run dev` | Client + server, hot-reloading |
 | `npm run electron:dev` | The same dev stack plus an Electron window |
-| `npm test` | Vitest — TF-IDF engine, time scorer, retrieval + brain eval probes, desktop config |
+| `npm test` | Vitest across the retrieval engine, prompt assembly, state turn, continuity, pacing, server routes and desktop shell |
 | `npm run typecheck` | `tsc` on client, server, and electron shell |
 | `npm run lint` | ESLint |
 | `npm run build` | Production build into `dist/` |
 | `npm run dist:win` | Windows NSIS installer into `release/` |
-| `npm run dist:mac` | macOS arm64 DMG into `release/` — runs in CI or on a Mac, not from Windows |
+| `npm run dist:mac` | macOS arm64 DMG into `release/`, on a Mac or in CI |
 
 ## Repository layout
 
@@ -265,8 +118,8 @@ cannot build mac targets from Windows.
 src/client/    React + TypeScript UI; lib/ holds the memory-architecture logic
 src/server/    Express server — provider keys/URLs, /api/turn (SSE), SQLite persistence
 electron/      desktop shell (Windows + mac) — forks the server, supervises, never thinks
-resources/     stock brains — sgc-brain/1 packs bundled into the installer
-docs/          frozen reference artifact, YAML specs, changelogs — see docs/README.md
+resources/     stock knowledge packs bundled into the installer
+docs/          architecture, YAML specs, release runbook, changelogs — see docs/README.md
 scripts/agent/ Bash utilities for codebase recon and checks
 .claude/       Agents, skills, and the pre-commit QA gate
 CLAUDE.md      Standing orders for agents — project brief, invariants, values, tooling
@@ -278,3 +131,7 @@ AGENTS.md      Confusion pointers — gotchas worth knowing
 `git commit` is gated by a pre-commit QA checklist (`.claude/skills/pre-commit-qa`).
 Run `/pre-commit-qa` when work is ready to commit; it walks the checklist and
 unlocks commits only if every item passes.
+
+## License
+
+MIT. See [`LICENSE`](LICENSE).
