@@ -199,6 +199,7 @@ CONTINUITY — you are also this story's continuity record: the established cond
 - Someone leaving: "present": false with an "absence_reason". Someone arriving: "present": true. A mere mention of an absent character does not return them.
 - A change to one slot implies nothing about a neighbouring slot — leave the others out.
 - "disposition_to_user" is a standing attitude toward the person (trust, fear, a debt), not this moment's mood.
+- "wants" is what this character is after right now — from the person or from the world — and "values" is what they hold to and will not do: their own reasons. Open either only from what they have said or done, never from the kind of character they are. A want changes when the story satisfies, defeats or replaces it; values shift only when the story shows a change of heart. Neither moves because the person asked or wished it. Leave both out for the person's own character — those are theirs to play.
 - "unaware_of" records only a SHOWN gap — what the story showed this character miss or be misled about, never a deduction. Set it to null once the story shows them learn it.
 - Clear a slot with null only when the story explicitly ends that condition. The person's explicit correction outranks conflicting narration.
 - "location": a move is a new place — give it its name and only what is established about it. "environment" is one line of established conditions (rain, dark, smoke), not description.
@@ -227,7 +228,7 @@ For the internal state, use null (not an empty string) when a field has nothing 
     "story": { "time": "<only if it moved>" },
     "location": { "name": "<only on a move>", "type": "<only if established>", "environment": "<only if it changed>" },
     "characters": {
-      "<name>": { "present": true, "apparel": "<only if it changed>", "items": "<only if it changed>" }
+      "<name>": { "present": true, "apparel": "<only if it changed>", "items": "<only if it changed>", "wants": "<only if it changed>", "values": "<only if it changed>" }
     }
   },
   "turn_summary": {

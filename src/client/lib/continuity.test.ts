@@ -9,6 +9,7 @@ import {
   foldSheet,
   isDeltaEmpty,
   isSheetEmpty,
+  sheetHasDrives,
   type ContinuitySheet,
 } from './continuity';
 import type { ChatEntry } from './types';
@@ -193,6 +194,19 @@ describe('flattenSheetForPrompt', () => {
     expect(text).not.toContain('{');
   });
 
+  it('renders wants and values as diegetic labels beside the standing disposition (spec 11)', () => {
+    const sheet = applyContinuityDelta(tavern(), {
+      characters: {
+        mara: { wants: 'the person gone before the healer returns', values: 'never breaks a promise, even a bad one' },
+      },
+    });
+    const text = flattenSheetForPrompt(sheet);
+    expect(text).toContain(
+      '    Mara — stance: seated by the fire; toward you: wary; wants: the person gone before the healer returns; lives by: never breaks a promise, even a bad one',
+    );
+    expect(text).not.toContain('values:');
+  });
+
   it('omits empty slots and sections rather than labelling them empty', () => {
     const sheet: ContinuitySheet = {
       story: {},
@@ -234,6 +248,22 @@ describe('template placeholders are never facts (review finding)', () => {
       characters: { '<name>': { present: true, apparel: '<only if it changed>', items: '<only if it changed>' } },
     });
     expect(isSheetEmpty(echoed)).toBe(true);
+  });
+});
+
+describe('sheetHasDrives (spec 11)', () => {
+  it('is false for null, the empty sheet, and a cast with no drive slot; true once a PRESENT character wants or lives by something', () => {
+    expect(sheetHasDrives(null)).toBe(false);
+    expect(sheetHasDrives(emptySheet())).toBe(false);
+    expect(sheetHasDrives(tavern())).toBe(false);
+    expect(sheetHasDrives(applyContinuityDelta(tavern(), { characters: { duncan: { wants: 'his tankard refilled' } } }))).toBe(true);
+    expect(sheetHasDrives(applyContinuityDelta(tavern(), { characters: { mara: { values: 'pays her debts' } } }))).toBe(true);
+    // A drive on an ABSENT character does not count: absent records render as
+    // one line with the absence reason, so the want reaches no prompt and the
+    // framing would instruct Sal about a will it cannot see (Codex, 2026-09-26).
+    const away = applyContinuityDelta(tavern(), { characters: { mara: { present: false, absence_reason: 'gone', wants: 'out' } } });
+    expect(sheetHasDrives(away)).toBe(false);
+    expect(flattenSheetForPrompt(away)).not.toContain('wants:');
   });
 });
 

@@ -461,9 +461,14 @@ describe('buildStatePrompt — the continuity sheet', () => {
     expect(user).toContain('Never fill a blank slot by inference');
     expect(user).toContain('A mere mention of an absent character does not return them');
     expect(user).toContain('explicit correction outranks');
-    for (const key of ['present', 'absence_reason', 'apparel', 'items', 'disposition_to_user', 'unaware_of', 'environment', 'genre', 'time']) {
+    for (const key of ['present', 'absence_reason', 'apparel', 'items', 'disposition_to_user', 'wants', 'values', 'unaware_of', 'environment', 'genre', 'time']) {
       expect(user).toContain(`"${key}"`);
     }
+    // Spec 11: a want is a will, not a preference — it moves when the story
+    // earns it, never because the person asked; and the person's own
+    // character never gets one written for them.
+    expect(user).toContain('Neither moves because the person asked');
+    expect(user).toContain("Leave both out for the person's own character");
     // Genre-neutral: no nouns from any one scenario.
     for (const noun of ['tavern', 'cage', 'banish', 'Duncan', 'shirt']) {
       expect(user.toLowerCase()).not.toContain(noun.toLowerCase());

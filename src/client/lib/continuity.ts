@@ -3,13 +3,18 @@
 //
 // A per-chat sheet of durable, low-salience scene facts: story, location, and
 // one record per named character (presence, apparel, items, position,
-// physical state, disposition toward the person, what they don't yet know).
+// physical state, disposition toward the person, what they don't yet know,
+// and — spec 11 — what they want and what they live by).
 // It exists for the facts salience gating structurally drops — a shirt is
 // never the topic, so the grep never scores it, and it's rarely restated, so
 // the buffers lose it after four entries. The selection criterion for a SLOT
 // (never a category list in the prompt): a fact holds until an event changes
 // it, later replies must stay consistent with it, and neither buffer nor a
-// topical search could reconstruct it.
+// topical search could reconstruct it. A character's wants and values pass
+// the same test from the other direction: they are what makes the character
+// a separate person rather than an echo of the person's move, and Dynamic
+// State (regenerated every turn, singular to Sal) is the wrong bound for
+// something that has to outlast ten turns of the person leaning on it.
 //
 // STORAGE IS DELTAS, THE SHEET IS A FOLD. Each assistant entry carries only
 // the delta its state turn produced (ChatEntry.sheetDelta); the sheet any
@@ -75,6 +80,13 @@ export interface CharacterRecord {
   disposition_to_user?: string;
   /** Only a SHOWN gap — what the story showed them miss or be misled about. */
   unaware_of?: string;
+  /** What this character is after right now — from the person or from the
+   *  world — as the story has shown it. Moves when the story satisfies,
+   *  defeats or replaces it; never because the person asked (spec 11). */
+  wants?: string;
+  /** What they hold to and will not do — their own reasons. Shifts only when
+   *  the story shows a change of heart (spec 11). */
+  values?: string;
 }
 
 export interface ContinuitySheet {
@@ -103,6 +115,8 @@ const CHARACTER_SLOTS = [
   'items',
   'physical_state',
   'disposition_to_user',
+  'wants',
+  'values',
   'unaware_of',
 ] as const;
 
@@ -306,8 +320,24 @@ const CHARACTER_LABELS: { key: (typeof CHARACTER_SLOTS)[number]; label: string }
   { key: 'items', label: 'carrying' },
   { key: 'physical_state', label: 'state' },
   { key: 'disposition_to_user', label: 'toward you' },
+  { key: 'wants', label: 'wants' },
+  { key: 'values', label: 'lives by' },
   { key: 'unaware_of', label: 'unaware' },
 ];
+
+/**
+ * True when any PRESENT character carries a drive slot (wants / values) —
+ * i.e. when flattenSheetForPrompt will actually render one. The main prompt
+ * gates its embodiment framing on this (spec 11): never tell Sal to answer
+ * from wants the prompt does not carry (same D2 discipline as the recall
+ * tail). Absent characters render as one line with their absence reason and
+ * nothing else, so a drive on an absent record reaches no prompt and must
+ * not fire the framing (Codex review, 2026-09-26).
+ */
+export function sheetHasDrives(sheet: ContinuitySheet | null | undefined): boolean {
+  if (!sheet) return false;
+  return Object.values(sheet.characters).some((r) => r.present && (!!r.wants || !!r.values));
+}
 
 /**
  * Flatten a sheet into the labeled lines the main prompt renders — never JSON.

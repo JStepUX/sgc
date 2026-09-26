@@ -678,6 +678,51 @@ describe('buildPrompt — CONTINUITY block (spec 07)', () => {
     expect(recentAt).toBeGreaterThan(distilledAt);
   });
 
+  it('frames characters as separate people ONLY when a drive slot is recorded (spec 11)', () => {
+    // No wants / values on the sheet: the block and the task line are
+    // byte-identical to before spec 11 — no framing for a will not recorded.
+    const plain = buildPrompt({ constitutional, sheet });
+    expect(plain).not.toContain('lives by');
+    expect(plain).not.toContain('separate person');
+    expect(plain).not.toContain('whose wants are recorded');
+    // A drive on an ABSENT character renders nothing (absent = one line with
+    // the reason), so it must not fire the framing either.
+    const absentOnly: ContinuitySheet = {
+      ...sheet,
+      characters: { ...sheet.characters, moss: { ...sheet.characters.moss, wants: 'never to come back' } },
+    };
+    const quiet = buildPrompt({ constitutional, sheet: absentOnly });
+    expect(quiet).not.toContain('wants:');
+    expect(quiet).not.toContain('separate person');
+    expect(quiet).not.toContain('whose wants are recorded');
+
+    const driven: ContinuitySheet = {
+      ...sheet,
+      characters: {
+        ...sheet.characters,
+        vale: { ...sheet.characters.vale, wants: 'the ledger back before dawn', values: 'pays every debt, collects every one' },
+      },
+    };
+    const prompt = buildPrompt({ constitutional, sheet: driven });
+    // The slots render as diegetic labels on the character's line…
+    expect(prompt).toContain('    Vale — wearing: a wet trench coat; toward you: owes you; wants: the ledger back before dawn; lives by: pays every debt, collects every one');
+    // …the CONTINUITY header says what they are for (a separate person,
+    // tolerance tracking investment)…
+    expect(prompt).toContain('answer the person as a separate person would');
+    expect(prompt).toContain('Someone invested in the person overlooks more');
+    // …and YOUR TASK promotes the rival: the reply reconciles the input with
+    // the cast's own wants, rather than treating the input as the task.
+    const task = prompt.slice(prompt.indexOf('YOUR TASK:'));
+    expect(task).toContain('with each character whose wants are recorded answering from those wants and values');
+    // The person's own character is a sheet record like any other; the task
+    // clause must name it as out of bounds (Codex, 2026-09-26).
+    expect(task).toContain("never the person's own character");
+    // Persona-neutral: no genre words in the framing copy.
+    for (const noun of ['tavern', 'quest', 'noir', 'ledger']) {
+      expect(prompt.slice(prompt.indexOf('CONTINUITY ('), prompt.indexOf('  story:'))).not.toContain(noun);
+    }
+  });
+
   it('omits the block entirely when the sheet is absent, null, or empty', () => {
     expect(buildPrompt({ constitutional })).not.toContain('CONTINUITY (');
     expect(buildPrompt({ constitutional, sheet: null })).not.toContain('CONTINUITY (');
