@@ -1,0 +1,72 @@
+spec: Character drives — wants and values on the continuity sheet, so a named character answers the person as a separate person
+status: implemented                # 2026-09-26 — built in session (James + Claude) from the 2026-09-25 "force free will" riff; tests green; unlanded, awaiting James's review
+date: 2026-09-26
+goal: >
+  Give each named character two drive slots on the existing continuity sheet — what they want and what
+  they live by — written by the state turn under a change rule that makes a want a will (it moves when
+  the story earns it, never because the person asked), and framed in the main prompt so the character's
+  reply follows from their own reasons and their standing toward the person rather than from what the
+  input asks of them. Embodied, not stubborn: love, loyalty, indifference and wanting-something are all
+  admissible; the framing only says whose reasons they are.
+
+why_not_dynamic_state:
+  goal_slot: "dynamic-state.ts — 'goal' is Sal's own, one sentence, regenerated EVERY turn; the schema's bound is per-turn regeneration (types.ts / dynamic-state.ts header)"
+  impulse_slot: "'unexpressed_impulse' is a moment's feeling, not a motive"
+  verdict: a slot designed to move every turn cannot be the seat of a want that must survive ten turns of pressure; the sheet ACCRETES (spec 07 recurrence_bound) and is per-character (16 records), which is the right bound
+
+why_the_sheet_passes:
+  criterion: spec 07 why_this_tier_exists — holds until an event changes it; later replies must stay consistent with it; neither buffer nor grep reconstructs it
+  wants: passes all three (the topic is the scene, the want is why the character is in it)
+  values: passes all three (rarely stated, always load-bearing)
+  charter: unchanged — the header's "low-salience" line describes why the tier was opened, not a filter; the selection criterion is the test
+
+invariant_check:
+  new_api_call: none — rides the state turn's existing continuity delta (spec 07). Base loop 2 calls/turn, worst case 4 with recall.
+  model_in_retrieval: none — the slots are written by the state turn and read by foldSheet; nothing scored, nothing searched.
+  sal_ephemeral: unchanged — drives are sheet DATA rendered into a rebuilt-fresh prompt.
+  recurrence_bound: the sheet's (accretes; fixed schema; SLOT_CHARS 160; deltas-only; diegetic correction). No new bound.
+  naive_baseline: the sheet already renders in the real prompt only (spec 07); the embodiment clause rides the same block and the tail, neither reaches estimateNaiveContextTokens.
+  cast_spec_10: orthogonal. Spec 10 (docs/ignored, draft, D1 unruled) would give cast members their own instances; it consumes CharacterRecord via characterKey and would read these slots as-is. Nothing here depends on D1.
+
+schema_delta:
+  file: src/client/lib/continuity.ts
+  CharacterRecord: "+ wants?: string; + values?: string"
+  CHARACTER_SLOTS: "+ 'wants', 'values' (after disposition_to_user, before unaware_of) — applySlots / clean / SLOT_CHARS / PLACEHOLDER apply unchanged"
+  CHARACTER_LABELS: "+ { wants → 'wants' }, { values → 'lives by' } in the same position"
+  new_export: "sheetHasDrives(sheet): boolean — any PRESENT character record carries wants or values (absent records render only their absence reason, so a drive there reaches no prompt; review_2026-09-26 #1)"
+
+state_turn_delta:
+  file: src/client/lib/dynamic-state.ts (buildStatePrompt, user half)
+  rule_added_after_disposition_to_user: >
+    "wants" = what this character is after right now (from the person or the world); "values" = what they hold to and will not do.
+    Open either only from what they said or did, never from the kind of character they are. A want changes when the story
+    satisfies, defeats or replaces it; values shift only when the story shows a change of heart. Neither moves because the
+    person asked or wished it. Leave both out for the person's own character.
+  schema_example: "+ \"wants\": \"<only if it changed>\", \"values\": \"<only if it changed>\" on the character line (PLACEHOLDER guard makes an echoed template a no-op)"
+  unchanged: "the person's explicit correction outranks conflicting narration — the author channel keeps authority over every slot, drives included; that is the curation path (no editor)"
+
+main_prompt_delta:
+  file: src/client/lib/prompt.ts (buildPrompt)
+  gate: hasDrives = sheetHasDrives(sheet) — framing renders ONLY when a drive is recorded (D2 discipline, as the recall tail); no drives → block and tail byte-identical to before
+  continuity_header: "+ embodiment clause: recorded wants/values are the character's own, not the person's; each answers as a separate person would, from their own reasons, with the tolerance their standing toward the person earns; invested → overlooks more, offers more from their own lens; not invested → owes none of that"
+  your_task: "+ ', with each character whose wants are recorded answering from those wants and values rather than from what the input asks of them — never the person's own character, who is theirs alone to play' (scoped to recorded drives and naming the person's character as out of bounds; review_2026-09-26 #2)"
+  copy_rules: persona-neutral, no genre nouns (pinned by test); diegetic labels only (never the JSON keys)
+
+render:
+  present_line_example: "    Vale — wearing: a wet trench coat; toward you: owes you; wants: the ledger back before dawn; lives by: pays every debt, collects every one"
+  ui: components/ContinuityCard.tsx renders flattenSheetForPrompt — the new labels appear with no UI change
+
+verification:
+  - "continuity.test.ts: labels render in position; 'values:' never appears as a label; sheetHasDrives false for null / empty / drive-less cast, true for wants or values on a present OR absent record"
+  - "dynamic-state.test.ts: schema keys 'wants' and 'values' present; 'Neither moves because the person asked'; 'Leave both out for the person's own character'"
+  - "prompt.test.ts: no drives → no framing (three negative assertions); absent-only drive → no framing and no 'wants:' line; drives → line renders, header clause present, YOUR TASK clause present and names the person's character out of bounds, framing copy carries no genre nouns"
+  - "npx tsc --noEmit; npm test; npm run lint — all green 2026-09-26"
+
+review_2026-09-26:               # Codex (Sol) adversarial read of the unlanded build; both findings verified against the code and fixed
+  1_gate_counted_absent_drives: "sheetHasDrives counted absent records; flattenSheetForPrompt renders absent characters as one line (absence reason only), so an absent-only want fired the framing with no want in the prompt. Fix: gate on present && drive. Test flipped and a prompt-level negative added."
+  2_task_clause_included_the_persons_character: "'each present character' covered the person's own record (a record like any other, spec 07) while the state rule refuses to write drives for it — an invitation to answer for the player. Fix: clause scoped to characters with recorded drives and names the person's character as theirs alone to play."
+
+open_for_james:
+  - "Dial: the change rule is one sentence in the state prompt. Looser ('a want may soften when the person gives them reason') or tighter is a copy edit, not a code change."
+  - "Whether disposition_to_user should be renamed/relabelled now that 'toward you' carries the investment the tolerance clause keys on. Left as-is."
+  - "Probe with a local model before trusting the state turn to keep drives sparse — the rule 'never from the kind of character they are' is the stereotype guard and small models are the risk."

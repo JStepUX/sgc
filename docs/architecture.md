@@ -89,7 +89,21 @@ continuity sheet holds those facts. The state turn returns only *deltas*
 against a fixed schema: story (genre, time), location (name, type, one
 established environment line), and one record per named character (present
 or not and why, where they are, stance, apparel, items, physical state,
-standing disposition toward you, what they don't yet know).
+standing disposition toward you, what they don't yet know, and, since spec
+11, what they want and what they live by).
+
+The last two are the character's *drives*, and they are what makes a named
+character a separate person rather than an echo of your move. The state turn
+writes them under a rule that makes a want a will: it changes when the story
+satisfies, defeats or replaces it, never because you asked, and it is never
+written for your own character. When any drive is recorded, the prompt's
+continuity header says whose reasons they are and that a character's
+tolerance for you follows their standing toward you, and the task line asks
+each present character to answer from their own wants rather than from what
+the input asks of them. With no drive recorded the prompt is byte-identical
+to before. Dynamic State was the wrong home for this: it is Sal's own, one
+slot each, regenerated every turn, and a want has to outlast ten turns of you
+leaning on it.
 
 Code merges the deltas. Omission never deletes, a departed character keeps
 their record, a move replaces the location, and a truncated response can
